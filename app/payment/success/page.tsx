@@ -4,6 +4,20 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 
 export default function PaymentSuccessPage() {
+    return (
+        <React.Suspense
+            fallback={
+                <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000', color: '#fff' }}>
+                    Loading...
+                </div>
+            }
+        >
+            <PaymentSuccessContent />
+        </React.Suspense>
+    );
+}
+
+function PaymentSuccessContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const { user } = useAuth();
