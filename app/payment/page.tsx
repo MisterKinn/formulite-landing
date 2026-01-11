@@ -74,7 +74,7 @@ function PaymentContent() {
                 }
                 const script = document.createElement("script");
                 script.id = "toss-sdk-script";
-                script.src = "https://js.tosspayments.com/v2/payment-widget";
+                script.src = "https://js.tosspayments.com/v1/payment-widget";
                 script.async = true;
                 script.onload = () => resolve();
                 script.onerror = () => reject(new Error("script load error"));
@@ -92,7 +92,10 @@ function PaymentContent() {
         setLoading(true);
         try {
             await loadWidgetScript();
-            if (window.TossPayments && typeof window.TossPayments === "function") {
+            if (
+                window.TossPayments &&
+                typeof window.TossPayments === "function"
+            ) {
                 if (IS_RECURRING) {
                     handleRecurringPayment();
                 } else {
@@ -104,7 +107,9 @@ function PaymentContent() {
                 setLoading(false);
             }
         } catch (err) {
-            setError("결제 SDK 로드 실패. 네트워크 또는 브라우저 문제일 수 있습니다.");
+            setError(
+                "결제 SDK 로드 실패. 네트워크 또는 브라우저 문제일 수 있습니다."
+            );
             await checkScriptStatus();
             setLoading(false);
         }
@@ -114,19 +119,26 @@ function PaymentContent() {
         const tryLoad = async () => {
             try {
                 await loadWidgetScript();
-                if (window.TossPayments && typeof window.TossPayments === "function") {
+                if (
+                    window.TossPayments &&
+                    typeof window.TossPayments === "function"
+                ) {
                     if (IS_RECURRING) {
                         handleRecurringPayment();
                     } else {
                         handleAutoPayment();
                     }
                 } else {
-                    setError("결제 SDK가 로드되었으나 window.TossPayments가 없습니다. SDK 버전 또는 네트워크 문제일 수 있습니다.");
+                    setError(
+                        "결제 SDK가 로드되었으나 window.TossPayments가 없습니다. SDK 버전 또는 네트워크 문제일 수 있습니다."
+                    );
                     await checkScriptStatus();
                     setLoading(false);
                 }
             } catch (err) {
-                setError("결제 SDK 로드 실패. 네트워크 또는 브라우저 문제일 수 있습니다.");
+                setError(
+                    "결제 SDK 로드 실패. 네트워크 또는 브라우저 문제일 수 있습니다."
+                );
                 await checkScriptStatus();
                 setLoading(false);
             }
@@ -173,15 +185,39 @@ function PaymentContent() {
 
                         {/* Diagnostics */}
                         {errorCode ? (
-                            <p style={{ fontSize: 13, color: "#bbb", marginBottom: 12 }}>
-                                상태 코드: <strong style={{ color: "#fff" }}>{errorCode}</strong>
+                            <p
+                                style={{
+                                    fontSize: 13,
+                                    color: "#bbb",
+                                    marginBottom: 12,
+                                }}
+                            >
+                                상태 코드:{" "}
+                                <strong style={{ color: "#fff" }}>
+                                    {errorCode}
+                                </strong>
                             </p>
                         ) : null}
                         {checkingStatus ? (
-                            <p style={{ fontSize: 13, color: "#bbb", marginBottom: 12 }}>상태 확인 중...</p>
+                            <p
+                                style={{
+                                    fontSize: 13,
+                                    color: "#bbb",
+                                    marginBottom: 12,
+                                }}
+                            >
+                                상태 확인 중...
+                            </p>
                         ) : null}
 
-                        <div style={{ display: "flex", gap: 8, justifyContent: "center", marginBottom: 8 }}>
+                        <div
+                            style={{
+                                display: "flex",
+                                gap: 8,
+                                justifyContent: "center",
+                                marginBottom: 8,
+                            }}
+                        >
                             <button
                                 onClick={retryLoad}
                                 style={{
@@ -223,9 +259,17 @@ function PaymentContent() {
                                             status: errorCode,
                                             debug: debugInfo,
                                         };
-                                        const text = `도메인: ${host}\n문제: TossPayments payment-widget 스크립트 요청이 403 또는 차단되었습니다.\n상세:\n${JSON.stringify(body, null, 2)}`;
-                                        await navigator.clipboard.writeText(text);
-                                        alert("지원 메시지가 클립보드에 복사되었습니다. TossPayments에 붙여넣어 보내세요.");
+                                        const text = `도메인: ${host}\n문제: TossPayments payment-widget 스크립트 요청이 403 또는 차단되었습니다.\n상세:\n${JSON.stringify(
+                                            body,
+                                            null,
+                                            2
+                                        )}`;
+                                        await navigator.clipboard.writeText(
+                                            text
+                                        );
+                                        alert(
+                                            "지원 메시지가 클립보드에 복사되었습니다. TossPayments에 붙여넣어 보내세요."
+                                        );
                                     } catch (err) {
                                         alert("복사에 실패했습니다.");
                                     }
@@ -246,7 +290,19 @@ function PaymentContent() {
                         </div>
 
                         {debugInfo ? (
-                            <pre style={{ textAlign: "left", maxWidth: 520, margin: "8px auto 0", fontSize: 12, color: "#ccc", background: "#0a0a0a", padding: 10, borderRadius: 6, overflowX: "auto" }}>
+                            <pre
+                                style={{
+                                    textAlign: "left",
+                                    maxWidth: 520,
+                                    margin: "8px auto 0",
+                                    fontSize: 12,
+                                    color: "#ccc",
+                                    background: "#0a0a0a",
+                                    padding: 10,
+                                    borderRadius: 6,
+                                    overflowX: "auto",
+                                }}
+                            >
                                 {JSON.stringify(debugInfo, null, 2)}
                             </pre>
                         ) : null}
