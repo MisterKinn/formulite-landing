@@ -21,6 +21,9 @@ function PaymentContent() {
     const searchParams = useSearchParams();
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
+    const [errorCode, setErrorCode] = useState<number | null>(null);
+    const [debugInfo, setDebugInfo] = useState<any>(null);
+    const [checkingStatus, setCheckingStatus] = useState(false);
 
     // 기본값 (URL 파라미터로 오버라이드 가능)
     const PAYMENT_AMOUNT = Number(searchParams?.get("amount")) || 10000;
@@ -42,55 +45,95 @@ function PaymentContent() {
         // ...
     };
 
-    useEffect(() => {
-        const scriptTag = document.getElementById("toss-sdk-script");
-        if (scriptTag) {
-            // SDK script already present
+    // Helper: check script status via server-side endpoint (avoids CORS issues)
+    const checkScriptStatus = async () => {
+        setCheckingStatus(true);
+        try {
+            const res = await fetch("/api/toss-script");
+            const json = await res.json();
+            setDebugInfo(json);
+            setErrorCode(json.status || null);
+            console.debug("[TOSS DEBUG] script status:", json);
+            return json;
+        } catch (err) {
+            setDebugInfo({ error: String(err) });
+            console.error("[TOSS DEBUG] status check failed", err);
+            return { ok: false, error: String(err) };
+        } finally {
+            setCheckingStatus(false);
         }
-        if (!window.TossPayments || typeof window.TossPayments !== "function") {
-            if (document.getElementById("toss-sdk-script")) {
-                setError(
-                    "결제 SDK를 불러올 수 없습니다. 네트워크 또는 브라우저 문제일 수 있습니다."
-                );
-                setLoading(false);
-                return;
+    };
+
+    // Helper: load script programmatically and return promise
+    const loadWidgetScript = (): Promise<void> => {
+        return new Promise((resolve, reject) => {
+            try {
+                const existing = document.getElementById("toss-sdk-script");
+                if (existing) {
+                    existing.remove();
+                }
+                const script = document.createElement("script");
+                script.id = "toss-sdk-script";
+                script.src = "https://js.tosspayments.com/v2/payment-widget";
+                script.async = true;
+                script.onload = () => resolve();
+                script.onerror = () => reject(new Error("script load error"));
+                document.head.appendChild(script);
+            } catch (err) {
+                reject(err);
             }
-            const script = document.createElement("script");
-            script.id = "toss-sdk-script";
-            script.src = "https://js.tosspayments.com/v2/payment-widget";
-            script.async = true;
-            script.onload = () => {
-                if (
-                    window.TossPayments &&
-                    typeof window.TossPayments === "function"
-                ) {
+        });
+    };
+
+    const retryLoad = async () => {
+        setError("");
+        setErrorCode(null);
+        setDebugInfo(null);
+        setLoading(true);
+        try {
+            await loadWidgetScript();
+            if (window.TossPayments && typeof window.TossPayments === "function") {
+                if (IS_RECURRING) {
+                    handleRecurringPayment();
+                } else {
+                    handleAutoPayment();
+                }
+            } else {
+                setError("결제 SDK가 로드되었으나 초기화되지 않았습니다.");
+                await checkScriptStatus();
+                setLoading(false);
+            }
+        } catch (err) {
+            setError("결제 SDK 로드 실패. 네트워크 또는 브라우저 문제일 수 있습니다.");
+            await checkScriptStatus();
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        const tryLoad = async () => {
+            try {
+                await loadWidgetScript();
+                if (window.TossPayments && typeof window.TossPayments === "function") {
                     if (IS_RECURRING) {
                         handleRecurringPayment();
                     } else {
                         handleAutoPayment();
                     }
                 } else {
-                    setError(
-                        "결제 SDK가 로드되었으나 window.TossPayments가 없습니다. SDK 버전 또는 네트워크 문제일 수 있습니다."
-                    );
+                    setError("결제 SDK가 로드되었으나 window.TossPayments가 없습니다. SDK 버전 또는 네트워크 문제일 수 있습니다.");
+                    await checkScriptStatus();
                     setLoading(false);
                 }
-            };
-            script.onerror = () => {
-                setError(
-                    "결제 SDK 로드 실패. 네트워크 또는 브라우저 문제일 수 있습니다."
-                );
+            } catch (err) {
+                setError("결제 SDK 로드 실패. 네트워크 또는 브라우저 문제일 수 있습니다.");
+                await checkScriptStatus();
                 setLoading(false);
-            };
-            document.head.appendChild(script);
-            return;
-        }
-        // SDK가 있으면 결제 진행
-        if (IS_RECURRING) {
-            handleRecurringPayment();
-        } else {
-            handleAutoPayment();
-        }
+            }
+        };
+
+        // Start
+        tryLoad();
     }, []);
 
     // 로딩 화면
@@ -121,35 +164,92 @@ function PaymentContent() {
                         <p
                             style={{
                                 fontSize: 16,
-                                marginBottom: 30,
+                                marginBottom: 12,
                                 opacity: 0.9,
                             }}
                         >
                             {error}
                         </p>
-                        <button
-                            onClick={() => window.location.reload()}
-                            style={{
-                                padding: "12px 32px",
-                                background: "#fff",
-                                color: "#667eea",
-                                border: "none",
-                                borderRadius: 8,
-                                fontWeight: 600,
-                                fontSize: 16,
-                                cursor: "pointer",
-                                transition: "transform 0.2s",
-                            }}
-                            onMouseOver={(e) =>
-                                (e.currentTarget.style.transform =
-                                    "translateY(-2px)")
-                            }
-                            onMouseOut={(e) =>
-                                (e.currentTarget.style.transform = "none")
-                            }
-                        >
-                            다시 시도
-                        </button>
+
+                        {/* Diagnostics */}
+                        {errorCode ? (
+                            <p style={{ fontSize: 13, color: "#bbb", marginBottom: 12 }}>
+                                상태 코드: <strong style={{ color: "#fff" }}>{errorCode}</strong>
+                            </p>
+                        ) : null}
+                        {checkingStatus ? (
+                            <p style={{ fontSize: 13, color: "#bbb", marginBottom: 12 }}>상태 확인 중...</p>
+                        ) : null}
+
+                        <div style={{ display: "flex", gap: 8, justifyContent: "center", marginBottom: 8 }}>
+                            <button
+                                onClick={retryLoad}
+                                style={{
+                                    padding: "10px 20px",
+                                    background: "#fff",
+                                    color: "#667eea",
+                                    border: "none",
+                                    borderRadius: 8,
+                                    fontWeight: 600,
+                                    fontSize: 14,
+                                    cursor: "pointer",
+                                }}
+                            >
+                                재시도
+                            </button>
+                            <button
+                                onClick={checkScriptStatus}
+                                style={{
+                                    padding: "10px 20px",
+                                    background: "#222",
+                                    color: "#fff",
+                                    border: "2px solid #444",
+                                    borderRadius: 8,
+                                    fontWeight: 600,
+                                    fontSize: 14,
+                                    cursor: "pointer",
+                                }}
+                            >
+                                상태 확인
+                            </button>
+                            <button
+                                onClick={async () => {
+                                    try {
+                                        const host = window.location.href;
+                                        const body = {
+                                            time: new Date().toISOString(),
+                                            url: host,
+                                            error,
+                                            status: errorCode,
+                                            debug: debugInfo,
+                                        };
+                                        const text = `도메인: ${host}\n문제: TossPayments payment-widget 스크립트 요청이 403 또는 차단되었습니다.\n상세:\n${JSON.stringify(body, null, 2)}`;
+                                        await navigator.clipboard.writeText(text);
+                                        alert("지원 메시지가 클립보드에 복사되었습니다. TossPayments에 붙여넣어 보내세요.");
+                                    } catch (err) {
+                                        alert("복사에 실패했습니다.");
+                                    }
+                                }}
+                                style={{
+                                    padding: "10px 20px",
+                                    background: "#0164ff",
+                                    color: "#fff",
+                                    border: "none",
+                                    borderRadius: 8,
+                                    fontWeight: 600,
+                                    fontSize: 14,
+                                    cursor: "pointer",
+                                }}
+                            >
+                                지원 내용 복사
+                            </button>
+                        </div>
+
+                        {debugInfo ? (
+                            <pre style={{ textAlign: "left", maxWidth: 520, margin: "8px auto 0", fontSize: 12, color: "#ccc", background: "#0a0a0a", padding: 10, borderRadius: 6, overflowX: "auto" }}>
+                                {JSON.stringify(debugInfo, null, 2)}
+                            </pre>
+                        ) : null}
                     </>
                 ) : (
                     <>
