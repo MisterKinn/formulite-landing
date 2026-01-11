@@ -4,6 +4,14 @@ import React, { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 export default function PaymentFailPage() {
+    return (
+        <React.Suspense fallback={<div>Loading...</div>}>
+            <PaymentFailContent />
+        </React.Suspense>
+    );
+}
+
+function PaymentFailContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const [errorMessage, setErrorMessage] = useState(
