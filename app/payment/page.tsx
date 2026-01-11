@@ -10,70 +10,66 @@ declare global {
 }
 
 export default function PaymentPage() {
+    return (
+        <React.Suspense fallback={<div>Loading...</div>}>
+            <PaymentContent />
+        </React.Suspense>
+    );
+}
+
+function PaymentContent() {
     const searchParams = useSearchParams();
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
-    // sdkLoaded 제거: TossPayments SDK는 layout.tsx에서 전역으로 삽입됨
 
     // 기본값 (URL 파라미터로 오버라이드 가능)
     const PAYMENT_AMOUNT = Number(searchParams?.get("amount")) || 10000;
     const CUSTOMER_NAME = searchParams?.get("name") || "Nova AI Customer";
-    const CUSTOMER_EMAIL =
-        searchParams?.get("email") || "customer@formulite.ai";
+    const CUSTOMER_EMAIL = searchParams?.get("email") || "customer@formulite.ai";
     const ORDER_NAME = searchParams?.get("orderName") || "Nova AI 구독";
-    const IS_RECURRING = searchParams?.get("recurring") === "true"; // 월간 구독 여부
+    const IS_RECURRING = searchParams?.get("recurring") === "true";
 
-    // TossPayments SDK가 window에 없으면 새로고침
+    // 일회성 결제 핸들러 (구현 필요)
+    const handleAutoPayment = async () => {
+        // TossPayments 결제창 호출 로직 구현
+        // ...
+    };
+
+    // 정기 결제 핸들러 (구현 필요)
+    const handleRecurringPayment = async () => {
+        // TossPayments 정기 결제창 호출 로직 구현
+        // ...
+    };
+
     useEffect(() => {
-        // 디버깅: script 태그와 window.TossPayments 상태 출력
         const scriptTag = document.getElementById("toss-sdk-script");
-        console.log("[TOSS SDK] scriptTag:", scriptTag);
         if (scriptTag) {
-            console.log(
-                "[TOSS SDK] script src:",
-                (scriptTag as HTMLScriptElement).src
-            );
+            // SDK script already present
         }
-        console.log(
-            "[TOSS SDK] window.TossPayments:",
-            typeof window.TossPayments,
-            window.TossPayments
-        );
         if (!window.TossPayments || typeof window.TossPayments !== "function") {
-            // 이미 script가 있으면 에러 표시
             if (document.getElementById("toss-sdk-script")) {
-                setError(
-                    "결제 SDK를 불러올 수 없습니다. 네트워크 또는 브라우저 문제일 수 있습니다."
-                );
+                setError("결제 SDK를 불러올 수 없습니다. 네트워크 또는 브라우저 문제일 수 있습니다.");
                 setLoading(false);
                 return;
             }
-            // script가 없으면 동적으로 삽입
             const script = document.createElement("script");
             script.id = "toss-sdk-script";
             script.src = "https://js.tosspayments.com/v2/payment-widget";
             script.async = true;
             script.onload = () => {
-                if (
-                    window.TossPayments &&
-                    typeof window.TossPayments === "function"
-                ) {
+                if (window.TossPayments && typeof window.TossPayments === "function") {
                     if (IS_RECURRING) {
                         handleRecurringPayment();
                     } else {
                         handleAutoPayment();
                     }
                 } else {
-                    setError(
-                        "결제 SDK가 로드되었으나 window.TossPayments가 없습니다. SDK 버전 또는 네트워크 문제일 수 있습니다."
-                    );
+                    setError("결제 SDK가 로드되었으나 window.TossPayments가 없습니다. SDK 버전 또는 네트워크 문제일 수 있습니다.");
                     setLoading(false);
                 }
             };
             script.onerror = () => {
-                setError(
-                    "결제 SDK 로드 실패. 네트워크 또는 브라우저 문제일 수 있습니다."
-                );
+                setError("결제 SDK 로드 실패. 네트워크 또는 브라우저 문제일 수 있습니다.");
                 setLoading(false);
             };
             document.head.appendChild(script);
@@ -85,100 +81,6 @@ export default function PaymentPage() {
         } else {
             handleAutoPayment();
         }
-    }, []);
-
-    // sdkLoaded 관련 로직 제거
-
-    // 일회성 결제
-    const handleAutoPayment = async () => {
-        try {
-            if (!window.TossPayments) {
-                throw new Error("결제 SDK를 사용할 수 없습니다.");
-            }
-
-            const clientKey = process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY;
-            if (!clientKey) {
-                throw new Error("결제 설정이 올바르지 않습니다.");
-            }
-
-            const tossPayments = window.TossPayments(clientKey);
-            const orderId = `order_${Date.now()}`;
-            const customerKey = `customer_${CUSTOMER_EMAIL}_${Date.now()}`;
-
-            const payment = tossPayments.payment({
-                customerKey: customerKey,
-            });
-
-            await payment.requestPayment({
-                method: "CARD",
-                amount: {
-                    currency: "KRW",
-                    value: PAYMENT_AMOUNT,
-                },
-                orderId,
-                orderName: ORDER_NAME,
-                customerName: CUSTOMER_NAME,
-                customerEmail: CUSTOMER_EMAIL,
-                successUrl: `${window.location.origin}/payment/success`,
-                failUrl: `${window.location.origin}/payment/fail`,
-            });
-        } catch (error: any) {
-            console.error("결제 오류:", error);
-            setError(error?.message || "결제 요청에 실패했습니다.");
-            setLoading(false);
-        }
-    };
-
-    // 월간 구독 결제 (빌링키 발급)
-    const handleRecurringPayment = async () => {
-        try {
-            if (!window.TossPayments) {
-                throw new Error("결제 SDK를 사용할 수 없습니다.");
-            }
-
-            const clientKey = process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY;
-            if (!clientKey) {
-                throw new Error("결제 설정이 올바르지 않습니다.");
-            }
-
-            console.log("window.TossPayments:", window.TossPayments);
-            const tossPayments = window.TossPayments(clientKey);
-            console.log("tossPayments 객체:", tossPayments);
-            if (typeof tossPayments.requestBillingAuth !== "function") {
-                setError(
-                    "SDK 함수(requestBillingAuth)가 없습니다. TossPayments SDK 버전 또는 로드 문제입니다. tossPayments 객체: " +
-                        JSON.stringify(tossPayments)
-                );
-                setLoading(false);
-                return;
-            }
-
-            const customerKey = `customer_${CUSTOMER_EMAIL}_${Date.now()}`;
-
-            await tossPayments.requestBillingAuth("카드", {
-                customerKey: customerKey,
-                successUrl: `${
-                    window.location.origin
-                }/payment/success?billing=true&amount=${PAYMENT_AMOUNT}&orderName=${encodeURIComponent(
-                    ORDER_NAME
-                )}`,
-                failUrl: `${window.location.origin}/payment/fail`,
-            });
-        } catch (error: any) {
-            console.error("결제 오류:", error);
-            setError(error?.message || "결제 요청에 실패했습니다.");
-            setLoading(false);
-        }
-    };
-
-    // Hide nextjs-portal on payment page
-    React.useEffect(() => {
-        const style = document.createElement("style");
-        style.innerHTML = `nextjs-portal { display: none; }`;
-        document.head.appendChild(style);
-        return () => {
-            document.head.removeChild(style);
-        };
     }, []);
 
     // 로딩 화면
@@ -197,24 +99,8 @@ export default function PaymentPage() {
                 {error ? (
                     <>
                         <div style={{ fontSize: 60, marginBottom: 20 }}>❌</div>
-                        <h2
-                            style={{
-                                fontSize: 24,
-                                marginBottom: 16,
-                                fontWeight: 700,
-                            }}
-                        >
-                            결제 오류
-                        </h2>
-                        <p
-                            style={{
-                                fontSize: 16,
-                                marginBottom: 30,
-                                opacity: 0.9,
-                            }}
-                        >
-                            {error}
-                        </p>
+                        <h2 style={{ fontSize: 24, marginBottom: 16, fontWeight: 700 }}>결제 오류</h2>
+                        <p style={{ fontSize: 16, marginBottom: 30, opacity: 0.9 }}>{error}</p>
                         <button
                             onClick={() => window.location.reload()}
                             style={{
@@ -228,43 +114,20 @@ export default function PaymentPage() {
                                 cursor: "pointer",
                                 transition: "transform 0.2s",
                             }}
-                            onMouseOver={(e) =>
-                                (e.currentTarget.style.transform =
-                                    "translateY(-2px)")
-                            }
-                            onMouseOut={(e) =>
-                                (e.currentTarget.style.transform = "none")
-                            }
+                            onMouseOver={(e) => (e.currentTarget.style.transform = "translateY(-2px)")}
+                            onMouseOut={(e) => (e.currentTarget.style.transform = "none")}
                         >
                             다시 시도
                         </button>
                     </>
                 ) : (
                     <>
-                        <div
-                            style={{
-                                fontSize: 48,
-                                marginBottom: 20,
-                                animation: "spin 1.5s linear infinite",
-                            }}
-                        >
-                            ⏳
-                        </div>
-                        <h2
-                            style={{
-                                fontSize: 24,
-                                marginBottom: 8,
-                                fontWeight: 600,
-                            }}
-                        >
-                            {IS_RECURRING
-                                ? "구독 결제 준비 중"
-                                : "결제 창을 열고 있습니다"}
+                        <div style={{ fontSize: 48, marginBottom: 20, animation: "spin 1.5s linear infinite" }}>⏳</div>
+                        <h2 style={{ fontSize: 24, marginBottom: 8, fontWeight: 600 }}>
+                            {IS_RECURRING ? "구독 결제 준비 중" : "결제 창을 열고 있습니다"}
                         </h2>
                         <p style={{ fontSize: 14, opacity: 0.9 }}>
-                            {IS_RECURRING
-                                ? "카드 등록이 진행됩니다..."
-                                : "결제 창이 자동으로 열립니다..."}
+                            {IS_RECURRING ? "카드 등록이 진행됩니다..." : "결제 창이 자동으로 열립니다..."}
                         </p>
                         <style>{`
                             @keyframes spin {
