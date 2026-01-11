@@ -25,7 +25,8 @@ function PaymentContent() {
     // 기본값 (URL 파라미터로 오버라이드 가능)
     const PAYMENT_AMOUNT = Number(searchParams?.get("amount")) || 10000;
     const CUSTOMER_NAME = searchParams?.get("name") || "Nova AI Customer";
-    const CUSTOMER_EMAIL = searchParams?.get("email") || "customer@formulite.ai";
+    const CUSTOMER_EMAIL =
+        searchParams?.get("email") || "customer@formulite.ai";
     const ORDER_NAME = searchParams?.get("orderName") || "Nova AI 구독";
     const IS_RECURRING = searchParams?.get("recurring") === "true";
 
@@ -48,7 +49,9 @@ function PaymentContent() {
         }
         if (!window.TossPayments || typeof window.TossPayments !== "function") {
             if (document.getElementById("toss-sdk-script")) {
-                setError("결제 SDK를 불러올 수 없습니다. 네트워크 또는 브라우저 문제일 수 있습니다.");
+                setError(
+                    "결제 SDK를 불러올 수 없습니다. 네트워크 또는 브라우저 문제일 수 있습니다."
+                );
                 setLoading(false);
                 return;
             }
@@ -57,19 +60,26 @@ function PaymentContent() {
             script.src = "https://js.tosspayments.com/v2/payment-widget";
             script.async = true;
             script.onload = () => {
-                if (window.TossPayments && typeof window.TossPayments === "function") {
+                if (
+                    window.TossPayments &&
+                    typeof window.TossPayments === "function"
+                ) {
                     if (IS_RECURRING) {
                         handleRecurringPayment();
                     } else {
                         handleAutoPayment();
                     }
                 } else {
-                    setError("결제 SDK가 로드되었으나 window.TossPayments가 없습니다. SDK 버전 또는 네트워크 문제일 수 있습니다.");
+                    setError(
+                        "결제 SDK가 로드되었으나 window.TossPayments가 없습니다. SDK 버전 또는 네트워크 문제일 수 있습니다."
+                    );
                     setLoading(false);
                 }
             };
             script.onerror = () => {
-                setError("결제 SDK 로드 실패. 네트워크 또는 브라우저 문제일 수 있습니다.");
+                setError(
+                    "결제 SDK 로드 실패. 네트워크 또는 브라우저 문제일 수 있습니다."
+                );
                 setLoading(false);
             };
             document.head.appendChild(script);
@@ -99,8 +109,24 @@ function PaymentContent() {
                 {error ? (
                     <>
                         <div style={{ fontSize: 60, marginBottom: 20 }}>❌</div>
-                        <h2 style={{ fontSize: 24, marginBottom: 16, fontWeight: 700 }}>결제 오류</h2>
-                        <p style={{ fontSize: 16, marginBottom: 30, opacity: 0.9 }}>{error}</p>
+                        <h2
+                            style={{
+                                fontSize: 24,
+                                marginBottom: 16,
+                                fontWeight: 700,
+                            }}
+                        >
+                            결제 오류
+                        </h2>
+                        <p
+                            style={{
+                                fontSize: 16,
+                                marginBottom: 30,
+                                opacity: 0.9,
+                            }}
+                        >
+                            {error}
+                        </p>
                         <button
                             onClick={() => window.location.reload()}
                             style={{
@@ -114,20 +140,43 @@ function PaymentContent() {
                                 cursor: "pointer",
                                 transition: "transform 0.2s",
                             }}
-                            onMouseOver={(e) => (e.currentTarget.style.transform = "translateY(-2px)")}
-                            onMouseOut={(e) => (e.currentTarget.style.transform = "none")}
+                            onMouseOver={(e) =>
+                                (e.currentTarget.style.transform =
+                                    "translateY(-2px)")
+                            }
+                            onMouseOut={(e) =>
+                                (e.currentTarget.style.transform = "none")
+                            }
                         >
                             다시 시도
                         </button>
                     </>
                 ) : (
                     <>
-                        <div style={{ fontSize: 48, marginBottom: 20, animation: "spin 1.5s linear infinite" }}>⏳</div>
-                        <h2 style={{ fontSize: 24, marginBottom: 8, fontWeight: 600 }}>
-                            {IS_RECURRING ? "구독 결제 준비 중" : "결제 창을 열고 있습니다"}
+                        <div
+                            style={{
+                                fontSize: 48,
+                                marginBottom: 20,
+                                animation: "spin 1.5s linear infinite",
+                            }}
+                        >
+                            ⏳
+                        </div>
+                        <h2
+                            style={{
+                                fontSize: 24,
+                                marginBottom: 8,
+                                fontWeight: 600,
+                            }}
+                        >
+                            {IS_RECURRING
+                                ? "구독 결제 준비 중"
+                                : "결제 창을 열고 있습니다"}
                         </h2>
                         <p style={{ fontSize: 14, opacity: 0.9 }}>
-                            {IS_RECURRING ? "카드 등록이 진행됩니다..." : "결제 창이 자동으로 열립니다..."}
+                            {IS_RECURRING
+                                ? "카드 등록이 진행됩니다..."
+                                : "결제 창이 자동으로 열립니다..."}
                         </p>
                         <style>{`
                             @keyframes spin {

@@ -7,7 +7,16 @@ export default function PaymentSuccessPage() {
     return (
         <React.Suspense
             fallback={
-                <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000', color: '#fff' }}>
+                <div
+                    style={{
+                        minHeight: "100vh",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        background: "#000",
+                        color: "#fff",
+                    }}
+                >
                     Loading...
                 </div>
             }
