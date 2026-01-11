@@ -13,6 +13,14 @@ import "../style.css";
 import "../mobile.css";
 
 const Login = () => {
+    return (
+        <React.Suspense fallback={<div>Loading...</div>}>
+            <LoginContent />
+        </React.Suspense>
+    );
+};
+
+function LoginContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
 
