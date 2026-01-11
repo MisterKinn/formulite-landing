@@ -12,8 +12,8 @@ export default function PaymentFailPage() {
     const [errorCode, setErrorCode] = useState("UNKNOWN_ERROR");
 
     useEffect(() => {
-        const code = searchParams.get("code");
-        const message = searchParams.get("message");
+        const code = searchParams?.get("code");
+        const message = searchParams?.get("message");
 
         setErrorCode(code || "UNKNOWN_ERROR");
         setErrorMessage(message || "결제 처리 중 오류가 발생했습니다.");
