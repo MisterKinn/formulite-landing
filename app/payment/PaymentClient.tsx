@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { useAuth } from "@/context/AuthContext";
 
 declare global {
     interface Window {
@@ -18,6 +19,8 @@ export default function PaymentClient() {
     const widgetRef = useRef<any>(null);
     const [ready, setReady] = useState(false);
     const [error, setError] = useState<string | null>(null);
+
+    const { user } = useAuth();
 
     // diagnostics and reload control
     const [debugInfo, setDebugInfo] = useState<any | null>(null);
@@ -46,7 +49,11 @@ export default function PaymentClient() {
                     throw new Error("PaymentWidget not available");
                 }
 
-                const customerKey = "user_" + Date.now();
+                const uid = user?.uid;
+                const customerKey = uid
+                    ? `customer_${uid}_${Date.now()}`
+                    : `guest_${Date.now()}`;
+                console.debug("[PaymentClient] customerKey:", customerKey);
 
                 const widget = window.PaymentWidget(
                     process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY!,

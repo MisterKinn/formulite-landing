@@ -100,6 +100,41 @@ export async function POST(request: NextRequest) {
         }
 
         /* ------------------ 4. 정상 성공 ------------------ */
+        // When available, update user subscription immediately based on customerKey
+        try {
+            const customerKey = data?.customerKey;
+            const totalAmount = Number(data?.totalAmount ?? data?.amount ?? 0);
+            if (customerKey) {
+                const userId = (customerKey || "").split("_")[1] || null;
+                if (userId) {
+                    // map amount to plan
+                    const plan =
+                        totalAmount >= 19900
+                            ? "pro"
+                            : totalAmount >= 9900
+                            ? "plus"
+                            : null;
+                    if (plan) {
+                        const { saveSubscription } = await import(
+                            "@/lib/subscription"
+                        );
+                        await saveSubscription(userId, {
+                            plan: plan as any,
+                            amount: totalAmount,
+                            startDate: new Date().toISOString(),
+                            status: "active",
+                            customerKey,
+                        });
+                        console.log(
+                            `(confirm) Updated plan for user ${userId} -> ${plan}`
+                        );
+                    }
+                }
+            }
+        } catch (err) {
+            console.error("Failed to update subscription after confirm:", err);
+        }
+
         return NextResponse.json({
             success: true,
             data,

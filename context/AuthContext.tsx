@@ -37,6 +37,9 @@ interface AuthContextType {
     loginWithGoogle: () => Promise<User>;
     requestPasswordReset: (email: string) => Promise<void>;
     updateAvatar: (dataUrl: string | null) => Promise<void>;
+    updateSubscription: (
+        data: import("@/lib/subscription").SubscriptionData
+    ) => Promise<void>;
     logout: () => Promise<void>;
     isAuthenticated: boolean;
 }
@@ -58,6 +61,9 @@ const AuthContext = createContext<AuthContextType>({
         throw new Error("Not implemented");
     },
     updateAvatar: async () => {
+        throw new Error("Not implemented");
+    },
+    updateSubscription: async () => {
         throw new Error("Not implemented");
     },
     logout: async () => {
@@ -330,6 +336,110 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
     };
 
+    // Helper to remove undefined fields (Firestore rejects undefined values)
+    function sanitizeForFirestore<T extends Record<string, any>>(obj: T): T {
+        if (!obj || typeof obj !== "object") return obj;
+        const out: any = Array.isArray(obj) ? [] : {};
+        for (const key of Object.keys(obj)) {
+            const val = (obj as any)[key];
+            if (val === undefined) continue; // skip undefined
+            if (val && typeof val === "object" && !Array.isArray(val)) {
+                out[key] = sanitizeForFirestore(val);
+            } else {
+                out[key] = val;
+            }
+        }
+        return out as T;
+    }
+
+    const updateSubscription = async (
+        data: import("@/lib/subscription").SubscriptionData
+    ) => {
+        const auth = getAuth(app);
+        if (!auth.currentUser) throw new Error("No authenticated user");
+        const uid = auth.currentUser.uid;
+
+        const sanitized = sanitizeForFirestore(data as any);
+
+        const withTimeout = <T,>(p: Promise<T>, ms: number) =>
+            new Promise<T>((resolve, reject) => {
+                let done = false;
+                const timer = setTimeout(() => {
+                    if (done) return;
+                    done = true;
+                    const err = new Error(`timeout after ${ms}ms`);
+                    (err as any).diagnostics = {
+                        uid,
+                        size: JSON.stringify(sanitized).length,
+                    };
+                    reject(err);
+                }, ms);
+                p.then((v) => {
+                    if (done) return;
+                    done = true;
+                    clearTimeout(timer);
+                    resolve(v);
+                }).catch((e) => {
+                    if (done) return;
+                    done = true;
+                    clearTimeout(timer);
+                    reject(e);
+                });
+            });
+
+        try {
+            const db = getFirestore(app);
+            const docRef = doc(db, "users", uid);
+            const start = Date.now();
+            try {
+                await withTimeout(
+                    setDoc(
+                        docRef,
+                        { subscription: sanitized },
+                        { merge: true }
+                    ),
+                    15000
+                );
+                const took = Date.now() - start;
+                console.log(
+                    `[AuthContext] subscription saved for ${uid} (${took}ms)`
+                );
+            } catch (tErr) {
+                console.error(
+                    "[AuthContext] setDoc subscription timed out or failed",
+                    tErr
+                );
+                throw tErr;
+            }
+        } catch (err) {
+            console.error("[AuthContext] Failed to update subscription", err);
+            try {
+                const db = getFirestore(app);
+                await enableNetwork(db);
+                const docRef = doc(db, "users", uid);
+                await withTimeout(
+                    setDoc(
+                        docRef,
+                        { subscription: sanitized },
+                        { merge: true }
+                    ),
+                    15000
+                );
+                console.log(
+                    `[AuthContext] subscription saved for ${uid} after retry`
+                );
+                return;
+            } catch (retryErr) {
+                console.error(
+                    "[AuthContext] Retry failed for subscription",
+                    retryErr
+                );
+            }
+
+            throw err;
+        }
+    };
+
     const isAuthenticated = !!user;
 
     return (
@@ -343,6 +453,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 loginWithGoogle,
                 requestPasswordReset,
                 updateAvatar,
+                updateSubscription,
                 logout,
                 isAuthenticated,
             }}

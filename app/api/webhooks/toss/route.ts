@@ -88,7 +88,36 @@ async function handlePaymentCompleted(data: any) {
             method: data.method,
             approvedAt: data.approvedAt,
         });
+
+        // Map amount to a plan (adjust prices as needed)
+        const plan = amountToPlan(Number(data.totalAmount ?? data.amount ?? 0));
+        if (plan) {
+            // Save subscription info to Firestore
+            try {
+                await saveSubscription(userId, {
+                    plan,
+                    amount: Number(data.totalAmount ?? data.amount ?? 0),
+                    startDate: new Date().toISOString(),
+                    status: "active",
+                    customerKey: data.customerKey,
+                });
+                console.log(`Updated plan for user ${userId} -> ${plan}`);
+            } catch (err) {
+                console.error(
+                    "Failed to save subscription after payment:",
+                    err
+                );
+            }
+        }
     }
+}
+
+function amountToPlan(amount: number): "plus" | "pro" | null {
+    if (!isFinite(amount) || amount <= 0) return null;
+    // Example mapping - adjust to match your product prices
+    if (amount >= 19900) return "pro";
+    if (amount >= 9900) return "plus";
+    return null;
 }
 
 // Handle failed payment
@@ -126,7 +155,22 @@ async function handlePaymentCancelled(data: any) {
 // Handle billing key issued
 async function handleBillingKeyIssued(data: any) {
     console.log("🔑 Billing key issued:", data);
-    // Billing key is already saved in success page
+    const userId = extractUserId(data.customerKey);
+    if (userId) {
+        try {
+            await saveSubscription(userId, {
+                plan: "plus",
+                billingKey: data.billingKey,
+                customerKey: data.customerKey,
+                startDate: new Date().toISOString(),
+                status: "active",
+                amount: Number(data.totalAmount ?? data.amount ?? 0),
+            });
+            console.log(`Saved billing key for user ${userId}`);
+        } catch (err) {
+            console.error("Failed to save billing key:", err);
+        }
+    }
 }
 
 // Handle successful recurring payment

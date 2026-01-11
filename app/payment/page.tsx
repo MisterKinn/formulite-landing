@@ -18,7 +18,7 @@ export default function PaymentPage() {
             <Navbar />
             <Sidebar />
 
-            <React.Suspense fallback={<div style={{ minHeight: 420 }} /> }>
+            <React.Suspense fallback={<div style={{ minHeight: 420 }} />}>
                 <PaymentClient />
             </React.Suspense>
         </>

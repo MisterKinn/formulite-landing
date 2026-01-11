@@ -893,138 +893,62 @@ function ProfileContent() {
                                                 <h2 className="profile-section-title">
                                                     구독 정보
                                                 </h2>
-                                                <div
-                                                    style={{
-                                                        background: "#f8f9fa",
-                                                        borderRadius: 12,
-                                                        padding: 20,
-                                                        marginBottom: 16,
-                                                    }}
-                                                >
-                                                    <div
-                                                        style={{
-                                                            marginBottom: 12,
-                                                        }}
-                                                    >
-                                                        <span
-                                                            style={{
-                                                                display:
-                                                                    "block",
-                                                                fontSize: 12,
-                                                                color: "#999",
-                                                                marginBottom: 4,
-                                                            }}
-                                                        >
-                                                            구독 시작일
-                                                        </span>
-                                                        <span
-                                                            style={{
-                                                                fontSize: 14,
-                                                                fontWeight: 600,
-                                                            }}
-                                                        >
-                                                            {subscription.startDate
-                                                                ? new Date(
-                                                                      subscription.startDate
-                                                                  ).toLocaleDateString(
-                                                                      "ko-KR"
-                                                                  )
-                                                                : "-"}
-                                                        </span>
+                                                <div className="profile-plan-card profile-subscription-card">
+                                                    <div className="profile-plan-info profile-subscription-details">
+                                                        <div>
+                                                            <span className="profile-sub-label">
+                                                                구독 시작일
+                                                            </span>
+                                                            <span className="profile-sub-value">
+                                                                {subscription.startDate
+                                                                    ? new Date(
+                                                                          subscription.startDate
+                                                                      ).toLocaleDateString(
+                                                                          "ko-KR"
+                                                                      )
+                                                                    : "-"}
+                                                            </span>
+                                                        </div>
+
+                                                        {subscription.nextBillingDate &&
+                                                            subscription.status ===
+                                                                "active" && (
+                                                                <div>
+                                                                    <span className="profile-sub-label">
+                                                                        다음
+                                                                        결제일
+                                                                    </span>
+                                                                    <span className="profile-sub-value">
+                                                                        {new Date(
+                                                                            subscription.nextBillingDate
+                                                                        ).toLocaleDateString(
+                                                                            "ko-KR"
+                                                                        )}
+                                                                    </span>
+                                                                </div>
+                                                            )}
                                                     </div>
-                                                    {subscription.nextBillingDate &&
-                                                        subscription.status ===
-                                                            "active" && (
-                                                            <div
-                                                                style={{
-                                                                    marginBottom: 12,
-                                                                }}
-                                                            >
-                                                                <span
-                                                                    style={{
-                                                                        display:
-                                                                            "block",
-                                                                        fontSize: 12,
-                                                                        color: "#999",
-                                                                        marginBottom: 4,
-                                                                    }}
-                                                                >
-                                                                    다음 결제일
-                                                                </span>
-                                                                <span
-                                                                    style={{
-                                                                        fontSize: 14,
-                                                                        fontWeight: 600,
-                                                                    }}
-                                                                >
-                                                                    {new Date(
-                                                                        subscription.nextBillingDate
-                                                                    ).toLocaleDateString(
-                                                                        "ko-KR"
-                                                                    )}
-                                                                </span>
-                                                            </div>
-                                                        )}
-                                                    <div>
-                                                        <span
-                                                            style={{
-                                                                display:
-                                                                    "block",
-                                                                fontSize: 12,
-                                                                color: "#999",
-                                                                marginBottom: 4,
-                                                            }}
-                                                        >
-                                                            월 결제 금액
-                                                        </span>
-                                                        <span
-                                                            style={{
-                                                                fontSize: 18,
-                                                                fontWeight: 700,
-                                                                color: "#0164ff",
-                                                            }}
-                                                        >
+
+                                                    <div className="profile-sub-right">
+                                                        <div className="profile-sub-amount">
                                                             {subscription.amount?.toLocaleString() ||
                                                                 0}
                                                             원
-                                                        </span>
+                                                        </div>
+
+                                                        {subscription.status ===
+                                                            "active" && (
+                                                            <button
+                                                                onClick={
+                                                                    handleCancelSubscription
+                                                                }
+                                                                className="profile-btn profile-btn-danger-outline"
+                                                            >
+                                                                구독 취소하기
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 </div>
-                                                {subscription.status ===
-                                                    "active" && (
-                                                    <button
-                                                        onClick={
-                                                            handleCancelSubscription
-                                                        }
-                                                        style={{
-                                                            padding:
-                                                                "10px 20px",
-                                                            background: "#fff",
-                                                            color: "#d32f2f",
-                                                            border: "2px solid #d32f2f",
-                                                            borderRadius: 8,
-                                                            fontWeight: 600,
-                                                            fontSize: 14,
-                                                            cursor: "pointer",
-                                                            transition:
-                                                                "all 0.2s",
-                                                        }}
-                                                        onMouseOver={(e) => {
-                                                            e.currentTarget.style.background =
-                                                                "#d32f2f";
-                                                            e.currentTarget.style.color =
-                                                                "#fff";
-                                                        }}
-                                                        onMouseOut={(e) => {
-                                                            e.currentTarget.style.background =
-                                                                "#fff";
-                                                            e.currentTarget.style.color =
-                                                                "#d32f2f";
-                                                        }}
-                                                    >
-                                                        구독 취소하기
-                                                    </button>
-                                                )}
                                             </div>
                                         )}
 

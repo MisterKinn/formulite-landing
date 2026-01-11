@@ -20,13 +20,29 @@ export interface SubscriptionData {
 }
 
 // Store billing key and subscription info
+function sanitizeForFirestore<T extends Record<string, any>>(obj: T): T {
+    if (!obj || typeof obj !== "object") return obj;
+    const out: any = Array.isArray(obj) ? [] : {};
+    for (const key of Object.keys(obj)) {
+        const val = (obj as any)[key];
+        if (val === undefined) continue;
+        if (val && typeof val === "object" && !Array.isArray(val)) {
+            out[key] = sanitizeForFirestore(val);
+        } else {
+            out[key] = val;
+        }
+    }
+    return out as T;
+}
+
 export async function saveSubscription(userId: string, data: SubscriptionData) {
     try {
         const userRef = doc(db, "users", userId);
+        const sanitized = sanitizeForFirestore(data as any);
         await setDoc(
             userRef,
             {
-                subscription: data,
+                subscription: sanitized,
                 updatedAt: new Date().toISOString(),
             },
             { merge: true }
