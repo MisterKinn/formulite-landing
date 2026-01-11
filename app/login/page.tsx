@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Sparkles, Lock, Mail, ArrowLeft } from "lucide-react";
@@ -498,6 +498,6 @@ function LoginContent() {
             </div>
         </>
     );
-};
+}
 
 export default Login;

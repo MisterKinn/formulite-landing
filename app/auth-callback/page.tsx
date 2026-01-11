@@ -31,7 +31,14 @@ export default function AuthCallback() {
     );
 }
 
-function AuthCallbackContent({ setUserInfo, setShowInfo, setCountdown, userInfo, countdown, showInfo }: {
+function AuthCallbackContent({
+    setUserInfo,
+    setShowInfo,
+    setCountdown,
+    userInfo,
+    countdown,
+    showInfo,
+}: {
     setUserInfo: React.Dispatch<React.SetStateAction<UserInfo | null>>;
     setShowInfo: React.Dispatch<React.SetStateAction<boolean>>;
     setCountdown: React.Dispatch<React.SetStateAction<number>>;
