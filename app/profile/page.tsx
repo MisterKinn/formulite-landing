@@ -829,14 +829,12 @@ function ProfileContent() {
                                     </p>
                                 </header>
 
-                                <div className="profile-form">
-                                    {/* 현재 플랜 */}
-                                    <div className="profile-section">
-                                        <h2 className="profile-section-title">
-                                            현재 플랜
-                                        </h2>
-                                        <div className="profile-current-plan">
-                                            <div className="profile-current-plan-icon">
+                                <div className="current-plan-card">
+                                    <div className="current-plan-header">
+                                        <div className="current-plan-left">
+                                            <div
+                                                className={`current-plan-icon ${subscription?.plan}`}
+                                            >
                                                 {subscription?.plan ===
                                                 "pro" ? (
                                                     <CrownIcon />
@@ -847,111 +845,112 @@ function ProfileContent() {
                                                     <SparklesIcon />
                                                 )}
                                             </div>
-                                            <div className="profile-current-plan-info">
-                                                <span className="profile-current-plan-name">
+
+                                            <div className="current-plan-text">
+                                                <div className="current-plan-title">
+                                                    <span className="current-plan-name">
+                                                        {subscription?.plan ===
+                                                        "pro"
+                                                            ? "프로 플랜"
+                                                            : subscription?.plan ===
+                                                              "plus"
+                                                            ? "플러스 플랜"
+                                                            : "무료 플랜"}
+                                                    </span>
+                                                </div>
+
+                                                <span className="current-plan-desc">
                                                     {subscription?.plan ===
                                                     "pro"
-                                                        ? "프로 플랜"
+                                                        ? "모든 프리미엄 기능을 이용 중입니다"
                                                         : subscription?.plan ===
                                                           "plus"
-                                                        ? "플러스 플랜"
-                                                        : "무료 플랜"}
-                                                </span>
-                                                <span className="profile-current-plan-desc">
-                                                    {subscription?.plan ===
-                                                    "pro"
-                                                        ? "모든 프리미엄 기능 사용 중"
-                                                        : subscription?.plan ===
-                                                          "plus"
-                                                        ? "전문 기능 사용 중"
-                                                        : "기본 기능을 사용 중입니다"}
+                                                        ? "전문 기능을 이용 중입니다"
+                                                        : "기본 기능을 이용 중입니다"}
                                                 </span>
                                             </div>
-                                            <span
-                                                className={`profile-current-plan-badge ${
-                                                    subscription?.status ===
-                                                    "cancelled"
-                                                        ? "cancelled"
-                                                        : ""
-                                                }`}
-                                            >
-                                                {subscription?.status ===
-                                                "cancelled"
-                                                    ? "취소됨"
-                                                    : subscription?.status ===
-                                                      "active"
-                                                    ? "활성화"
-                                                    : "무료"}
-                                            </span>
+                                        </div>
+
+                                        <div className="current-plan-center">
+                                            {(subscription?.billingStartDate ||
+                                                subscription?.startDate) && (
+                                                <div className="current-plan-center-item">
+                                                    <span className="label">
+                                                        청구 시작일
+                                                    </span>
+                                                    <span className="value">
+                                                        {new Date(
+                                                            subscription?.billingStartDate ||
+                                                                subscription?.startDate
+                                                        ).toLocaleDateString(
+                                                            "ko-KR"
+                                                        )}
+                                                    </span>
+                                                </div>
+                                            )}
+
+                                            <div className="current-plan-center-item">
+                                                <span className="label">
+                                                    다음 결제일
+                                                </span>
+                                                <span className="value">
+                                                    {subscription?.nextBillingDate
+                                                        ? new Date(
+                                                              subscription.nextBillingDate
+                                                          ).toLocaleDateString(
+                                                              "ko-KR"
+                                                          )
+                                                        : "-"}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        <div className="current-plan-right">
+                                            {subscription &&
+                                                subscription.plan !==
+                                                    "free" && (
+                                                    <button
+                                                        onClick={
+                                                            handleCancelSubscription
+                                                        }
+                                                        className="current-plan-cancel-btn current-plan-cancel-outline"
+                                                        disabled={
+                                                            subscription.status ===
+                                                            "cancelled"
+                                                        }
+                                                        aria-disabled={
+                                                            subscription.status ===
+                                                            "cancelled"
+                                                        }
+                                                    >
+                                                        {subscription.status ===
+                                                        "cancelled"
+                                                            ? "취소됨"
+                                                            : "구독 취소"}
+                                                    </button>
+                                                )}
                                         </div>
                                     </div>
 
-                                    {/* 구독 정보 (활성 구독이 있을 때만) */}
-                                    {subscription &&
-                                        subscription.plan !== "free" && (
-                                            <div className="profile-section">
-                                                <h2 className="profile-section-title">
-                                                    구독 정보
-                                                </h2>
-                                                <div className="profile-plan-card profile-subscription-card">
-                                                    <div className="profile-plan-info profile-subscription-details">
-                                                        <div>
-                                                            <span className="profile-sub-label">
-                                                                구독 시작일
-                                                            </span>
-                                                            <span className="profile-sub-value">
-                                                                {subscription.startDate
-                                                                    ? new Date(
-                                                                          subscription.startDate
-                                                                      ).toLocaleDateString(
-                                                                          "ko-KR"
-                                                                      )
-                                                                    : "-"}
-                                                            </span>
-                                                        </div>
+                                    <div className="current-plan-meta">
+                                        <div className="current-plan-meta-item">
+                                            <span className="label">
+                                                다음 결제일
+                                            </span>
+                                            <span className="value">
+                                                {subscription?.nextBillingDate
+                                                    ? new Date(
+                                                          subscription.nextBillingDate
+                                                      ).toLocaleDateString(
+                                                          "ko-KR"
+                                                      )
+                                                    : "-"}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
 
-                                                        {subscription.nextBillingDate &&
-                                                            subscription.status ===
-                                                                "active" && (
-                                                                <div>
-                                                                    <span className="profile-sub-label">
-                                                                        다음
-                                                                        결제일
-                                                                    </span>
-                                                                    <span className="profile-sub-value">
-                                                                        {new Date(
-                                                                            subscription.nextBillingDate
-                                                                        ).toLocaleDateString(
-                                                                            "ko-KR"
-                                                                        )}
-                                                                    </span>
-                                                                </div>
-                                                            )}
-                                                    </div>
-
-                                                    <div className="profile-sub-right">
-                                                        <div className="profile-sub-amount">
-                                                            {subscription.amount?.toLocaleString() ||
-                                                                0}
-                                                            원
-                                                        </div>
-
-                                                        {subscription.status ===
-                                                            "active" && (
-                                                            <button
-                                                                onClick={
-                                                                    handleCancelSubscription
-                                                                }
-                                                                className="profile-btn profile-btn-danger-outline"
-                                                            >
-                                                                구독 취소하기
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        )}
-
+                                <div className="profile-form">
                                     {/* 결제 주기 선택 */}
                                     <div className="profile-section">
                                         <h2 className="profile-section-title">

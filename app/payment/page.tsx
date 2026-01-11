@@ -8,7 +8,7 @@ import "../mobile.css";
 
 declare global {
     interface Window {
-        PaymentWidget: any;
+        PaymentWidge능t: any;
     }
 }
 

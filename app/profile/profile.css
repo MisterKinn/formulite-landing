@@ -199,6 +199,164 @@
     gap: 0.75rem;
 }
 
+.current-plan-card {
+    background: #1a1914;
+    border: 1px solid #262626;
+    border-radius: 16px;
+    padding: 20px;
+}
+
+.current-plan-header {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 16px;
+    align-items: center;
+}
+
+.current-plan-center {
+    display: flex;
+    flex-direction: row;
+    gap: 32px;
+    align-items: center;
+    justify-content: center;
+}
+
+.current-plan-center-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    min-width: 120px;
+}
+
+.current-plan-center-item .label {
+    font-size: 12px;
+    color: #9ca3af;
+}
+
+.current-plan-center-item .value {
+    font-weight: 800;
+    color: var(--foreground);
+    font-size: 1.125rem;
+}
+
+@media (max-width: 640px) {
+    .current-plan-center {
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .current-plan-center-item {
+        min-width: auto;
+    }
+}
+
+.current-plan-left {
+    display: flex;
+    gap: 14px;
+}
+
+.current-plan-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: #f3f4f6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.current-plan-icon.plus {
+    background: #eef2ff;
+    color: #4f46e5;
+}
+
+.current-plan-icon.pro {
+    background: #fff7ed;
+    color: #ea580c;
+}
+
+.current-plan-title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.current-plan-name {
+    font-weight: 600;
+}
+
+.current-plan-badge {
+    font-size: 12px;
+    padding: 4px 8px;
+    border-radius: 999px;
+}
+
+.current-plan-badge.active {
+    background: #ecfdf5;
+    color: #047857;
+}
+
+.current-plan-badge.cancelled {
+    background: #fef2f2;
+    color: #b91c1c;
+}
+
+.current-plan-desc {
+    font-size: 13px;
+    color: lightgray;
+    display: block;
+    margin-top: 1px;
+}
+
+.current-plan-meta {
+    display: none; /* moved into header center */
+}
+
+.current-plan-meta-item .label {
+    font-size: 12px;
+    color: #9ca3af;
+}
+
+.current-plan-meta-item .value {
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.current-plan-cancel-btn {
+    font-size: 13px;
+    color: #dc2626;
+    background: none;
+    border: none;
+    cursor: pointer;
+}
+
+/* Outlined red variant to match mock */
+.current-plan-cancel-outline {
+    padding: 10px 16px;
+    border-radius: 8px;
+    border: 2px solid #b91c1c;
+    color: #b91c1c;
+    background: transparent;
+    font-weight: 700;
+}
+
+.current-plan-cancel-outline:hover:not(:disabled) {
+    background: #b91c1c;
+    color: #fff;
+}
+
+.current-plan-cancel-outline:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.current-plan-start-inline {
+    font-size: 12px;
+    color: #9ca3af;
+    white-space: nowrap;
+}
+
 /* 위험 영역 - new minimal design */
 .danger-zone {
     margin-top: 1.5rem; /* aligned with section spacing */
@@ -743,6 +901,99 @@
     padding: 0.375rem 0.75rem;
     border-radius: 9999px;
     border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* Current plan header layout */
+.profile-current-plan-top {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 1rem;
+}
+
+.profile-current-plan-start-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.15rem;
+}
+
+.profile-current-plan-start-label {
+    font-size: 0.75rem;
+    color: var(--muted-foreground);
+}
+
+.profile-current-plan-start {
+    font-size: 1.125rem;
+    font-weight: 800;
+    color: var(--foreground);
+}
+
+.profile-current-plan-meta-row {
+    display: flex;
+    gap: 1.25rem;
+    margin-top: 0.6rem;
+    align-items: center;
+    color: var(--muted-foreground);
+    font-size: 0.9rem;
+}
+
+.profile-current-plan-meta-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.profile-payment-method {
+    font-weight: 700;
+    color: var(--foreground);
+}
+
+.profile-current-plan-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    align-items: flex-end;
+}
+
+@media (max-width: 640px) {
+    .profile-current-plan-top {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.25rem;
+    }
+
+    .profile-current-plan-actions {
+        align-items: flex-start;
+    }
+}
+
+.profile-current-plan-meta {
+    margin-top: 0.5rem;
+}
+
+.profile-current-plan-meta .profile-sub-label {
+    font-size: 0.75rem;
+    color: var(--muted-foreground);
+    display: block;
+}
+
+.profile-current-plan-meta .profile-sub-value {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--foreground);
+}
+
+.profile-current-plan-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    align-items: flex-end;
+}
+
+.profile-current-plan-cancel {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
 }
 
 /* 구독 정보 카드 (현재 플랜 카드 스타일과 유사하게) */
