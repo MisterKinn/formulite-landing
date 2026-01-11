@@ -1,6 +1,6 @@
 "use client";
+import React, { useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
 
 interface UserInfo {
     uid: string | null;
@@ -11,11 +11,35 @@ interface UserInfo {
 }
 
 export default function AuthCallback() {
-    const searchParams = useSearchParams();
     const router = useRouter();
     const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
     const [countdown, setCountdown] = useState(3);
     const [showInfo, setShowInfo] = useState(false);
+
+    // Suspense boundary for useSearchParams
+    return (
+        <React.Suspense fallback={<div>Loading...</div>}>
+            <AuthCallbackContent
+                setUserInfo={setUserInfo}
+                setShowInfo={setShowInfo}
+                setCountdown={setCountdown}
+                userInfo={userInfo}
+                countdown={countdown}
+                showInfo={showInfo}
+            />
+        </React.Suspense>
+    );
+}
+
+function AuthCallbackContent({ setUserInfo, setShowInfo, setCountdown, userInfo, countdown, showInfo }: {
+    setUserInfo: React.Dispatch<React.SetStateAction<UserInfo | null>>;
+    setShowInfo: React.Dispatch<React.SetStateAction<boolean>>;
+    setCountdown: React.Dispatch<React.SetStateAction<number>>;
+    userInfo: UserInfo | null;
+    countdown: number;
+    showInfo: boolean;
+}) {
+    const searchParams = useSearchParams();
 
     useEffect(() => {
         // Parse query parameters
