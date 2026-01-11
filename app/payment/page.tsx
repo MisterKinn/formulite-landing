@@ -25,15 +25,65 @@ export default function PaymentPage() {
 
     // TossPayments SDK가 window에 없으면 새로고침
     useEffect(() => {
+        // 디버깅: script 태그와 window.TossPayments 상태 출력
+        const scriptTag = document.getElementById("toss-sdk-script");
+        console.log("[TOSS SDK] scriptTag:", scriptTag);
+        if (scriptTag) {
+            console.log(
+                "[TOSS SDK] script src:",
+                (scriptTag as HTMLScriptElement).src
+            );
+        }
+        console.log(
+            "[TOSS SDK] window.TossPayments:",
+            typeof window.TossPayments,
+            window.TossPayments
+        );
         if (!window.TossPayments || typeof window.TossPayments !== "function") {
-            window.location.reload();
-        } else {
-            // SDK가 있으면 결제 진행
-            if (IS_RECURRING) {
-                handleRecurringPayment();
-            } else {
-                handleAutoPayment();
+            // 이미 script가 있으면 에러 표시
+            if (document.getElementById("toss-sdk-script")) {
+                setError(
+                    "결제 SDK를 불러올 수 없습니다. 네트워크 또는 브라우저 문제일 수 있습니다."
+                );
+                setLoading(false);
+                return;
             }
+            // script가 없으면 동적으로 삽입
+            const script = document.createElement("script");
+            script.id = "toss-sdk-script";
+            script.src = "https://js.tosspayments.com/v2/payment-widget";
+            script.async = true;
+            script.onload = () => {
+                if (
+                    window.TossPayments &&
+                    typeof window.TossPayments === "function"
+                ) {
+                    if (IS_RECURRING) {
+                        handleRecurringPayment();
+                    } else {
+                        handleAutoPayment();
+                    }
+                } else {
+                    setError(
+                        "결제 SDK가 로드되었으나 window.TossPayments가 없습니다. SDK 버전 또는 네트워크 문제일 수 있습니다."
+                    );
+                    setLoading(false);
+                }
+            };
+            script.onerror = () => {
+                setError(
+                    "결제 SDK 로드 실패. 네트워크 또는 브라우저 문제일 수 있습니다."
+                );
+                setLoading(false);
+            };
+            document.head.appendChild(script);
+            return;
+        }
+        // SDK가 있으면 결제 진행
+        if (IS_RECURRING) {
+            handleRecurringPayment();
+        } else {
+            handleAutoPayment();
         }
     }, []);
 
@@ -91,11 +141,16 @@ export default function PaymentPage() {
                 throw new Error("결제 설정이 올바르지 않습니다.");
             }
 
+            console.log("window.TossPayments:", window.TossPayments);
             const tossPayments = window.TossPayments(clientKey);
+            console.log("tossPayments 객체:", tossPayments);
             if (typeof tossPayments.requestBillingAuth !== "function") {
-                throw new Error(
-                    "SDK 함수(requestBillingAuth)가 없습니다. TossPayments SDK 버전 또는 로드 문제입니다."
+                setError(
+                    "SDK 함수(requestBillingAuth)가 없습니다. TossPayments SDK 버전 또는 로드 문제입니다. tossPayments 객체: " +
+                        JSON.stringify(tossPayments)
                 );
+                setLoading(false);
+                return;
             }
 
             const customerKey = `customer_${CUSTOMER_EMAIL}_${Date.now()}`;
