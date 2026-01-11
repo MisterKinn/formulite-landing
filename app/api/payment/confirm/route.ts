@@ -5,11 +5,16 @@ import {
     logPaymentError,
 } from "@/lib/paymentErrors";
 
+/**
+ * Toss Payments Confirm API
+ * - idempotent 처리
+ * - S008 / ALREADY_PROCESSED_PAYMENT 정상 처리
+ */
 export async function POST(request: NextRequest) {
     try {
         const { paymentKey, orderId, amount } = await request.json();
 
-        // 필수 파라미터 검증
+        /* ------------------ 1. 기본 검증 ------------------ */
         if (!paymentKey || !orderId || !amount) {
             return NextResponse.json(
                 { error: "필수 파라미터가 누락되었습니다" },
@@ -17,7 +22,6 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // 금액 검증
         const amountValidation = validatePaymentAmount(amount);
         if (!amountValidation.valid) {
             return NextResponse.json(
@@ -26,7 +30,6 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // 시크릿 키 확인
         const secretKey = process.env.TOSS_SECRET_KEY;
         if (!secretKey) {
             console.error("TOSS_SECRET_KEY is not set");
@@ -36,10 +39,9 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // Base64 인코딩 (Basic 인증)
         const basicAuth = Buffer.from(`${secretKey}:`).toString("base64");
 
-        // 토스페이먼츠 API로 결제 승인 요청
+        /* ------------------ 2. Toss confirm 요청 ------------------ */
         const response = await fetch(
             "https://api.tosspayments.com/v1/payments/confirm",
             {
@@ -58,14 +60,36 @@ export async function POST(request: NextRequest) {
 
         const data = await response.json();
 
+        /* ------------------ 3. 실패 처리 (중요) ------------------ */
         if (!response.ok) {
+            /**
+             * ✅ 이미 처리된 결제 (S008 / ALREADY_PROCESSED)
+             * → 실패가 아니라 "이미 성공"으로 간주
+             */
+            if (
+                data?.code === "ALREADY_PROCESSED_PAYMENT" ||
+                data?.message?.includes("기존 요청을 처리중")
+            ) {
+                return NextResponse.json({
+                    success: true,
+                    data: {
+                        paymentKey,
+                        orderId,
+                        amount,
+                        alreadyProcessed: true,
+                    },
+                });
+            }
+
             const paymentError = parseTossError(data);
+
             logPaymentError(paymentError, {
                 paymentKey,
                 orderId,
                 amount,
                 context: "payment_confirmation",
             });
+
             return NextResponse.json(
                 {
                     error: paymentError.userMessage,
@@ -75,7 +99,7 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // 결제 성공
+        /* ------------------ 4. 정상 성공 ------------------ */
         return NextResponse.json({
             success: true,
             data,
@@ -85,6 +109,7 @@ export async function POST(request: NextRequest) {
             error instanceof Error
                 ? error.message
                 : "알 수 없는 오류가 발생했습니다";
+
         logPaymentError(
             {
                 code: "INTERNAL_ERROR",
@@ -93,6 +118,7 @@ export async function POST(request: NextRequest) {
             },
             { context: "payment_confirmation_catch" }
         );
+
         return NextResponse.json(
             { error: "결제 처리 중 오류가 발생했습니다" },
             { status: 500 }

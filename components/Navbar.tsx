@@ -28,7 +28,7 @@ export function Navbar() {
                 <a href="/" title="유노바" className="nav-brand no-hover">
                     <div className="brand-mark no-hover">
                         <img
-                            src="nova-logo.png"
+                            src="../nova-logo.png"
                             alt="노바AI 로고"
                             className="brand-mark-img"
                         />

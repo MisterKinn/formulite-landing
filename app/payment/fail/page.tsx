@@ -2,6 +2,13 @@
 
 import React, { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import dynamic from "next/dynamic";
+import { Navbar } from "../../../components/Navbar";
+const Sidebar = dynamic(() => import("../../../components/Sidebar"), {
+    ssr: false,
+});
+import "../../style.css";
+import "../../mobile.css";
 
 export default function PaymentFailPage() {
     return (
@@ -28,105 +35,110 @@ function PaymentFailContent() {
     }, [searchParams]);
 
     return (
-        <div
-            style={{
-                maxWidth: 480,
-                margin: "48px auto",
-                padding: 32,
-                background: "#fff",
-                borderRadius: 16,
-                boxShadow: "0 2px 16px #0002",
-            }}
-        >
-            <h2
-                style={{
-                    color: "#d32f2f",
-                    marginBottom: 8,
-                    textAlign: "center",
-                }}
-            >
-                ❌ 결제 실패
-            </h2>
+        <>
+            <Navbar />
+            <Sidebar />
 
             <div
                 style={{
-                    background: "#ffebee",
-                    padding: 16,
-                    borderRadius: 8,
-                    marginBottom: 24,
-                    borderLeft: "4px solid #d32f2f",
+                    maxWidth: 480,
+                    margin: "48px auto",
+                    padding: 32,
+                    background: "#fff",
+                    borderRadius: 16,
+                    boxShadow: "0 2px 16px #0002",
                 }}
             >
-                <div style={{ marginBottom: 12 }}>
-                    <span
-                        style={{
-                            color: "#999",
-                            display: "block",
-                            fontSize: 12,
-                        }}
-                    >
-                        에러 코드
-                    </span>
-                    <span style={{ fontWeight: 600, color: "#d32f2f" }}>
-                        {errorCode}
-                    </span>
-                </div>
-
-                <div>
-                    <span
-                        style={{
-                            color: "#999",
-                            display: "block",
-                            fontSize: 12,
-                        }}
-                    >
-                        오류 메시지
-                    </span>
-                    <span style={{ fontWeight: 500 }}>{errorMessage}</span>
-                </div>
-            </div>
-
-            <div
-                style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 12,
-                }}
-            >
-                <button
-                    onClick={() => router.push("/payment")}
+                <h2
                     style={{
-                        width: "100%",
-                        padding: 16,
-                        background: "#0064FF",
-                        color: "#fff",
-                        border: "none",
-                        borderRadius: 8,
-                        fontWeight: 600,
-                        fontSize: 16,
-                        cursor: "pointer",
+                        color: "#d32f2f",
+                        marginBottom: 8,
+                        textAlign: "center",
                     }}
                 >
-                    다시 결제하기
-                </button>
+                    ❌ 결제 실패
+                </h2>
 
-                <button
-                    onClick={() => router.push("/")}
+                <div
                     style={{
-                        width: "100%",
+                        background: "#ffebee",
                         padding: 16,
-                        background: "#f5f5f5",
-                        color: "#333",
-                        border: "none",
                         borderRadius: 8,
-                        fontWeight: 600,
-                        fontSize: 16,
-                        cursor: "pointer",
+                        marginBottom: 24,
+                        borderLeft: "4px solid #d32f2f",
                     }}
                 >
-                    홈으로 돌아가기
-                </button>
+                    <div style={{ marginBottom: 12 }}>
+                        <span
+                            style={{
+                                color: "#999",
+                                display: "block",
+                                fontSize: 12,
+                            }}
+                        >
+                            에러 코드
+                        </span>
+                        <span style={{ fontWeight: 600, color: "#d32f2f" }}>
+                            {errorCode}
+                        </span>
+                    </div>
+
+                    <div>
+                        <span
+                            style={{
+                                color: "#999",
+                                display: "block",
+                                fontSize: 12,
+                            }}
+                        >
+                            오류 메시지
+                        </span>
+                        <span style={{ fontWeight: 500 }}>{errorMessage}</span>
+                    </div>
+                </div>
+
+                <div
+                    style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 12,
+                    }}
+                >
+                    <button
+                        onClick={() => router.push("/payment")}
+                        style={{
+                            width: "100%",
+                            padding: 16,
+                            background: "#0064FF",
+                            color: "#fff",
+                            border: "none",
+                            borderRadius: 8,
+                            fontWeight: 600,
+                            fontSize: 16,
+                            cursor: "pointer",
+                        }}
+                    >
+                        다시 결제하기
+                    </button>
+
+                    <button
+                        onClick={() => router.push("/")}
+                        style={{
+                            width: "100%",
+                            padding: 16,
+                            background: "#f5f5f5",
+                            color: "#333",
+                            border: "none",
+                            borderRadius: 8,
+                            fontWeight: 600,
+                            fontSize: 16,
+                            cursor: "pointer",
+                        }}
+                    >
+                        홈으로 돌아가기
+                    </button>
+                </div>
             </div>
-        </div>
+        </>
     );
 }
