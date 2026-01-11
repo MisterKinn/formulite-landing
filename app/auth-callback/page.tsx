@@ -19,11 +19,11 @@ export default function AuthCallback() {
 
     useEffect(() => {
         // Parse query parameters
-        const uid = searchParams?.get("uid");
-        const name = searchParams?.get("name");
-        const email = searchParams?.get("email");
-        const photoUrl = searchParams?.get("photo_url");
-        const tier = searchParams?.get("tier");
+        const uid = searchParams?.get("uid") ?? null;
+        const name = searchParams?.get("name") ?? null;
+        const email = searchParams?.get("email") ?? null;
+        const photoUrl = searchParams?.get("photo_url") ?? null;
+        const tier = searchParams?.get("tier") ?? null;
 
         if (uid || email) {
             const info: UserInfo = {
