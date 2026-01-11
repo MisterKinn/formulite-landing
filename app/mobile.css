@@ -1,0 +1,801 @@
+/* ========================================
+   📱 MOBILE STYLES - ORANGE THEME
+   ======================================== */
+
+body {
+    width: 100vw;
+    overflow-x: hidden;
+}
+
+/* ========================================
+   DESKTOP SIDEBAR HIDE
+   ======================================== */
+@media (min-width: 640px) {
+    .sidebar,
+    .mobile-sidebar-container {
+        display: none !important;
+    }
+}
+
+/* ========================================
+   MOBILE NAVIGATION (max-width: 640px)
+   ======================================== */
+@media (max-width: 640px) {
+    /* Show navbar on mobile */
+    .navbar {
+        display: flex !important;
+    }
+    
+    .navbar-inner {
+        padding: 0.75rem 1rem;
+    }
+
+    /* Mobile menu hamburger button */
+    .mobile-menu-button {
+        display: flex !important;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        width: 2.75rem;
+        height: 2.75rem;
+        background: rgba(24, 18, 15, 0.85);
+        border: 1px solid rgba(234, 88, 12, 0.2);
+        cursor: pointer;
+        z-index: 102;
+        position: fixed;
+        top: 1rem;
+        left: 1rem;
+        margin: 0;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        border-radius: 0.5rem;
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+    }
+
+    .hamburger-line {
+        width: 1.5rem;
+        height: 2px;
+        background: hsl(20.5 90.2% 48.2%);
+        border-radius: 2px;
+        margin: 0.2rem 0;
+        transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    /* Sidebar overlay */
+    .mobile-sidebar-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.6);
+        backdrop-filter: blur(4px);
+        z-index: 100;
+        display: none;
+    }
+
+    .mobile-sidebar-overlay.open {
+        display: block;
+    }
+
+    /* Sidebar panel */
+    .mobile-sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        height: 100vh;
+        width: 80vw;
+        max-width: 300px;
+        background: #fff;
+        border-right: 1px solid #e5e5e5;
+        box-shadow: 4px 0 24px rgba(0, 0, 0, 0.1);
+        z-index: 101;
+        transform: translateX(-100%);
+        transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+        display: flex;
+        flex-direction: column;
+        padding: 1.5rem 1.25rem;
+    }
+
+    .mobile-sidebar.open {
+        transform: translateX(0);
+    }
+
+    .mobile-sidebar-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 2rem;
+        padding-bottom: 1rem;
+        border-bottom: 1px solid #e5e5e5;
+    }
+
+    .mobile-sidebar-logo {
+        height: 2rem;
+        width: 2rem;
+        object-fit: contain;
+        border-radius: 0.375rem;
+    }
+
+    .mobile-sidebar-close {
+        background: none;
+        border: none;
+        color: #666;
+        font-size: 1.75rem;
+        cursor: pointer;
+        padding: 0.25rem;
+        border-radius: 0.375rem;
+        transition: color 0.2s ease, background 0.2s ease;
+    }
+
+    .mobile-sidebar-close:hover {
+        color: #1a1a1a;
+        background: #f0f0f0;
+    }
+
+    .mobile-sidebar-links {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .mobile-sidebar-link {
+        color: #444;
+        font-size: 1rem;
+        font-weight: 500;
+        text-decoration: none;
+        padding: 0.75rem 1rem;
+        border-radius: 0.5rem;
+        transition: color 0.2s ease, background 0.2s ease;
+    }
+
+    .mobile-sidebar-link:hover {
+        color: #1a1a1a;
+        background: #f5f5f5;
+    }
+
+    .mobile-sidebar-actions {
+        margin-top: auto;
+        padding-top: 1.5rem;
+        border-top: 1px solid #e5e5e5;
+    }
+}
+
+/* ========================================
+   MOBILE LAYOUT (max-width: 640px)
+   ======================================== */
+@media (max-width: 640px) {
+    /* Section containers */
+    .section-base,
+    .section-wide,
+    .section-cta {
+        padding: 3rem 1rem;
+    }
+
+    /* Hero section */
+    .hero {
+        padding-top: 4.5rem;
+        padding-bottom: 2rem;
+    }
+
+    .hero-stack {
+        margin-bottom: 1.5rem;
+    }
+
+    .hero-actions {
+        flex-direction: column;
+        gap: 1rem;
+    }
+
+    .hero-image-wrap {
+        padding: 0 1rem;
+        margin-top: 2rem;
+    }
+
+    .hero-main-image {
+        border-radius: 8px;
+    }
+
+    /* Typography */
+    .benefits-title,
+    .cta-title,
+    .features-title {
+        font-size: 1.5rem;
+        line-height: 1.25;
+        margin-bottom: 0.75rem;
+    }
+
+    .heading-lg,
+    .heading-md {
+        font-size: 1.25rem;
+    }
+
+    .benefits-subtitle,
+    .features-description,
+    .cta-description,
+    .body-base {
+        font-size: 0.875rem;
+        line-height: 1.6;
+    }
+
+    .title.hero {
+        font-size: 1.625rem;
+        line-height: 1.3;
+        margin-top: 0;
+        padding-top: 1rem;
+        padding-bottom: 0.5rem;
+    }
+
+    .subtitle {
+        font-size: 0.875rem;
+        margin-top: 0.5rem;
+        line-height: 1.6;
+    }
+
+    .benefits-subtitle {
+        margin-bottom: 2rem;
+    }
+
+    /* Buttons */
+    .cta-button,
+    .cta-button-primary,
+    .cta-button-secondary,
+    .primary-button,
+    .benefit-button,
+    .nav-cta {
+        font-size: 0.875rem;
+        padding: 0.625rem 1.25rem;
+    }
+
+    /* Navbar mobile */
+    .navbar-inner {
+        padding: 0.625rem 1rem;
+    }
+
+    .brand-mark {
+        width: 80px;
+    }
+
+    .nav-items {
+        display: none !important;
+    }
+
+    .nav-login-btn,
+    .nav-download-btn {
+        padding: 0.375rem 0.75rem;
+        font-size: 0.75rem;
+    }
+
+    .nav-actions-group {
+        gap: 0.375rem;
+    }
+
+    /* Grid layouts */
+    .grid-3,
+    .grid-4 {
+        grid-template-columns: 1fr;
+    }
+
+    /* Benefits section */
+    .benefits-layout {
+        gap: 2rem;
+    }
+
+    .benefits-main-title {
+        font-size: 1.5rem;
+    }
+
+    .benefits-main-desc {
+        font-size: 0.875rem;
+    }
+
+    .benefits-card-grid {
+        gap: 0.625rem;
+    }
+
+    .benefit-card-item {
+        padding: 1rem;
+    }
+
+    .benefit-card-number {
+        font-size: 1.5rem;
+    }
+
+    .benefit-card-title-new {
+        font-size: 0.9375rem;
+    }
+
+    .benefit-card-desc-new {
+        font-size: 0.75rem;
+    }
+
+    .benefit-section-label {
+        font-size: 0.75rem;
+    }
+
+    /* Dashboard preview */
+    .dashboard-card {
+        max-width: 100%;
+    }
+
+    .dashboard-surface {
+        min-height: 12rem;
+        padding: 0.75rem;
+    }
+
+    .dashboard-top-white-line {
+        top: 0;
+        width: 100%;
+        left: 0;
+        right: 0;
+    }
+
+    /* Features */
+    .features-grid {
+        gap: 0.75rem;
+    }
+
+    .feature-card {
+        padding: 1.25rem;
+    }
+
+    .feature-icon-circle {
+        width: 2.75rem;
+        height: 2.75rem;
+        margin-bottom: 1rem;
+    }
+
+    .feature-icon-circle svg {
+        width: 18px;
+        height: 18px;
+    }
+
+    .feature-item-title {
+        font-size: 1rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .feature-item-desc {
+        font-size: 0.8125rem;
+        line-height: 1.5;
+    }
+
+    .feature-title-small {
+        font-size: 1rem;
+    }
+
+    /* Testimonials */
+    .testimonial-card {
+        padding: 1rem;
+        width: 240px !important;
+    }
+
+    .testimonial-marquee {
+        padding: 1rem 0;
+    }
+
+    .testimonial-quote {
+        font-size: 0.8125rem;
+        line-height: 1.5;
+    }
+
+    .testimonial-author {
+        font-size: 0.8125rem;
+    }
+
+    .testimonial-role {
+        font-size: 0.6875rem;
+    }
+
+    .testimonial-track {
+        gap: 0.75rem;
+    }
+
+    .testimonial-marquee .testimonial-card {
+        width: 240px;
+    }
+
+    /* Pricing */
+    .pricing-grid {
+        gap: 0.625rem;
+    }
+
+    .pricing-card-new {
+        padding: 0.875rem;
+    }
+
+    .pricing-plan-name {
+        font-size: 0.75rem !important;
+        margin-bottom: 0.125rem !important;
+    }
+
+    .pricing-plan-desc,
+    .pricing-plan-subdesc {
+        font-size: 0.5625rem !important;
+        margin-bottom: 0.375rem !important;
+        margin-top: 0.25rem !important;
+        line-height: 1.3 !important;
+    }
+
+    .pricing-price {
+        font-size: 1rem !important;
+        margin-bottom: 0.125rem;
+    }
+
+    .pricing-period {
+        font-size: 0.5rem !important;
+    }
+
+    .pricing-price-row {
+        margin-bottom: 0.125rem;
+    }
+
+    .pricing-features-list {
+        gap: 0.25rem;
+        margin-bottom: 0.75rem;
+    }
+
+    .pricing-feature-item {
+        font-size: 0.625rem;
+    }
+
+    .pricing-feature-item svg {
+        width: 12px;
+        height: 12px;
+    }
+
+    .pricing-badge {
+        font-size: 0.5rem;
+        padding: 0.15rem 0.4rem;
+        top: -6px;
+    }
+
+    .pricing-cta-btn {
+        font-size: 0.6875rem;
+        padding: 0.4rem 0.75rem;
+    }
+
+    .pricing-card,
+    .pricing-popular,
+    .pricing-card-pro,
+    .pricing-card-plus {
+        padding: 0.875rem;
+    }
+
+    .pricing-popular {
+        transform: scale(1);
+    }
+
+    .pricing-popular:hover {
+        transform: scale(1.01);
+    }
+
+    .price-figure {
+        font-size: 1.125rem;
+    }
+
+    .free-benefits {
+        margin-top: 2rem;
+    }
+
+    .promo-box,
+    .promo-box-pro {
+        margin-top: 0.75rem;
+    }
+
+    .stack-4 {
+        gap: 0.5rem;
+    }
+
+    .free-cta,
+    .plus-cta,
+    .pro-cta {
+        height: 2.75rem;
+        font-size: 0.8125rem;
+    }
+
+    /* FAQ */
+    .faq-container {
+        padding: 0;
+    }
+
+    .faq-question {
+        font-size: 0.875rem;
+        padding: 1rem 0;
+    }
+
+    .faq-answer {
+        font-size: 0.8125rem;
+        padding-bottom: 1rem;
+    }
+
+    .faq-toggle {
+        font-size: 1.25rem;
+    }
+
+    /* CTA Section */
+    .section-cta {
+        padding: 2.5rem 1rem;
+        margin-bottom: 0;
+    }
+
+    /* Footer */
+    .footer {
+        margin: 0;
+        padding: 2rem 1.25rem 1.5rem;
+        border-radius: 0;
+        background: #1A1914;
+    }
+
+    .footer-inner {
+        max-width: 100%;
+    }
+
+    .footer-content {
+        grid-template-columns: 1fr;
+        gap: 1.5rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .footer-section-main {
+        text-align: left;
+    }
+
+    .footer-brand {
+        justify-content: flex-start;
+        margin-bottom: 0.75rem;
+    }
+
+    .footer-brand img {
+        width: 80px !important;
+        height: 40px !important;
+    }
+
+    .footer-description {
+        font-size: 0.75rem;
+        line-height: 1.8;
+        text-align: left;
+    }
+
+    .footer-sections {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 1rem;
+    }
+
+    .footer-column {
+        text-align: left;
+    }
+
+    .footer-section-title {
+        font-size: 0.75rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .footer-links {
+        font-size: 0.6875rem;
+        gap: 0.375rem;
+        align-items: flex-start;
+    }
+
+    .footer-link {
+        font-size: 0.6875rem;
+    }
+
+    .footer-bottom {
+        font-size: 0.625rem;
+        text-align: left;
+        padding-top: 1rem;
+        line-height: 1.5;
+    }
+
+    /* PC 버전 숨기기 */
+    .footer-info-pc {
+        display: none !important;
+    }
+
+    /* 모바일 버전 표시 */
+    .footer-info-mobile {
+        display: flex !important;
+        flex-direction: column;
+        gap: 0.375rem;
+    }
+
+    .footer-info-row {
+        flex-direction: column;
+        gap: 0.25rem;
+        align-items: flex-start;
+        margin-bottom: 0;
+    }
+
+    .footer-info-row span {
+        white-space: normal;
+    }
+
+    .footer-bottom > div {
+        margin-bottom: 0.5rem;
+    }
+
+    .footer-copyright {
+        font-size: 0.5625rem;
+        margin-top: 0.75rem;
+    }
+}
+
+/* ========================================
+   TABLET SIDEBAR (max-width: 767px)
+   ======================================== */
+@media (max-width: 767px) {
+    .sidebar-toggle {
+        display: none !important;
+    }
+
+    .hamburger {
+        display: none !important;
+    }
+
+    .sidebar-overlay {
+        display: none !important;
+    }
+
+    .sidebar {
+        display: none !important;
+    }
+
+    .sidebar-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1.5rem 1.5rem;
+        border-bottom: 1px solid #eee;
+    }
+
+    .sidebar-logo {
+        font-size: 1.375rem;
+        font-weight: 700;
+        color: #1a1a1a;
+        cursor: pointer;
+        letter-spacing: -0.02em;
+    }
+
+    .sidebar-logo-a {
+        text-decoration: none;
+    }
+
+    .sidebar-close {
+        background: #f5f5f5;
+        border: none;
+        color: #666;
+        font-size: 1.5rem;
+        cursor: pointer;
+        width: 2.5rem;
+        height: 2.5rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        transition: all 0.2s ease;
+    }
+
+    .sidebar-close:hover {
+        background: #eee;
+        color: #1a1a1a;
+    }
+
+    .sidebar-nav {
+        display: flex;
+        flex-direction: column;
+        padding: 1.25rem 0;
+    }
+
+    .sidebar-link {
+        background: none;
+        border: none;
+        color: #333;
+        font-size: 1.0625rem;
+        font-weight: 500;
+        cursor: pointer;
+        padding: 1rem 1.5rem;
+        text-align: left;
+        transition: all 0.2s ease;
+        text-decoration: none;
+        border-left: 3px solid transparent;
+    }
+
+    .sidebar-link:hover {
+        color: #000;
+        background: #f8f8f8;
+        border-left-color: #1a1a1a;
+    }
+
+    .nav-login-btn-enhanced {
+        width: 100%;
+        background: #1a1a1a;
+        color: #fff;
+        border: none;
+        border-radius: 0.75rem;
+        padding: 0.875rem 1.5rem;
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+
+    .nav-login-btn-enhanced:hover {
+        background: #333;
+    }
+
+    /* Hide sidebar on desktop */
+    @media (min-width: 768px) {
+        .sidebar-toggle,
+        .sidebar,
+        .sidebar-overlay {
+            display: none;
+        }
+    }
+}
+
+/* ========================================
+   SMALL TABLETS & LANDSCAPE PHONES
+   ======================================== */
+@media (min-width: 641px) and (max-width: 767px) {
+    .section-base,
+    .section-wide,
+    .section-cta {
+        padding: 5rem var(--padding-x-mobile);
+    }
+
+    .benefits-title {
+        font-size: 2rem;
+    }
+
+    .title.hero {
+        font-size: 2.5rem;
+    }
+
+    .grid-3 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .testimonial-marquee .testimonial-card {
+        width: 300px;
+    }
+
+    .pricing-popular {
+        transform: scale(1.02);
+    }
+
+    .footer {
+        padding-left: var(--padding-x-mobile);
+        padding-right: var(--padding-x-mobile);
+    }
+}
+
+/* ========================================
+   MEDIUM TABLETS
+   ======================================== */
+@media (min-width: 768px) and (max-width: 1023px) {
+    .navbar {
+        width: 100%;
+    }
+
+    .section-base,
+    .section-wide,
+    .section-cta {
+        padding: 5rem var(--padding-x-tablet);
+    }
+
+    .benefits-title {
+        font-size: 2.25rem;
+    }
+
+    .title.hero {
+        font-size: 3rem;
+    }
+
+    .pricing-popular {
+        transform: scale(1.03);
+    }
+
+    .footer {
+        padding-left: var(--padding-x-tablet);
+        padding-right: var(--padding-x-tablet);
+        margin: 0;
+    }
+}

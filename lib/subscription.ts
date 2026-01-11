@@ -1,0 +1,80 @@
+import {
+    getFirestore,
+    doc,
+    setDoc,
+    getDoc,
+    updateDoc,
+} from "firebase/firestore";
+import { app } from "../firebaseConfig";
+
+const db = getFirestore(app);
+
+export interface SubscriptionData {
+    plan: "free" | "plus" | "pro";
+    billingKey?: string;
+    customerKey?: string;
+    startDate: string;
+    nextBillingDate?: string;
+    status: "active" | "cancelled" | "expired";
+    amount?: number;
+}
+
+// Store billing key and subscription info
+export async function saveSubscription(userId: string, data: SubscriptionData) {
+    try {
+        const userRef = doc(db, "users", userId);
+        await setDoc(
+            userRef,
+            {
+                subscription: data,
+                updatedAt: new Date().toISOString(),
+            },
+            { merge: true }
+        );
+        return { success: true };
+    } catch (error) {
+        console.error("Error saving subscription:", error);
+        return { success: false, error };
+    }
+}
+
+// Get user's subscription
+export async function getSubscription(userId: string) {
+    try {
+        const userRef = doc(db, "users", userId);
+        const userDoc = await getDoc(userRef);
+
+        if (userDoc.exists()) {
+            return userDoc.data().subscription as SubscriptionData;
+        }
+        return null;
+    } catch (error) {
+        console.error("Error getting subscription:", error);
+        return null;
+    }
+}
+
+// Update user plan
+export async function updateUserPlan(
+    userId: string,
+    plan: "free" | "plus" | "pro"
+) {
+    try {
+        const userRef = doc(db, "users", userId);
+        await updateDoc(userRef, {
+            "subscription.plan": plan,
+            updatedAt: new Date().toISOString(),
+        });
+        return { success: true };
+    } catch (error) {
+        console.error("Error updating plan:", error);
+        return { success: false, error };
+    }
+}
+
+// Calculate next billing date (30 days from now)
+export function getNextBillingDate(): string {
+    const date = new Date();
+    date.setDate(date.getDate() + 30);
+    return date.toISOString();
+}

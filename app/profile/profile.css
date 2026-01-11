@@ -1,0 +1,1024 @@
+/* ========================================
+   프로필 페이지 - 새로운 디자인
+   그라데이션/그림자 없는 플랫 디자인
+   ======================================== */
+
+/* 컨테이너 */
+.profile-container {
+    min-height: 100vh;
+    background: var(--background);
+    padding-top: 80px;
+    /* Ensure bottom content isn't obscured by footer or viewport */
+    padding-bottom: 120px;
+}
+
+.profile-layout {
+    display: flex;
+    margin: 0 auto;
+    /* Let content define height; min-height capped the layout and felt clipped */
+    padding: 0 var(--padding-x);
+    align-items: flex-start;
+}
+
+@media (max-width: 1024px) {
+    .profile-layout {
+        padding: 0 var(--padding-x-tablet);
+    }
+}
+
+@media (max-width: 768px) {
+    .profile-layout {
+        padding: 0 var(--padding-x-mobile);
+    }
+}
+
+/* 사이드바 */
+.profile-sidebar {
+    width: 280px;
+    flex-shrink: 0;
+    border-right: 1px solid var(--border);
+    padding: 2rem 2rem 2rem 0;
+    position: sticky;
+    top: 80px;
+    /* Allow layout to grow; sidebar should not cap parent height */
+    height: auto;
+    max-height: calc(100vh - 80px);
+    overflow-y: auto;
+}
+
+.profile-back-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--muted-foreground);
+    text-decoration: none;
+    font-size: 0.875rem;
+    font-weight: 500;
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.profile-back-btn:hover {
+    background: var(--card);
+    color: var(--foreground);
+}
+
+.profile-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.profile-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--muted-foreground);
+    font-size: 0.9375rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+    text-align: left;
+    width: 100%;
+}
+
+.profile-nav-item:hover {
+    background: var(--card);
+    color: var(--foreground);
+}
+
+.profile-nav-item.active {
+    background: var(--card);
+    color: var(--foreground);
+    border-color: var(--border);
+}
+
+.profile-nav-item svg {
+    flex-shrink: 0;
+}
+
+/* 메인 콘텐츠 */
+.profile-main {
+    flex: 1;
+    /* Add bottom padding (not margin) so content doesn't feel clipped */
+    padding: 2.5rem 0 4rem 3rem;
+    max-width: 900px;
+    min-width: 0;
+    overflow-x: hidden;
+}
+
+.profile-section-header {
+    margin-bottom: 1.5rem; /* normalized */
+    padding-bottom: 1rem; /* normalized */
+    border-bottom: 1px solid var(--border);
+}
+
+.profile-title {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--foreground);
+    margin: 0 0 0.5rem 0;
+    letter-spacing: -0.02em;
+}
+
+.profile-subtitle {
+    font-size: 0.9375rem;
+    color: var(--muted-foreground);
+    margin: 0;
+}
+
+/* 폼 스타일 */
+.profile-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+.profile-field {
+    margin-bottom: 1.75rem; /* add more vertical gap between fields */
+}
+
+.profile-section {
+    padding: 1.5rem 0; /* normalized */
+    border-bottom: 1px solid var(--border);
+}
+
+.profile-section:last-of-type {
+    border-bottom: none;
+}
+
+.profile-section-title {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--muted-foreground);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin: 0 0 1.25rem 0;
+}
+
+/* 아바타 영역 */
+.profile-avatar-area {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+}
+
+.profile-avatar-wrapper {
+    width: 88px;
+    height: 88px;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 2px solid var(--border);
+    flex-shrink: 0;
+}
+
+.profile-avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.profile-avatar-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--card);
+    color: var(--muted-foreground);
+    font-size: 2rem;
+    font-weight: 600;
+}
+
+.profile-avatar-actions {
+    display: flex;
+    gap: 0.75rem;
+}
+
+/* 위험 영역 - new minimal design */
+.danger-zone {
+    margin-top: 1.5rem; /* aligned with section spacing */
+    padding: 1.5rem 1rem; /* normalized */
+    border: 1px solid rgba(220, 38, 38, 0.25);
+    background: rgba(220, 38, 38, 0.06);
+    border-radius: 10px;
+}
+
+.danger-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #dc2626;
+    margin: 0 0 0.75rem 0;
+}
+
+.danger-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.danger-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.danger-label {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--foreground);
+}
+
+.danger-desc {
+    font-size: 0.875rem;
+    color: var(--muted-foreground);
+}
+
+.danger-btn {
+    background: transparent;
+    color: #dc2626;
+    border: 1px solid #dc2626;
+    border-radius: 8px;
+    padding: 0.625rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+}
+
+.danger-btn:hover:not(:disabled) {
+    background: #dc2626;
+    color: #fff;
+}
+
+.danger-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.profile-input {
+    width: 100%;
+    margin-top: 0.5rem;
+    padding: 0.75rem 1rem;
+    font-size: 0.9375rem;
+    color: var(--foreground);
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    outline: none;
+    transition: border-color 0.15s ease;
+}
+
+.profile-input:focus {
+    border-color: var(--foreground);
+}
+
+.profile-input::placeholder {
+    color: var(--muted-foreground);
+}
+
+.profile-input-disabled {
+    background: var(--background);
+    color: var(--muted-foreground);
+    cursor: not-allowed;
+}
+
+.profile-hint {
+    font-size: 0.8125rem;
+    color: var(--muted-foreground);
+    margin-top: 0.5rem;
+}
+
+/* 플랜 카드 */
+.profile-plan-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.25rem 1.5rem;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+}
+
+.profile-plan-info {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.profile-plan-badge {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--muted-foreground);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.profile-plan-name {
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: var(--foreground);
+}
+
+/* 설정 아이템 */
+.profile-setting-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 0;
+}
+
+.profile-setting-item:first-child {
+    padding-top: 0;
+}
+
+.profile-setting-item:last-child {
+    padding-bottom: 0;
+}
+
+.profile-setting-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.profile-setting-label {
+    font-size: 0.9375rem;
+    font-weight: 500;
+    color: var(--foreground);
+}
+
+.profile-setting-desc {
+    font-size: 0.8125rem;
+    color: var(--muted-foreground);
+}
+
+/* 버튼 */
+.profile-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.625rem 1.25rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    transition: opacity 0.15s ease, background 0.15s ease;
+    text-decoration: none;
+}
+
+.profile-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.profile-btn-primary {
+    background: var(--foreground);
+    color: var(--background);
+}
+
+.profile-btn-primary:hover:not(:disabled) {
+    opacity: 0.9;
+}
+
+.profile-btn-secondary {
+    background: var(--card);
+    color: var(--foreground);
+    border: 1px solid var(--border);
+}
+
+.profile-btn-secondary:hover:not(:disabled) {
+    background: var(--border);
+}
+
+.profile-btn-ghost {
+    background: transparent;
+    color: var(--muted-foreground);
+}
+
+.profile-btn-ghost:hover:not(:disabled) {
+    color: var(--foreground);
+    background: var(--card);
+}
+
+.profile-btn-danger {
+    background: #dc2626;
+    color: #fff;
+}
+
+.profile-btn-danger:hover:not(:disabled) {
+    background: #b91c1c;
+}
+
+.profile-btn-danger-outline {
+    background: transparent;
+    color: #dc2626;
+    border: 1px solid #dc2626;
+}
+
+.profile-btn-danger-outline:hover:not(:disabled) {
+    background: #dc2626;
+    color: #fff;
+}
+
+.profile-btn-danger-outline:disabled {
+    opacity: 0.4;
+    border-color: var(--muted-foreground);
+    color: var(--muted-foreground);
+}
+
+/* 저장 버튼 */
+.profile-actions {
+    padding-top: 2rem;
+}
+
+.profile-btn-save {
+    width: 100%;
+    padding: 0.875rem 1.5rem;
+    font-size: 0.9375rem;
+}
+
+/* 알림 메시지 */
+.profile-alert {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.875rem 1rem;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    margin-top: 1rem;
+}
+
+.profile-alert-error {
+    background: rgba(220, 38, 38, 0.1);
+    color: #ef4444;
+    border: 1px solid rgba(220, 38, 38, 0.2);
+}
+
+.profile-alert-success {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--foreground);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* 위험 영역 */
+.profile-section-danger {
+    border: 1px solid rgba(220, 38, 38, 0.2);
+    border-radius: 10px;
+    padding: 1.5rem;
+    margin-top: 1.5rem;
+    background: rgba(220, 38, 38, 0.03);
+}
+
+.profile-section-title-danger {
+    color: #dc2626;
+}
+
+/* ========================================
+   반응형 - 태블릿
+   ======================================== */
+@media (max-width: 1024px) {
+    .profile-layout {
+        flex-direction: column;
+    }
+
+    .profile-sidebar {
+        width: 100%;
+        height: auto;
+        position: relative;
+        top: 0;
+        margin-bottom: 0.75rem; /* slightly more space before inputs */
+    }
+
+    .profile-label {
+        display: block;
+        font-size: 0.875rem;
+        font-weight: 500;
+        color: var(--foreground);
+        border-bottom: 1px solid var(--border);
+        padding: 1.5rem 0 1rem;
+    }
+
+    .profile-nav {
+        flex-direction: row;
+        gap: 0.5rem;
+    }
+
+    .profile-nav-item {
+        flex: 1;
+        justify-content: center;
+        padding: 0.625rem 1rem;
+    }
+
+    .profile-main {
+        padding: 2rem 0;
+        max-width: 100%;
+    }
+}
+
+/* ========================================
+   반응형 - 모바일
+   ======================================== */
+@media (max-width: 640px) {
+    .profile-container {
+        padding-top: 60px;
+        padding-bottom: 80px;
+    }
+
+    .profile-layout {
+        padding: 0 var(--padding-x-mobile);
+    }
+
+    .profile-sidebar {
+        padding: 1rem 0;
+    }
+
+    .profile-nav-item {
+        font-size: 0.8125rem;
+        padding: 0.5rem 0.75rem;
+    }
+
+    .profile-nav-item span {
+        display: none;
+    }
+
+    .profile-nav-item svg {
+        width: 20px;
+        height: 20px;
+    }
+
+    .profile-main {
+        padding: 1.5rem 0;
+    }
+
+    .profile-section-header {
+        margin-bottom: 1.25rem; /* scaled */
+        padding-bottom: 0.875rem; /* scaled */
+    }
+
+    .profile-title {
+        font-size: 1.375rem;
+    }
+
+    .profile-subtitle {
+        font-size: 0.875rem;
+    }
+
+    .profile-section {
+        padding: 1.25rem 0; /* scaled */
+    }
+
+    .profile-section-title {
+        font-size: 0.75rem;
+        margin-bottom: 1rem;
+    }
+
+    /* 아바타 영역 */
+    .profile-avatar-area {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+
+    .profile-avatar-wrapper {
+        width: 72px;
+        height: 72px;
+    }
+
+    .profile-avatar-placeholder {
+        font-size: 1.5rem;
+    }
+
+    .profile-avatar-actions {
+        flex-wrap: wrap;
+    }
+
+    /* 인풋 */
+    .profile-input {
+        padding: 0.625rem 0.875rem;
+        font-size: 1rem;
+    }
+
+    /* 플랜 카드 */
+    .profile-plan-card {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1rem;
+        padding: 1rem 1.25rem;
+    }
+
+    .profile-plan-info {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.25rem;
+    }
+
+    .profile-plan-card .profile-btn {
+        width: 100%;
+    }
+
+    /* 설정 아이템 */
+    .profile-setting-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.75rem;
+    }
+
+    .profile-setting-item .profile-btn {
+        width: 100%;
+    }
+
+    /* 버튼 */
+    .profile-btn {
+        padding: 0.5rem 1rem;
+        font-size: 0.8125rem;
+    }
+
+    .profile-btn-save {
+        padding: 0.75rem 1.25rem;
+        font-size: 0.875rem;
+    }
+
+    /* 알림 */
+    .profile-alert {
+        padding: 0.75rem;
+        font-size: 0.8125rem;
+    }
+
+    /* 위험 영역 */
+    .danger-zone {
+        margin-top: 1rem; /* scaled */
+        padding: 1rem; /* scaled */
+    }
+
+    .danger-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.75rem;
+    }
+
+    .danger-btn {
+        width: 100%;
+    }
+}
+
+/* ========================================
+   아주 작은 화면
+   ======================================== */
+@media (max-width: 380px) {
+    .profile-layout {
+        padding: 0 1rem;
+    }
+
+    .profile-main {
+        padding: 1rem 0;
+    }
+
+    .profile-nav {
+        gap: 0.25rem;
+    }
+
+    .profile-nav-item {
+        padding: 0.5rem;
+    }
+}
+
+/* ========================================
+   요금제 탭 스타일
+   ======================================== */
+
+/* 현재 플랜 카드 */
+.profile-current-plan {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.25rem 1.5rem;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+}
+
+.profile-current-plan-icon {
+    width: 2.5rem;
+    height: 2.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    color: #fff;
+}
+
+.profile-current-plan-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.profile-current-plan-name {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--foreground);
+}
+
+.profile-current-plan-desc {
+    font-size: 0.8125rem;
+    color: var(--muted-foreground);
+}
+
+.profile-current-plan-badge {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--foreground);
+    background: rgba(255, 255, 255, 0.1);
+    padding: 0.375rem 0.75rem;
+    border-radius: 9999px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* 결제 주기 토글 */
+.profile-billing-toggle {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.375rem;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+}
+
+.profile-billing-option {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    font-size: 0.9375rem;
+    font-weight: 500;
+    color: var(--muted-foreground);
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+.profile-billing-option:hover {
+    color: var(--foreground);
+}
+
+.profile-billing-option.active {
+    background: var(--foreground);
+    color: var(--background);
+}
+
+.profile-billing-discount {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    color: var(--background);
+    background: rgba(255, 255, 255, 0.9);
+    padding: 0.25rem 0.5rem;
+    border-radius: 9999px;
+}
+
+.profile-billing-option.active .profile-billing-discount {
+    background: rgba(255, 255, 255, 0.2);
+    color: var(--foreground);
+}
+
+/* 플랜 그리드 */
+.profile-plans-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1rem;
+}
+
+@media (min-width: 768px) {
+    .profile-plans-grid {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 0.75rem;
+    }
+}
+
+/* 플랜 아이템 */
+.profile-plan-item {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    padding: 1.5rem;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    transition: border-color 0.2s ease;
+}
+
+.profile-plan-item:hover {
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+.profile-plan-item.popular {
+    border: 1.5px solid #fff;
+}
+
+.profile-plan-item.current {
+    border-color: var(--border);
+}
+
+.profile-plan-popular-badge {
+    position: absolute;
+    top: -10px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    color: #13120d;
+    background: #fff;
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    letter-spacing: 0.03em;
+}
+
+.profile-plan-item-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.profile-plan-item-icon {
+    width: 2.25rem;
+    height: 2.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    color: #fff;
+    flex-shrink: 0;
+}
+
+.profile-plan-item-title {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.profile-plan-item-name {
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: var(--foreground);
+}
+
+.profile-plan-item-desc {
+    font-size: 0.8125rem;
+    color: var(--muted-foreground);
+    line-height: 1.4;
+}
+
+.profile-plan-item-price {
+    display: flex;
+    align-items: baseline;
+    gap: 0.125rem;
+    margin-bottom: 0.25rem;
+}
+
+.profile-plan-item-currency {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--foreground);
+}
+
+.profile-plan-item-amount {
+    font-size: 2rem;
+    font-weight: 800;
+    color: var(--foreground);
+    line-height: 1;
+}
+
+.profile-plan-item-period {
+    font-size: 0.875rem;
+    color: var(--muted-foreground);
+    margin-left: 0.25rem;
+}
+
+.profile-plan-item-yearly {
+    font-size: 0.8125rem;
+    color: var(--muted-foreground);
+    margin-bottom: 1rem;
+}
+
+.profile-plan-item-features {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 1.25rem 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    flex: 1;
+}
+
+.profile-plan-item-feature {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.8125rem;
+    color: var(--foreground);
+}
+
+.profile-plan-item-feature.disabled {
+    color: var(--muted-foreground);
+    opacity: 0.5;
+}
+
+.profile-plan-item-feature .plan-feature-icon {
+    flex-shrink: 0;
+    color: var(--foreground);
+}
+
+.profile-plan-item-feature.disabled .plan-feature-icon {
+    color: var(--muted-foreground);
+}
+
+.profile-plan-item-btn {
+    width: 100%;
+    margin-top: auto;
+}
+
+/* 로딩 스피너 */
+.profile-loading-spinner {
+    width: 1rem;
+    height: 1rem;
+    border: 2px solid transparent;
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: profile-spin 0.8s linear infinite;
+}
+
+@keyframes profile-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* 구독 안내 문구 */
+.profile-subscription-note {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 1rem;
+    font-size: 0.8125rem;
+    color: var(--muted-foreground);
+    text-align: center;
+    margin-top: 1rem;
+}
+
+.profile-subscription-note svg {
+    color: var(--foreground);
+    flex-shrink: 0;
+}
+
+/* 요금제 탭 반응형 */
+@media (max-width: 1024px) {
+    .profile-plans-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .profile-plan-item {
+        padding: 1.25rem;
+    }
+}
+
+@media (max-width: 640px) {
+    .profile-current-plan {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.75rem;
+        padding: 1rem;
+    }
+
+    .profile-current-plan-badge {
+        align-self: flex-start;
+    }
+
+    .profile-billing-toggle {
+        flex-direction: column;
+    }
+
+    .profile-billing-option {
+        padding: 0.625rem 1rem;
+    }
+
+    .profile-plan-item-amount {
+        font-size: 1.75rem;
+    }
+}
