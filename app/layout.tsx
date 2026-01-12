@@ -3,6 +3,10 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { AuthProvider } from "../context/AuthContext";
 import { Analytics } from "@vercel/analytics/next";
 
+// Global styles
+import "./style.css";
+import "./mobile.css";
+
 const geistSans = Geist({
     variable: "--font-geist-sans",
     subsets: ["latin"],
@@ -53,7 +57,12 @@ export default function RootLayout({
 }>) {
     return (
         <html lang="ko">
-            <head></head>
+            <head>
+                <meta
+                    name="viewport"
+                    content="width=device-width, initial-scale=1"
+                />
+            </head>
             <body
                 className={`${geistSans.variable} ${geistMono.variable} antialiased`}
                 style={{ padding: 0, margin: 0 }}

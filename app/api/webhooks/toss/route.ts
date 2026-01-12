@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { saveSubscription, getSubscription, getNextBillingDate } from "@/lib/subscription";
+import {
+    saveSubscription,
+    getSubscription,
+    getNextBillingDate,
+} from "@/lib/subscription";
 import {
     sendPaymentReceipt,
     sendPaymentFailureNotification,
 } from "@/lib/email";
+import { doc, getFirestore, setDoc } from "firebase/firestore";
+import { app } from "@/firebaseConfig";
 
 // Toss Payments Webhook Handler
 export async function POST(request: NextRequest) {
@@ -91,16 +97,30 @@ async function handlePaymentCompleted(data: any) {
 
         // Map amount to a plan (adjust prices as needed)
         const plan = amountToPlan(Number(data.totalAmount ?? data.amount ?? 0));
+        const planPrice = Number(data.totalAmount ?? data.amount ?? 0);
         if (plan) {
-            // Save subscription info to Firestore
+            // Create a product id and subscription id for one-time purchase
+            const productId = `product_${plan}`;
+            const subscriptionId = `sub_${Date.now()}`;
+
             try {
-                await saveSubscription(userId, {
+                await createProductIfNotExists(productId, {
                     plan,
-                    amount: Number(data.totalAmount ?? data.amount ?? 0),
+                    price: planPrice,
+                });
+
+                // Save subscription info to Firestore (one-time purchase -> isRecurring: false)
+                await createSubscriptionEntry(userId, {
+                    plan,
+                    productId,
+                    subscriptionId,
+                    amount: planPrice,
                     startDate: new Date().toISOString(),
                     status: "active",
                     customerKey: data.customerKey,
+                    isRecurring: false,
                 });
+
                 console.log(`Updated plan for user ${userId} -> ${plan}`);
             } catch (err) {
                 console.error(
@@ -144,10 +164,33 @@ async function handlePaymentCancelled(data: any) {
         // Update subscription status if needed
         const subscription = await getSubscription(userId);
         if (subscription) {
-            await saveSubscription(userId, {
+            const updated = {
                 ...subscription,
                 status: "cancelled",
-            });
+                cancelledAt: new Date().toISOString(),
+            } as any;
+            await saveSubscription(userId, updated);
+
+            // If a subscriptionId exists, also mark it cancelled in a subscriptions collection (best-effort)
+            try {
+                if (subscription.subscriptionId) {
+                    const subRef = doc(
+                        getFirestore(app),
+                        "subscriptions",
+                        subscription.subscriptionId
+                    );
+                    await setDoc(
+                        subRef,
+                        {
+                            status: "cancelled",
+                            cancelledAt: new Date().toISOString(),
+                        },
+                        { merge: true }
+                    );
+                }
+            } catch (err) {
+                // ignore
+            }
         }
     }
 }
@@ -159,19 +202,40 @@ async function handleBillingKeyIssued(data: any) {
     if (userId) {
         try {
             // default to monthly unless we can infer otherwise
-            const billingCycle: "monthly" | "yearly" = (data.billingCycle as any) || "monthly";
-            await saveSubscription(userId, {
-                plan: "plus",
+            const billingCycle: "monthly" | "yearly" =
+                (data.billingCycle as any) || "monthly";
+
+            // Map amount to plan if possible
+            const plan =
+                amountToPlan(Number(data.totalAmount ?? data.amount ?? 0)) ||
+                "plus";
+
+            // Generate productId and subscriptionId server-side
+            const productId = `product_${plan}`;
+            const subscriptionId = `sub_${Date.now()}`;
+
+            await createProductIfNotExists(productId, {
+                plan,
+                price: Number(data.totalAmount ?? data.amount ?? 0),
+            });
+
+            await createSubscriptionEntry(userId, {
+                plan: plan as any,
                 billingKey: data.billingKey,
                 customerKey: data.customerKey,
                 isRecurring: true,
                 billingCycle,
+                productId,
+                subscriptionId,
                 startDate: new Date().toISOString(),
                 nextBillingDate: getNextBillingDate(billingCycle),
                 status: "active",
                 amount: Number(data.totalAmount ?? data.amount ?? 0),
             });
-            console.log(`Saved billing key for user ${userId}`);
+
+            console.log(
+                `Saved billing key and subscription for user ${userId} -> ${subscriptionId}`
+            );
         } catch (err) {
             console.error("Failed to save billing key:", err);
         }
@@ -203,7 +267,10 @@ async function handleBillingPaymentCompleted(data: any) {
                 });
             }
         } catch (err) {
-            console.error("Failed to update subscription after billing payment:", err);
+            console.error(
+                "Failed to update subscription after billing payment:",
+                err
+            );
         }
     }
 }

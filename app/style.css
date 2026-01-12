@@ -66,6 +66,26 @@ body {
     line-height: 1.6;
 }
 
+/* Responsive media helpers */
+img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+}
+
+svg {
+    max-width: 100%;
+    height: auto;
+}
+
+input,
+textarea,
+select,
+button {
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
 nextjs-portal {
     display: none;
 }

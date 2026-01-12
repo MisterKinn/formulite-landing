@@ -17,6 +17,10 @@ export interface SubscriptionData {
     isRecurring?: boolean;
     /** 'monthly' or 'yearly' when recurring */
     billingCycle?: "monthly" | "yearly";
+    /** productId refers to the product catalog item we store */
+    productId?: string;
+    /** subscriptionId is our server-side id for the subscription contract */
+    subscriptionId?: string;
     startDate: string;
     nextBillingDate?: string;
     status: "active" | "cancelled" | "expired";
@@ -58,6 +62,49 @@ export async function saveSubscription(userId: string, data: SubscriptionData) {
     }
 }
 
+// Create product if missing (product catalog stored under 'products')
+export async function createProductIfNotExists(
+    productId: string,
+    productData: { plan: SubscriptionData["plan"]; price: number }
+) {
+    try {
+        const productRef = doc(db, "products", productId);
+        const prod = await getDoc(productRef);
+        if (!prod.exists()) {
+            await setDoc(productRef, {
+                id: productId,
+                plan: productData.plan,
+                price: productData.price,
+                createdAt: new Date().toISOString(),
+            });
+        }
+        return { success: true };
+    } catch (err) {
+        console.error("Failed to create product:", err);
+        return { success: false, error: err };
+    }
+}
+
+// Create a subscription record (server-side subscription contract id) and save under user's subscription
+export async function createSubscriptionEntry(
+    userId: string,
+    data: SubscriptionData & { productId: string; subscriptionId: string }
+) {
+    try {
+        // ensure product exists (best-effort)
+        await createProductIfNotExists(data.productId, {
+            plan: data.plan,
+            price: data.amount ?? 0,
+        });
+
+        // save subscription under user
+        return await saveSubscription(userId, data);
+    } catch (err) {
+        console.error("Failed to create subscription entry:", err);
+        return { success: false, error: err };
+    }
+}
+
 // Get user's subscription
 export async function getSubscription(userId: string) {
     try {
@@ -93,7 +140,9 @@ export async function updateUserPlan(
 }
 
 // Calculate next billing date (30 days for monthly, 365 days for yearly)
-export function getNextBillingDate(billingCycle: "monthly" | "yearly" = "monthly"): string {
+export function getNextBillingDate(
+    billingCycle: "monthly" | "yearly" = "monthly"
+): string {
     const date = new Date();
     if (billingCycle === "monthly") {
         date.setDate(date.getDate() + 30);

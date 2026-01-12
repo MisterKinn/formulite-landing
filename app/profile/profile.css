@@ -694,7 +694,18 @@
         padding: 0 var(--padding-x-mobile);
     }
 
+    /* Hide desktop navbar and sidebar on small screens, show mobile sidebar container */
+    .desktop-navbar {
+        display: none;
+    }
+
+    .mobile-sidebar-container {
+        display: block;
+    }
+
+    /* Hide the left profile sidebar on small devices to avoid duplication with mobile menu */
     .profile-sidebar {
+        display: none;
         padding: 1rem 0;
     }
 
@@ -714,6 +725,7 @@
 
     .profile-main {
         padding: 1.5rem 0;
+        padding-left: 0;
     }
 
     .profile-section-header {
@@ -722,7 +734,7 @@
     }
 
     .profile-title {
-        font-size: 1.375rem;
+        font-size: 1.25rem;
     }
 
     .profile-subtitle {
@@ -742,16 +754,16 @@
     .profile-avatar-area {
         flex-direction: column;
         align-items: flex-start;
-        gap: 1rem;
+        gap: 0.75rem;
     }
 
     .profile-avatar-wrapper {
-        width: 72px;
-        height: 72px;
+        width: 64px;
+        height: 64px;
     }
 
     .profile-avatar-placeholder {
-        font-size: 1.5rem;
+        font-size: 1.25rem;
     }
 
     .profile-avatar-actions {

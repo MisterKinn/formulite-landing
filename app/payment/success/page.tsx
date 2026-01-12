@@ -104,7 +104,10 @@ function Success({
 
                 {resultSubscription?.isRecurring ? (
                     <div style={{ marginTop: 18, color: "#0b1220" }}>
-                        정기결제가 등록되었습니다 {resultSubscription?.billingCycle === "yearly" ? "(연간)" : "(월간)"}
+                        정기결제가 등록되었습니다{" "}
+                        {resultSubscription?.billingCycle === "yearly"
+                            ? "(연간)"
+                            : "(월간)"}
                     </div>
                 ) : null}
 

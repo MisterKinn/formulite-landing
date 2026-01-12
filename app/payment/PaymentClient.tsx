@@ -16,7 +16,8 @@ export default function PaymentClient() {
     const amount = Number(searchParams.get("amount") || 9900);
     const orderName = searchParams.get("orderName") || "Nova AI 결제";
     const recurring = searchParams.get("recurring") === "true";
-    const billingCycle = (searchParams.get("billingCycle") as "monthly" | "yearly") || "monthly";
+    const billingCycle =
+        (searchParams.get("billingCycle") as "monthly" | "yearly") || "monthly";
 
     const widgetRef = useRef<any>(null);
     const [ready, setReady] = useState(false);
@@ -251,9 +252,11 @@ export default function PaymentClient() {
                     }}
                 >
                     {ready
-                        ? (recurring
-                            ? `${amount.toLocaleString()}원 · 정기 결제 등록 (${billingCycle === 'yearly' ? '연간' : '월간'})`
-                            : `${amount.toLocaleString()}원 결제하기`)
+                        ? recurring
+                            ? `${amount.toLocaleString()}원 · 정기 결제 등록 (${
+                                  billingCycle === "yearly" ? "연간" : "월간"
+                              })`
+                            : `${amount.toLocaleString()}원 결제하기`
                         : "로딩 중..."}
                 </button>
             </div>

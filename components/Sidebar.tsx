@@ -18,9 +18,10 @@ export default function Sidebar() {
     return (
         <>
             <button
-                className={`sidebar-toggle`}
+                className={`sidebar-toggle mobile-menu-button`}
                 onClick={() => setIsOpen(true)}
                 aria-label="Open menu"
+                aria-expanded={isOpen}
                 style={{ display: isOpen ? "none" : undefined }}
             >
                 <span className={`hamburger${isOpen ? " open" : ""}`}>

@@ -25,6 +25,15 @@ body {
     .navbar {
         display: flex !important;
     }
+
+    /* Hide desktop navbar and show mobile sidebar container */
+    .desktop-navbar {
+        display: none !important;
+    }
+
+    .mobile-sidebar-container {
+        display: block !important;
+    }
     
     .navbar-inner {
         padding: 0.75rem 1rem;
