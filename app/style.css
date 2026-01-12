@@ -1580,12 +1580,6 @@ nextjs-portal {
     }
 }
 
-@media (max-width: 768px) {
-    .footer {
-        padding: 3rem var(--padding-x-mobile) 1.5rem;
-    }
-}
-
 .footer-inner {
     max-width: 100%;
 }
@@ -1643,18 +1637,6 @@ nextjs-portal {
     /* left-align titles on wider screens for readability */
     .footer-section-title {
         text-align: left;
-    }
-}
-
-/* Collapse to a single column on very small screens to prevent overflow */
-@media (max-width: 420px) {
-    .footer-sections {
-        grid-template-columns: 1fr;
-        gap: 1rem;
-    }
-    .footer-section-title,
-    .footer-links {
-        text-align: center;
     }
 }
 

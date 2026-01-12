@@ -4,7 +4,8 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
     const returnTo = url.searchParams.get("return_to") || "";
 
-    const clientId = process.env.KAKAO_CLIENT_ID;
+    const clientId =
+        process.env.KAKAO_CLIENT_ID || process.env.KAKAO_REST_API_KEY;
     const redirectUri = `${url.origin}/api/auth/kakao/callback`;
 
     if (!clientId) {
@@ -14,7 +15,17 @@ export async function GET(req: Request) {
         );
     }
 
-    const state = Math.random().toString(36).slice(2);
+    if (!process.env.KAKAO_CLIENT_ID && process.env.KAKAO_REST_API_KEY) {
+        console.warn(
+            "[KAKAO start] using KAKAO_REST_API_KEY as client_id fallback for local testing"
+        );
+    }
+
+    // Prefer client-provided state when supplied to support client-side exchange fallback flows
+    const state = url.searchParams.get("state") || Math.random().toString(36).slice(2);
+    if (url.searchParams.get("state")) {
+        console.info("[KAKAO start] using provided state from client");
+    }
 
     const authorizeUrl = new URL("https://kauth.kakao.com/oauth/authorize");
     authorizeUrl.searchParams.set("response_type", "code");

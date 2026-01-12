@@ -1,0 +1,99 @@
+
+> formulite-landing@0.1.0 dev
+> next dev
+
+   ▲ Next.js 16.0.10 (Turbopack)
+   - Local:         http://localhost:3000
+   - Network:       http://172.28.8.179:3000
+   - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 594ms
+ GET /api/admin/health 200 in 258ms (compile: 210ms, render: 48ms)
+[firebaseAdmin] initialized { projectId: 'formulite-5b963' }
+[password-reset] generatePasswordResetLink failed {
+  eventId: 'pr_mkb4fh7n_upi7og',
+  error: Error: Domain not allowlisted by project
+      at async POST (app/api/auth/password-reset/route.ts:26:22)
+    24 |         // Generate a Firebase password reset link using Admin SDK
+    25 |         const admin = getFirebaseAdmin();
+  > 26 |         const link = await admin.auth().generatePasswordResetLink(
+       |                      ^
+    27 |             email,
+    28 |             actionCodeSettings
+    29 |         ); {
+    errorInfo: {
+      code: 'auth/unauthorized-continue-uri',
+      message: 'Domain not allowlisted by project'
+    },
+    codePrefix: 'auth'
+  }
+}
+[password-reset] diagnostic written to /var/folders/gh/4znr0ghx0h5bstzcsc3y548c0000gn/T/formulite-password-reset-errors.log
+[password-reset] generatePasswordResetLink without continue URL failed ReferenceError: email is not defined
+    at POST (app/api/auth/password-reset/route.ts:220:79)
+  218 |                 try {
+  219 |                     const admin = getFirebaseAdmin();
+> 220 |                     const link = await admin.auth().generatePasswordResetLink(email);
+      |                                                                               ^
+  221 |                     await sendPasswordResetEmailToUser(email, link);
+  222 |                     console.info("[password-reset] successful generatePasswordResetLink() without continue URL", { email });
+  223 |                     return NextResponse.json({ ok: true }, { status: 200 });
+[password-reset] identity-toolkit fallback after unauthorized-continue-uri failed ReferenceError: email is not defined
+    at POST (app/api/auth/password-reset/route.ts:230:46)
+  228 |                 const apiKey = process.env.FIREBASE_API_KEY || process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
+  229 |                 if (apiKey) {
+> 230 |                     const safeEmail = String(email || "");
+      |                                              ^
+  231 |                     const resp = await fetch(
+  232 |                         `https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${encodeURIComponent(apiKey)}`,
+  233 |                         {
+ POST /api/auth/password-reset 500 in 1707ms (compile: 282ms, render: 1425ms)
+[/api/debug/firebase-admin] adminSecret present: true
+[/api/debug/firebase-admin] provided secret present: true
+[/api/debug/firebase-admin] provided matches configured: true
+ GET /api/debug/firebase-admin?admin_secret=admin_secret_67890_secure 200 in 43ms (compile: 40ms, render: 3ms)
+ GET /api/debug/simulate-naver?admin_secret=admin_secret_67890_secure&id=test999&email=you@example.com&name=Test+User 200 in 48ms (compile: 46ms, render: 2ms)
+[password-reset] generatePasswordResetLink failed {
+  eventId: 'pr_mkb4g5x5_6ych6b',
+  error: Error: Domain not allowlisted by project
+      at async POST (app/api/auth/password-reset/route.ts:26:22)
+    24 |         // Generate a Firebase password reset link using Admin SDK
+    25 |         const admin = getFirebaseAdmin();
+  > 26 |         const link = await admin.auth().generatePasswordResetLink(
+       |                      ^
+    27 |             email,
+    28 |             actionCodeSettings
+    29 |         ); {
+    errorInfo: {
+      code: 'auth/unauthorized-continue-uri',
+      message: 'Domain not allowlisted by project'
+    },
+    codePrefix: 'auth'
+  }
+}
+[password-reset] diagnostic written to /var/folders/gh/4znr0ghx0h5bstzcsc3y548c0000gn/T/formulite-password-reset-errors.log
+[password-reset] generatePasswordResetLink without continue URL failed ReferenceError: email is not defined
+    at POST (app/api/auth/password-reset/route.ts:220:79)
+  218 |                 try {
+  219 |                     const admin = getFirebaseAdmin();
+> 220 |                     const link = await admin.auth().generatePasswordResetLink(email);
+      |                                                                               ^
+  221 |                     await sendPasswordResetEmailToUser(email, link);
+  222 |                     console.info("[password-reset] successful generatePasswordResetLink() without continue URL", { email });
+  223 |                     return NextResponse.json({ ok: true }, { status: 200 });
+[password-reset] attempting Identity Toolkit fallback { keyPresent: true, apiKeyPrefix: 'AIzaSy' }
+[password-reset] identity-toolkit fallback after unauthorized-continue-uri failed ReferenceError: email is not defined
+    at POST (app/api/auth/password-reset/route.ts:231:46)
+  229 |                 if (apiKey) {
+  230 |                     console.info("[password-reset] attempting Identity Toolkit fallback", { keyPresent: true, apiKeyPrefix: String(apiKey).slice(0,6) });
+> 231 |                     const safeEmail = String(email || "");
+      |                                              ^
+  232 |                     const resp = await fetch(
+  233 |                         `https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${encodeURIComponent(apiKey)}`,
+  234 |                         {
+ POST /api/auth/password-reset 500 in 1052ms (compile: 48ms, render: 1004ms)
+ GET /api/debug/simulate-naver?admin_secret=admin_secret_67890_secure&id=test999&email=you@example.com&name=Test+User 200 in 34ms (compile: 20ms, render: 14ms)
+ GET /api/auth/naver/callback?code=zZosdbOsTfaVzLHJWC&state=6f5e2x0lev6 400 in 81ms (compile: 79ms, render: 3ms)
+   Reload env: .env.local
+[?25h

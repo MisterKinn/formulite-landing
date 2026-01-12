@@ -1,10 +1,17 @@
 "use client";
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, {
+    createContext,
+    useContext,
+    useEffect,
+    useState,
+    useRef,
+} from "react";
 import {
     getAuth,
     onAuthStateChanged,
     User,
     updateProfile,
+    updateEmail,
     signOut,
 } from "firebase/auth";
 import { app } from "../firebaseConfig";
@@ -84,24 +91,78 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
     const [avatar, setAvatar] = useState<string | null>(null);
+    const initialAuthCheckedRef = useRef(false);
+    const prevUserRef = useRef<User | null>(null);
 
     useEffect(() => {
         const auth = getAuth(app);
+
         const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
             setUser(firebaseUser);
             setLoading(false);
-            // load avatar from Firestore when user signs in
+
+            // If this is not the initial auth check, and we just transitioned
+            // from unauthenticated -> authenticated, redirect to /profile.
+            try {
+                if (!initialAuthCheckedRef.current) {
+                    initialAuthCheckedRef.current = true;
+                } else {
+                    if (firebaseUser && !prevUserRef.current) {
+                        try {
+                            // Immediately navigate to profile after a fresh login
+                            window.location.href = "/profile";
+                        } catch (e) {
+                            /* ignore navigation errors */
+                        }
+                    }
+                }
+            } catch (e) {
+                /* noop */
+            }
+
+            prevUserRef.current = firebaseUser;
+
+            // load avatar from Firestore when user signs in; also ensure basic profile fields are present
             (async () => {
                 try {
                     if (firebaseUser) {
                         const db = getFirestore(app);
                         const docRef = doc(db, "users", firebaseUser.uid);
                         const snap = await getDoc(docRef);
-                        if (snap.exists()) {
-                            const data = snap.data() as any;
-                            setAvatar(data?.avatar ?? null);
+
+                        const avatarFromAuth =
+                            (firebaseUser.photoURL as string) || null;
+                        const displayNameFromAuth =
+                            firebaseUser.displayName || null;
+                        const emailFromAuth = firebaseUser.email || null;
+
+                        if (!snap.exists()) {
+                            // create initial doc from Auth profile when missing
+                            await setDoc(
+                                docRef,
+                                {
+                                    avatar: avatarFromAuth,
+                                    displayName: displayNameFromAuth,
+                                    email: emailFromAuth,
+                                    createdAt: Date.now(),
+                                },
+                                { merge: true }
+                            );
+                            setAvatar(avatarFromAuth);
                         } else {
-                            setAvatar(null);
+                            const data = snap.data() as any;
+                            // If Firestore doc is missing key profile fields, merge values from Auth
+                            const updates: any = {};
+                            if (!data?.displayName && displayNameFromAuth)
+                                updates.displayName = displayNameFromAuth;
+                            if (!data?.email && emailFromAuth)
+                                updates.email = emailFromAuth;
+                            if (!data?.avatar && avatarFromAuth)
+                                updates.avatar = avatarFromAuth;
+                            if (Object.keys(updates).length > 0) {
+                                await setDoc(docRef, updates, { merge: true });
+                            }
+                            setAvatar(data?.avatar ?? avatarFromAuth);
                         }
                     } else {
                         setAvatar(null);
@@ -124,6 +185,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 password
             );
             setUser(cred.user);
+
+            // Ensure Firestore user doc has basic profile fields (displayName/email/avatar)
+            try {
+                const db = getFirestore(app);
+                const docRef = doc(db, "users", cred.user.uid);
+                const snap = await getDoc(docRef);
+                const avatarFromAuth = (cred.user.photoURL as string) || null;
+                if (!snap.exists()) {
+                    await setDoc(
+                        docRef,
+                        {
+                            avatar: avatarFromAuth,
+                            displayName: cred.user.displayName || null,
+                            email: cred.user.email || null,
+                            createdAt: Date.now(),
+                        },
+                        { merge: true }
+                    );
+                    setAvatar(avatarFromAuth);
+                } else {
+                    setAvatar((snap.data() as any).avatar ?? avatarFromAuth);
+                }
+            } catch (err) {
+                console.warn(
+                    "[AuthContext] Failed to ensure user doc after email login",
+                    err
+                );
+            }
+
             return cred.user;
         } catch (err: any) {
             // Log richer error information to help diagnose HTTP 400 responses
@@ -183,7 +273,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         provider: string,
         timeout = 120000
     ) =>
-        new Promise<string>((resolve, reject) => {
+        new Promise<any>((resolve, reject) => {
             const w = window.open(
                 url,
                 `${provider}-auth`,
@@ -208,23 +298,74 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     // Only accept messages from same origin
                     if (e.origin !== window.location.origin) return;
                     const data = e.data;
+
+                    // Standard flow: { type: 'oauth', provider, customToken, profile? }
                     if (
-                        !data ||
-                        data.type !== "oauth" ||
-                        data.provider !== provider
-                    )
-                        return;
-                    clearTimeout(timer);
-                    window.removeEventListener("message", handler);
-                    try {
-                        if (w && typeof (w as any).close === "function")
-                            (w as any).close();
-                    } catch (e) {}
-                    if (data.customToken) {
-                        resolve(String(data.customToken));
+                        data &&
+                        data.type === "oauth" &&
+                        data.provider === provider
+                    ) {
+                        clearTimeout(timer);
+                        window.removeEventListener("message", handler);
+                        try {
+                            if (w && typeof (w as any).close === "function")
+                                (w as any).close();
+                        } catch (e) {}
+                        if (data.customToken) {
+                            // Return an object with token and optional profile so callers can use profile info
+                            resolve({
+                                customToken: String(data.customToken),
+                                profile: data.profile || null,
+                                returnTo: data.returnTo || null,
+                            });
+                            return;
+                        }
+                        reject(new Error("No custom token returned"));
                         return;
                     }
-                    reject(new Error("No custom token returned"));
+
+                    // Dev bypass flow (local only): { type: 'oauth-dev', provider, profile }
+                    if (
+                        process.env.NEXT_PUBLIC_DEV_AUTH_BYPASS === "true" &&
+                        data &&
+                        data.type === "oauth-dev" &&
+                        data.provider === provider
+                    ) {
+                        clearTimeout(timer);
+                        window.removeEventListener("message", handler);
+                        try {
+                            if (w && typeof (w as any).close === "function")
+                                (w as any).close();
+                        } catch (e) {}
+                        // Resolve with a special prefix so callers know it's a dev profile
+                        resolve("DEV:" + JSON.stringify(data.profile));
+                        return;
+                    }
+
+                    // Code exchange flow: { type: 'oauth-code', provider, code, state }
+                    if (
+                        data &&
+                        data.type === "oauth-code" &&
+                        data.provider === provider
+                    ) {
+                        clearTimeout(timer);
+                        window.removeEventListener("message", handler);
+                        try {
+                            if (w && typeof (w as any).close === "function")
+                                (w as any).close();
+                        } catch (e) {}
+                        // Resolve with JSON string containing code and state
+                        resolve(
+                            JSON.stringify({
+                                code: data.code,
+                                state: data.state,
+                                returnTo: data.returnTo,
+                            })
+                        );
+                        return;
+                    }
+
+                    // otherwise ignore
                 } catch (err) {
                     clearTimeout(timer);
                     window.removeEventListener("message", handler);
@@ -286,7 +427,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             throw err;
         }
 
-        // load or create Firestore user doc for avatar
+        // Update Firebase Auth profile (if provider provided displayName/photoURL)
+        try {
+            const displayName = cred.user.displayName || null;
+            const photoURL = cred.user.photoURL || null;
+            if (displayName || photoURL) {
+                try {
+                    await updateProfile(cred.user, {
+                        displayName: displayName || undefined,
+                        photoURL: photoURL || undefined,
+                    });
+                } catch (err) {
+                    console.warn(
+                        "[AuthContext] updateProfile failed (google)",
+                        err
+                    );
+                }
+            }
+            if (cred.user.email) {
+                try {
+                    await updateEmail(cred.user, cred.user.email);
+                } catch (err) {
+                    console.warn(
+                        "[AuthContext] updateEmail failed (google)",
+                        err
+                    );
+                }
+            }
+            try {
+                await (cred.user as any).reload?.();
+            } catch (err) {
+                console.warn("[AuthContext] user.reload failed (google)", err);
+            }
+        } catch (err) {
+            console.warn(
+                "[AuthContext] Failed to update auth profile after Google login",
+                err
+            );
+        }
+
+        // load or create Firestore user doc for avatar and basic profile
         try {
             const db = getFirestore(app);
             const docRef = doc(db, "users", cred.user.uid);
@@ -294,12 +474,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (!snap.exists()) {
                 await setDoc(
                     docRef,
-                    { avatar: null, createdAt: Date.now() },
+                    {
+                        avatar: cred.user.photoURL || null,
+                        displayName: cred.user.displayName || null,
+                        email: cred.user.email || null,
+                        createdAt: Date.now(),
+                    },
                     { merge: true }
                 );
-                setAvatar(null);
+                setAvatar(cred.user.photoURL || null);
             } else {
-                setAvatar((snap.data() as any).avatar ?? null);
+                setAvatar(
+                    (snap.data() as any).avatar ?? cred.user.photoURL ?? null
+                );
             }
         } catch (err) {
             // failed to init user doc after Google login
@@ -312,34 +499,285 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     // New: Login with Naver using popup -> server -> custom token
+    const handleDevProfileLogin = async (profile: any) => {
+        // Dev-only helper: create a minimal "User-like" object and set into context.
+        // This allows local testing of flows without Firebase Admin or real tokens.
+        const fakeUser = {
+            uid: `naver:${profile.id || "dev"}`,
+            displayName: profile.name || profile.nickname || "Dev User",
+            email: profile.email || null,
+            photoURL: profile.profile_image || null,
+        } as any;
+
+        setUser(fakeUser as any);
+        setAvatar(profile.profile_image || null);
+        return fakeUser;
+    };
+
     const loginWithNaver = async () => {
         const auth = getAuth(app);
+
+        // Generate and store state in localStorage to verify on callback
+        const state =
+            (crypto as any).randomUUID?.() ??
+            Math.random().toString(36).slice(2);
+        try {
+            localStorage.setItem("naver_oauth_state", state);
+        } catch (e) {}
+
         const url = `/api/auth/naver/start?return_to=${encodeURIComponent(
             window.location.origin
-        )}`;
-        const customToken = await openPopupForProvider(url, "naver");
+        )}&state=${encodeURIComponent(state)}`;
+        const result = await openPopupForProvider(url, "naver");
+
+        // Dev bypass: result may be 'DEV:<json>'
+        if (typeof result === "string" && result.startsWith("DEV:")) {
+            if (process.env.NEXT_PUBLIC_DEV_AUTH_BYPASS !== "true") {
+                throw new Error(
+                    "Dev auth bypass is not enabled on this client"
+                );
+            }
+            const profileJson = JSON.parse(result.slice(4));
+            const user = await handleDevProfileLogin(profileJson);
+            return user;
+        }
+
+        // If result is an object with a customToken (direct server flow), sign in and persist profile if present
+        if (
+            result &&
+            typeof result === "object" &&
+            (result as any).customToken
+        ) {
+            const { customToken, profile } = result as any;
+            const { signInWithCustomToken } = await import("firebase/auth");
+            const cred = await signInWithCustomToken(auth, customToken);
+            // Update Firebase Auth profile (displayName, photoURL) and email when provided
+            try {
+                const displayName = profile?.name || profile?.nickname || null;
+                const photoURL = profile?.profile_image || null;
+                if (displayName || photoURL) {
+                    try {
+                        await updateProfile(cred.user, {
+                            displayName: displayName || undefined,
+                            photoURL: photoURL || undefined,
+                        });
+                    } catch (err) {
+                        console.warn("[AuthContext] updateProfile failed", err);
+                    }
+                }
+                if (profile?.email) {
+                    try {
+                        await updateEmail(cred.user, profile.email);
+                    } catch (err) {
+                        console.warn("[AuthContext] updateEmail failed", err);
+                    }
+                }
+                try {
+                    await (cred.user as any).reload?.();
+                } catch (err) {
+                    console.warn("[AuthContext] user.reload failed", err);
+                }
+            } catch (err) {
+                console.error(
+                    "[AuthContext] Failed to update auth profile after Naver login",
+                    err
+                );
+            }
+            setUser(cred.user);
+            try {
+                const db = getFirestore(app);
+                const docRef = doc(db, "users", cred.user.uid);
+                await setDoc(
+                    docRef,
+                    {
+                        avatar: profile?.profile_image || null,
+                        displayName: profile?.name || profile?.nickname || null,
+                        email: profile?.email || null,
+                        createdAt: Date.now(),
+                    },
+                    { merge: true }
+                );
+                setAvatar(profile?.profile_image || null);
+            } catch (err) {
+                console.error(
+                    "[AuthContext] Failed to init user doc after Naver login",
+                    err
+                );
+            }
+            try {
+                localStorage.removeItem("naver_oauth_state");
+            } catch (e) {}
+            return cred.user;
+        }
+
+        // If we got JSON with code/state, perform the exchange from the client
+        if (typeof result === "string" && result.trim().startsWith("{")) {
+            const parsed = JSON.parse(result);
+            const { code, state: returnedState, returnTo } = parsed;
+            const stored = localStorage.getItem("naver_oauth_state");
+            if (!stored || stored !== returnedState) {
+                throw new Error("OAuth state mismatch on client");
+            }
+
+            const resp = await fetch("/api/auth/naver/exchange", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ code, state: returnedState, returnTo }),
+            });
+            if (!resp.ok) {
+                const text = await resp.text().catch(() => "");
+                throw new Error(`Exchange failed: ${resp.status} ${text}`);
+            }
+            const { customToken, profile } = await resp.json();
+            if (!customToken)
+                throw new Error("Exchange did not return a custom token");
+
+            const { signInWithCustomToken } = await import("firebase/auth");
+            const cred = await signInWithCustomToken(auth, customToken);
+            // Update Firebase Auth profile (displayName/photoURL) and email when provided
+            try {
+                const displayName = profile?.name || profile?.nickname || null;
+                const photoURL = profile?.profile_image || null;
+                if (displayName || photoURL) {
+                    try {
+                        await updateProfile(cred.user, {
+                            displayName: displayName || undefined,
+                            photoURL: photoURL || undefined,
+                        });
+                    } catch (err) {
+                        console.warn(
+                            "[AuthContext] updateProfile failed (exchange)",
+                            err
+                        );
+                    }
+                }
+                if (profile?.email) {
+                    try {
+                        await updateEmail(cred.user, profile.email);
+                    } catch (err) {
+                        console.warn(
+                            "[AuthContext] updateEmail failed (exchange)",
+                            err
+                        );
+                    }
+                }
+                try {
+                    await (cred.user as any).reload?.();
+                } catch (err) {
+                    console.warn(
+                        "[AuthContext] user.reload failed (exchange)",
+                        err
+                    );
+                }
+            } catch (err) {
+                console.error(
+                    "[AuthContext] Failed to update auth profile after Naver login (exchange)",
+                    err
+                );
+            }
+            setUser(cred.user);
+            try {
+                const db = getFirestore(app);
+                const docRef = doc(db, "users", cred.user.uid);
+                await setDoc(
+                    docRef,
+                    {
+                        avatar: profile?.profile_image || null,
+                        displayName: profile?.name || profile?.nickname || null,
+                        email: profile?.email || null,
+                        createdAt: Date.now(),
+                    },
+                    { merge: true }
+                );
+                setAvatar(profile?.profile_image || null);
+            } catch (err) {
+                console.error(
+                    "[AuthContext] Failed to init user doc after Naver login (exchange)",
+                    err
+                );
+            }
+            try {
+                localStorage.removeItem("naver_oauth_state");
+            } catch (e) {}
+            return cred.user;
+        }
+
+        // Otherwise assume older direct custom token flow
         const { signInWithCustomToken } = await import("firebase/auth");
-        const cred = await signInWithCustomToken(auth, customToken);
+        const cred = await signInWithCustomToken(auth, result as string);
+        // Make sure Auth profile fields are reflected in Firebase Auth and Firestore
+        try {
+            const displayName = cred.user.displayName || null;
+            const photoURL = cred.user.photoURL || null;
+            if (displayName || photoURL) {
+                try {
+                    await updateProfile(cred.user, {
+                        displayName: displayName || undefined,
+                        photoURL: photoURL || undefined,
+                    });
+                } catch (err) {
+                    console.warn(
+                        "[AuthContext] updateProfile failed (fallback)",
+                        err
+                    );
+                }
+            }
+            if (cred.user.email) {
+                try {
+                    await updateEmail(cred.user, cred.user.email);
+                } catch (err) {
+                    console.warn(
+                        "[AuthContext] updateEmail failed (fallback)",
+                        err
+                    );
+                }
+            }
+            try {
+                await (cred.user as any).reload?.();
+            } catch (err) {
+                console.warn(
+                    "[AuthContext] user.reload failed (fallback)",
+                    err
+                );
+            }
+        } catch (err) {
+            console.warn(
+                "[AuthContext] Failed to update auth profile after fallback sign-in",
+                err
+            );
+        }
+
         setUser(cred.user);
 
-        // initialize Firestore user doc
         try {
             const db = getFirestore(app);
             const docRef = doc(db, "users", cred.user.uid);
             const snap = await getDoc(docRef);
+            const avatar = cred.user.photoURL || null;
             if (!snap.exists()) {
                 await setDoc(
                     docRef,
-                    { avatar: null, createdAt: Date.now() },
+                    {
+                        avatar,
+                        displayName: cred.user.displayName || null,
+                        email: cred.user.email || null,
+                        createdAt: Date.now(),
+                    },
                     { merge: true }
                 );
-                setAvatar(null);
+                setAvatar(avatar);
             } else {
-                setAvatar((snap.data() as any).avatar ?? null);
+                // ensure avatar present
+                if (!snap.data()?.avatar && avatar) {
+                    await setDoc(docRef, { avatar }, { merge: true });
+                    setAvatar(avatar);
+                } else {
+                    setAvatar((snap.data() as any).avatar ?? avatar);
+                }
             }
         } catch (err) {
             console.error(
-                "[AuthContext] Failed to init user doc after Naver login",
+                "[AuthContext] Failed to init user doc after fallback sign-in",
                 err
             );
         }
@@ -349,27 +787,162 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const loginWithKakao = async () => {
         const auth = getAuth(app);
+
+        // Generate and store state in localStorage to verify on callback (same pattern as Naver)
+        const state =
+            (crypto as any).randomUUID?.() ??
+            Math.random().toString(36).slice(2);
+        try {
+            localStorage.setItem("kakao_oauth_state", state);
+        } catch (e) {}
+
         const url = `/api/auth/kakao/start?return_to=${encodeURIComponent(
             window.location.origin
-        )}`;
-        const customToken = await openPopupForProvider(url, "kakao");
+        )}&state=${encodeURIComponent(state)}`;
+        const result = await openPopupForProvider(url, "kakao");
+
+        // Dev bypass: result may be 'DEV:<json>'
+        if (typeof result === "string" && result.startsWith("DEV:")) {
+            if (process.env.NEXT_PUBLIC_DEV_AUTH_BYPASS !== "true") {
+                throw new Error(
+                    "Dev auth bypass is not enabled on this client"
+                );
+            }
+            const profileJson = JSON.parse(result.slice(4));
+            const user = await handleDevProfileLogin(profileJson);
+            try {
+                localStorage.removeItem("kakao_oauth_state");
+            } catch (e) {}
+            return user;
+        }
+
+        let customToken: string;
+        let profile: any = null;
+
+        // Direct server flow (server returned customToken/profile)
+        if (
+            result &&
+            typeof result === "object" &&
+            (result as any).customToken
+        ) {
+            customToken = (result as any).customToken;
+            profile = (result as any).profile || null;
+        }
+
+        // Code exchange flow (client receives code/state JSON and should call /api/auth/kakao/exchange)
+        if (
+            !customToken &&
+            typeof result === "string" &&
+            result.trim().startsWith("{")
+        ) {
+            const parsed = JSON.parse(result);
+            const { code, state: returnedState, returnTo } = parsed;
+            const stored = localStorage.getItem("kakao_oauth_state");
+            if (!stored || stored !== returnedState) {
+                throw new Error("OAuth state mismatch on client");
+            }
+
+            const resp = await fetch("/api/auth/kakao/exchange", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ code, state: returnedState, returnTo }),
+            });
+            if (!resp.ok) {
+                const text = await resp.text().catch(() => "");
+                throw new Error(`Exchange failed: ${resp.status} ${text}`);
+            }
+            const json = await resp.json();
+            customToken = json.customToken;
+            profile = json.profile || null;
+            try {
+                localStorage.removeItem("kakao_oauth_state");
+            } catch (e) {}
+        }
+
+        if (!customToken) {
+            // Fallback: assume result is a raw custom token string
+            customToken = String(result);
+        }
+
         const { signInWithCustomToken } = await import("firebase/auth");
         const cred = await signInWithCustomToken(auth, customToken);
-        setUser(cred.user);
-
+        // Update Firebase Auth profile and email when profile is provided
         try {
+            if (profile) {
+                const displayName =
+                    profile?.nickname || profile?.profile?.nickname || null;
+                const photoURL =
+                    profile?.profile_image ||
+                    profile?.profile?.profile_image ||
+                    null;
+                if (displayName || photoURL) {
+                    try {
+                        await updateProfile(cred.user, {
+                            displayName: displayName || undefined,
+                            photoURL: photoURL || undefined,
+                        });
+                    } catch (err) {
+                        console.warn(
+                            "[AuthContext] updateProfile failed (kakao)",
+                            err
+                        );
+                    }
+                }
+                if (profile?.email) {
+                    try {
+                        await updateEmail(cred.user, profile.email);
+                    } catch (err) {
+                        console.warn(
+                            "[AuthContext] updateEmail failed (kakao)",
+                            err
+                        );
+                    }
+                }
+                try {
+                    await (cred.user as any).reload?.();
+                } catch (err) {
+                    console.warn(
+                        "[AuthContext] user.reload failed (kakao)",
+                        err
+                    );
+                }
+            }
             const db = getFirestore(app);
             const docRef = doc(db, "users", cred.user.uid);
-            const snap = await getDoc(docRef);
-            if (!snap.exists()) {
+            if (profile) {
                 await setDoc(
                     docRef,
-                    { avatar: null, createdAt: Date.now() },
+                    {
+                        avatar:
+                            profile?.profile_image ||
+                            profile?.profile?.profile_image ||
+                            null,
+                        displayName:
+                            profile?.nickname ||
+                            profile?.profile?.nickname ||
+                            null,
+                        email: profile?.email || null,
+                        createdAt: Date.now(),
+                    },
                     { merge: true }
                 );
-                setAvatar(null);
+                setAvatar(
+                    profile?.profile_image ||
+                        profile?.profile?.profile_image ||
+                        null
+                );
             } else {
-                setAvatar((snap.data() as any).avatar ?? null);
+                const snap = await getDoc(docRef);
+                if (!snap.exists()) {
+                    await setDoc(
+                        docRef,
+                        { avatar: null, createdAt: Date.now() },
+                        { merge: true }
+                    );
+                    setAvatar(null);
+                } else {
+                    setAvatar((snap.data() as any).avatar ?? null);
+                }
             }
         } catch (err) {
             console.error(
@@ -391,15 +964,57 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } finally {
             setUser(null);
             setAvatar(null);
+            try {
+                // Ensure the user is sent back to the main page after logout
+                window.location.href = "/";
+            } catch (e) {
+                /* ignore */
+            }
         }
     };
 
     const requestPasswordReset = async (email: string) => {
         const auth = getAuth(app);
         try {
-            console.info("[AuthContext] sendPasswordReset START", { email });
-            await sendPasswordResetEmail(auth, email);
-            console.info("[AuthContext] sendPasswordReset SUCCESS", { email });
+            console.info("[AuthContext] requestPasswordReset START", { email });
+            // Use server-side endpoint to generate reset link and send via our email provider
+            const res = await fetch("/api/auth/password-reset", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email }),
+            });
+            const result = await res.json().catch(() => null);
+            if (!res.ok) {
+                console.error("[AuthContext] requestPasswordReset failed", {
+                    status: res.status,
+                    body: result,
+                });
+                if (result && result.error === "server_misconfigured") {
+                    // Fallback: try the Firebase client-side sendPasswordResetEmail as a short-term workaround
+                    try {
+                        await sendPasswordResetEmail(auth, email);
+                        console.warn(
+                            "[AuthContext] server misconfigured; used client fallback sendPasswordResetEmail",
+                            { email }
+                        );
+                        return; // success via fallback
+                    } catch (fallbackErr) {
+                        console.error(
+                            "[AuthContext] fallback sendPasswordResetEmail failed",
+                            fallbackErr
+                        );
+                        throw new Error("server_misconfigured");
+                    }
+                }
+                if (result && result.error === "generate_link_failed") {
+                    const id = result.eventId || "unknown";
+                    throw new Error(`generate_link_failed:${id}`);
+                }
+                throw new Error("Failed to request password reset");
+            }
+            console.info("[AuthContext] requestPasswordReset SUCCESS", {
+                email,
+            });
         } catch (err) {
             console.error("[AuthContext] sendPasswordReset ERROR", err);
             throw err;

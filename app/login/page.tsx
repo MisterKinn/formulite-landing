@@ -33,6 +33,7 @@ function LoginContent() {
         requestPasswordReset,
         isAuthenticated,
         loading,
+        logout,
     } = useAuth();
 
     const [form, setForm] = useState({
@@ -203,14 +204,14 @@ function LoginContent() {
         setError(null);
         setInfo(null);
         if (!form.email || !form.email.trim()) {
-            setError("비밀번호 재설정을 위해 이메일을 입력하세요.");
+            setError("비밀번호 재설정을 위해 이메일을 입력해주세요.");
             return;
         }
         // basic email format check
         const email = form.email.trim();
         const emailRe = /\S+@\S+\.\S+/;
         if (!emailRe.test(email)) {
-            setError("유효한 이메일 주소를 입력하세요.");
+            setError("유효한 이메일 주소를 입력해주세요.");
             return;
         }
 
@@ -219,7 +220,7 @@ function LoginContent() {
             await requestPasswordReset(email);
             // generic success message (do not reveal account existence)
             setInfo(
-                "비밀번호 재설정 링크가 입력하신 이메일로 전송되었습니다. 이메일을 확인해주세요."
+                "입력하신 이메일로 비밀번호 재설정 링크가\n전송되었습니다. 이메일을 확인해주세요."
             );
             console.info("Password reset email requested for", email);
         } catch (err: unknown) {
@@ -232,6 +233,22 @@ function LoginContent() {
             if (String(code).toLowerCase().includes("too-many-requests")) {
                 setError(
                     "너무 많은 요청이 있었습니다. 잠시 후 다시 시도해주세요."
+                );
+            } else if (
+                String(code).toLowerCase().includes("server_misconfigured") ||
+                String(code).toLowerCase().includes("servermisconfigured")
+            ) {
+                // Clear, actionable message for admin-misconfiguration
+                setError(
+                    "비밀번호 재설정 시스템에 문제가 있습니다. 관리자에게 문의해주세요."
+                );
+            } else if (
+                String(code).toLowerCase().includes("generate_link_failed")
+            ) {
+                const parts = String(code).split(":");
+                const eventId = parts[1] || "unknown";
+                setError(
+                    `비밀번호 재설정에 실패했습니다 (오류 ID: ${eventId}). 관리자에게 문의해주세요.`
                 );
             } else {
                 setError("재설정 요청에 실패했습니다. 다시 시도해주세요.");
@@ -252,15 +269,7 @@ function LoginContent() {
                         <button
                             className="primary-button"
                             onClick={async () => {
-                                const { getAuth, signOut } = await import(
-                                    "firebase/auth"
-                                );
-                                const { app } = await import(
-                                    "../../firebaseConfig"
-                                );
-                                const auth = getAuth(app);
-                                await signOut(auth);
-                                window.location.reload();
+                                await logout();
                             }}
                         >
                             로그아웃
@@ -495,7 +504,7 @@ function LoginContent() {
                                     </svg>
                                     <input
                                         type="password"
-                                        placeholder="비밀번호를 다시 입력하세요"
+                                        placeholder="비밀번호를 다시 입력해주세요"
                                         value={form.confirmPassword}
                                         onChange={handleChange(
                                             "confirmPassword"

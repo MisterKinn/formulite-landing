@@ -48,6 +48,34 @@ function AuthCallbackContent({
 }) {
     const searchParams = useSearchParams();
 
+    // Helper that attempts multiple fallbacks to close the popup reliably
+    const tryClose = () => {
+        try {
+            window.close();
+        } catch (e) {
+            /* ignore */
+        }
+
+        // Some browsers block window.close() for windows not opened by script.
+        // Attempt common fallbacks that sometimes allow closing in those cases.
+        try {
+            window.open('', '_self');
+            window.close();
+        } catch (e) {
+            /* ignore */
+        }
+
+        // Final fallback: navigate to about:blank and then try closing again
+        setTimeout(() => {
+            try {
+                window.location.href = 'about:blank';
+                window.close();
+            } catch (e) {
+                /* ignore */
+            }
+        }, 200);
+    };
+
     useEffect(() => {
         // Parse query parameters
         const uid = searchParams?.get("uid") ?? null;
@@ -84,9 +112,9 @@ function AuthCallbackContent({
                 setCountdown((prev) => {
                     if (prev <= 1) {
                         clearInterval(timer);
-                        // Try to close the window
+                        // Try to close the window with robust fallbacks
                         setTimeout(() => {
-                            window.close();
+                            tryClose();
                         }, 500);
                         return 0;
                     }
@@ -186,7 +214,7 @@ function AuthCallbackContent({
 
                         <div className="text-center">
                             <button
-                                onClick={() => window.close()}
+                                onClick={() => tryClose()}
                                 className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                             >
                                 Close Window

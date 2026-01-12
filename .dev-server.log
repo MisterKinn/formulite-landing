@@ -1,0 +1,76 @@
+
+> formulite-landing@0.1.0 dev
+> next dev
+
+ ⚠ Port 3000 is in use by process 52470, using available port 3001 instead.
+   ▲ Next.js 16.0.10 (Turbopack)
+   - Local:         http://localhost:3001
+   - Network:       http://192.168.0.53:3001
+   - Environments: .env.local
+
+ ✓ Starting...
+ ⨯ Unable to acquire lock at /Users/kinn/Desktop/formulite-landing/.next/dev/lock, is another instance of next dev running?
+   Suggestion: If you intended to restart next dev, terminate the other process, and then try again.
+[firebaseAdmin] initialized { projectId: 'formulite-5b963' }
+[email] persisted sent email to /var/folders/gh/4znr0ghx0h5bstzcsc3y548c0000gn/T/formulite-sent-emails.log
+✅ Password reset email sent to: kinn@kinn.kr
+ POST /api/auth/password-reset 200 in 2.1s (compile: 423ms, render: 1665ms)
+[email] persisted sent email to /var/folders/gh/4znr0ghx0h5bstzcsc3y548c0000gn/T/formulite-sent-emails.log
+✅ Password reset email sent to: kinn@kinn.kr
+ POST /api/auth/password-reset 200 in 1245ms (compile: 3ms, render: 1242ms)
+[email] persisted sent email to /var/folders/gh/4znr0ghx0h5bstzcsc3y548c0000gn/T/formulite-sent-emails.log
+✅ Password reset email sent to: kinn@kinn.kr
+ POST /api/auth/password-reset 200 in 1289ms (compile: 20ms, render: 1269ms)
+ ✓ Compiled in 24ms
+ ✓ Compiled in 9ms
+ ✓ Compiled in 7ms
+ ⚠ metadataBase property in metadata export is not set for resolving social open graph or twitter images, using "http://localhost:3000". See https://nextjs.org/docs/app/api-reference/functions/generate-metadata#metadatabase
+ GET /login?redirect_uri=http://localhost:3002/auth-callback 200 in 198ms (compile: 78ms, render: 120ms)
+ GET /profile 200 in 54ms (compile: 10ms, render: 44ms)
+ GET / 200 in 281ms (compile: 236ms, render: 45ms)
+ GET /login 200 in 45ms (compile: 6ms, render: 39ms)
+[KAKAO start] using KAKAO_REST_API_KEY as client_id fallback for local testing
+ GET /api/auth/kakao/start?return_to=http%3A%2F%2Flocalhost%3A3000 307 in 95ms (compile: 92ms, render: 3ms)
+Failed to create custom token TypeError: admin.auth is not a function
+    at GET (app/api/auth/kakao/callback/route.ts:121:14)
+  119 |         const admin = initAdmin;
+  120 |         const customToken = await admin
+> 121 |             .auth()
+      |              ^
+  122 |             .createCustomToken(uid, { provider: "kakao", email, name });
+  123 |
+  124 |         // Persist profile to Firestore so client can read email/name right away
+ GET /api/auth/kakao/callback?code=Asc-O3iRPF9sZrLcqzBk0KWYyGlTiYoiAtVU2txar1ggRqIogCdN-wAAAAQKDQgeAAABm7KylBensOtctwzlGQ&state=ui3bnklxpal 500 in 427ms (compile: 73ms, render: 355ms)
+KAKAO token exchange failed {"error":"invalid_grant","error_description":"authorization code not found for code=Asc-O3iRPF9sZrLcqzBk0KWYyGlTiYoiAtVU2txar1ggRqIogCdN-wAAAAQKDQgeAAABm7KylBensOtctwzlGQ","error_code":"KOE320"}
+ GET /api/auth/kakao/callback?code=Asc-O3iRPF9sZrLcqzBk0KWYyGlTiYoiAtVU2txar1ggRqIogCdN-wAAAAQKDQgeAAABm7KylBensOtctwzlGQ&state=ui3bnklxpal 500 in 50ms (compile: 5ms, render: 45ms)
+ GET /login 200 in 52ms (compile: 9ms, render: 43ms)
+[KAKAO start] using KAKAO_REST_API_KEY as client_id fallback for local testing
+ GET /api/auth/kakao/start?return_to=http%3A%2F%2Flocalhost%3A3000 307 in 9ms (compile: 3ms, render: 6ms)
+Failed to create custom token TypeError: admin.auth is not a function
+    at GET (app/api/auth/kakao/callback/route.ts:121:14)
+  119 |         const admin = initAdmin;
+  120 |         const customToken = await admin
+> 121 |             .auth()
+      |              ^
+  122 |             .createCustomToken(uid, { provider: "kakao", email, name });
+  123 |
+  124 |         // Persist profile to Firestore so client can read email/name right away
+ GET /api/auth/kakao/callback?code=eEF6kjk1Yt8a5dKDv_L69cfhzMS3hsH5GFKGcGEVvXHHraLErYOoJwAAAAQKDQgeAAABm7Kyxp-QgW3aWXatGQ&state=n5vc3xgb6ao 500 in 209ms (compile: 2ms, render: 207ms)
+ GET /login 200 in 47ms (compile: 3ms, render: 45ms)
+ GET / 200 in 36ms (compile: 2ms, render: 34ms)
+ GET /login 200 in 44ms (compile: 3ms, render: 41ms)
+[KAKAO start] using KAKAO_REST_API_KEY as client_id fallback for local testing
+ GET /api/auth/kakao/start?return_to=http%3A%2F%2Flocalhost%3A3000 307 in 14ms (compile: 6ms, render: 8ms)
+Failed to create custom token TypeError: admin.auth is not a function
+    at GET (app/api/auth/kakao/callback/route.ts:121:14)
+  119 |         const admin = initAdmin;
+  120 |         const customToken = await admin
+> 121 |             .auth()
+      |              ^
+  122 |             .createCustomToken(uid, { provider: "kakao", email, name });
+  123 |
+  124 |         // Persist profile to Firestore so client can read email/name right away
+ GET /api/auth/kakao/callback?code=z8yPml8NaLQNX-_nZWejcwzf7wdrDdPJgMziMDpFADByz_Xsv9jaywAAAAQKDQgeAAABm7Ky3qjkNSpXBP-m7Q&state=3f8ex6f2c1r 500 in 200ms (compile: 2ms, render: 198ms)
+[email] persisted sent email to /var/folders/gh/4znr0ghx0h5bstzcsc3y548c0000gn/T/formulite-sent-emails.log
+✅ Password reset email sent to: kinn@kinn.kr
+ POST /api/auth/password-reset 200 in 2.3s (compile: 77ms, render: 2.2s)

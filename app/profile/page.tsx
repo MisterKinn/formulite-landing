@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { getAuth, updateProfile, deleteUser } from "firebase/auth";
 import { app } from "../../firebaseConfig";
-import { getFirestore, doc, deleteDoc } from "firebase/firestore";
+import { getFirestore, doc, deleteDoc, getDoc } from "firebase/firestore";
 import { loadTossPayments } from "@tosspayments/tosspayments-sdk";
 import { useAuth } from "../../context/AuthContext";
 import "./profile.css";
@@ -266,11 +266,29 @@ function ProfileContent() {
 
     useEffect(() => {
         if (authUser) {
+            // Start with Auth-provided values (fast) then overwrite with Firestore values if present
             setEmail(authUser.email || "");
             setDisplayName(authUser.displayName || "");
             setPreview(authAvatar || null);
             setPhotoDataUrl(null);
             setRemovingPhoto(false);
+
+            // Always try to read the Firestore user doc and prefer its fields when available
+            (async () => {
+                try {
+                    const db = getFirestore(app);
+                    const docRef = doc(db, "users", authUser.uid);
+                    const snap = await getDoc(docRef);
+                    if (snap.exists()) {
+                        const data = snap.data() as any;
+                        if (data?.email) setEmail(data.email);
+                        if (data?.displayName) setDisplayName(data.displayName);
+                        if (data?.avatar) setPreview(data.avatar);
+                    }
+                } catch (err) {
+                    console.warn("Failed to load profile from Firestore", err);
+                }
+            })();
         } else {
             setEmail("");
             setDisplayName("");
