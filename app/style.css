@@ -952,13 +952,15 @@ nextjs-portal {
 /* Right side 2x2 card grid */
 .benefits-card-grid {
     display: grid;
-    grid-template-columns: 1fr;
+    /* show two cards per row for a balanced layout on most devices */
+    grid-template-columns: repeat(2, 1fr);
     gap: 1rem;
 }
 
-@media (min-width: 640px) {
+/* Collapse to single column on very small screens to avoid cramped cards */
+@media (max-width: 420px) {
     .benefits-card-grid {
-        grid-template-columns: repeat(2, 1fr);
+        grid-template-columns: 1fr;
     }
 }
 
@@ -1279,8 +1281,24 @@ nextjs-portal {
 
 @media (min-width: 768px) {
     .pricing-grid {
-        grid-template-columns: repeat(3, 1fr);
-        gap: 1rem;
+        /* Use fixed card width columns so cards don't stretch full width */
+        grid-template-columns: repeat(3, minmax(0, 360px));
+        gap: 1.5rem;
+        justify-content: center; /* center the grid inside container */
+        column-gap: 2rem;
+    }
+}
+
+/* Narrower, centered pricing cards on small screens */
+@media (max-width: 767px) {
+    .pricing-grid {
+        justify-content: center;
+    }
+
+    .pricing-card-new {
+        width: 60%; /* use 60% width on small screens as requested */
+        max-width: 360px;
+        margin: 0 auto;
     }
 }
 
@@ -1294,6 +1312,10 @@ nextjs-portal {
     justify-content: space-between;
     transition: filter 0.3s ease;
     position: relative;
+
+    /* Limit the maximum width so cards appear narrower on wide screens */
+    max-width: 360px;
+    margin: 0 auto;
 }
 
 .pricing-card-new:hover {
@@ -1606,14 +1628,33 @@ nextjs-portal {
 
 .footer-sections {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
+    /* use flexible minimum widths so three columns fit on narrow viewports */
+    grid-template-columns: repeat(3, minmax(140px, 1fr));
     gap: 1.5rem;
+    align-items: start;
 }
 
 @media (min-width: 768px) {
     .footer-sections {
-        grid-template-columns: repeat(4, 1fr);
+        grid-template-columns: repeat(4, minmax(140px, 1fr));
         gap: 1rem;
+    }
+
+    /* left-align titles on wider screens for readability */
+    .footer-section-title {
+        text-align: left;
+    }
+}
+
+/* Collapse to a single column on very small screens to prevent overflow */
+@media (max-width: 420px) {
+    .footer-sections {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+    }
+    .footer-section-title,
+    .footer-links {
+        text-align: center;
     }
 }
 

@@ -442,7 +442,10 @@ function ProfileContent() {
             // 결제 페이지로 리다이렉트
             const planName = plan.id === "plus" ? "플러스" : "프로";
             // compute amount based on billing cycle
-            const planAmount = billingCycle === "monthly" ? plan.monthlyPrice : plan.yearlyPrice * 12;
+            const planAmount =
+                billingCycle === "monthly"
+                    ? plan.monthlyPrice
+                    : plan.yearlyPrice * 12;
 
             window.location.href = `/payment?amount=${planAmount}&orderName=Nova AI ${planName} 요금제&recurring=true&billingCycle=${billingCycle}`;
         } catch (err: unknown) {
@@ -637,6 +640,91 @@ function ProfileContent() {
 
                     {/* 메인 콘텐츠 */}
                     <section className="profile-main">
+                        {/* Mobile top tabs: 프로필 / 요금제 / 계정 설정 */}
+                        <nav
+                            className="profile-top-nav"
+                            role="tablist"
+                            aria-label="프로필 탭"
+                        >
+                            <button
+                                role="tab"
+                                aria-selected={activeTab === "profile"}
+                                className={`profile-nav-item ${
+                                    activeTab === "profile" ? "active" : ""
+                                }`}
+                                onClick={() => setActiveTab("profile")}
+                            >
+                                <svg
+                                    width="18"
+                                    height="18"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="1.5"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                >
+                                    <circle cx="12" cy="8" r="4" />
+                                    <path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2" />
+                                </svg>
+                                <span>프로필</span>
+                            </button>
+
+                            <button
+                                role="tab"
+                                aria-selected={activeTab === "subscription"}
+                                className={`profile-nav-item ${
+                                    activeTab === "subscription" ? "active" : ""
+                                }`}
+                                onClick={() => setActiveTab("subscription")}
+                            >
+                                <svg
+                                    width="18"
+                                    height="18"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="1.5"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                >
+                                    <rect
+                                        x="2"
+                                        y="5"
+                                        width="20"
+                                        height="14"
+                                        rx="2"
+                                    />
+                                    <line x1="2" y1="10" x2="22" y2="10" />
+                                </svg>
+                                <span>요금제</span>
+                            </button>
+
+                            <button
+                                role="tab"
+                                aria-selected={activeTab === "account"}
+                                className={`profile-nav-item ${
+                                    activeTab === "account" ? "active" : ""
+                                }`}
+                                onClick={() => setActiveTab("account")}
+                            >
+                                <svg
+                                    width="18"
+                                    height="18"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="1.5"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                >
+                                    <circle cx="12" cy="12" r="3" />
+                                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1z" />
+                                </svg>
+                                <span>계정 설정</span>
+                            </button>
+                        </nav>
+
                         {activeTab === "profile" ? (
                             <>
                                 <header className="profile-section-header">
@@ -933,6 +1021,73 @@ function ProfileContent() {
                                                 )}
                                         </div>
                                     </div>
+
+                                    {/* Mobile-only stacked dates: placed under the plan on small screens */}
+                                    {(subscription ||
+                                        subscription?.billingStartDate ||
+                                        subscription?.nextBillingDate) && (
+                                        <div
+                                            className="current-plan-dates-mobile"
+                                            aria-hidden={false}
+                                        >
+                                            {(subscription?.billingStartDate ||
+                                                subscription?.startDate) && (
+                                                <div className="current-plan-dates-item">
+                                                    <span className="label">
+                                                        청구 시작일
+                                                    </span>
+                                                    <span className="value">
+                                                        {new Date(
+                                                            subscription?.billingStartDate ||
+                                                                subscription?.startDate
+                                                        ).toLocaleDateString(
+                                                            "ko-KR"
+                                                        )}
+                                                    </span>
+                                                </div>
+                                            )}
+
+                                            <div className="current-plan-dates-item">
+                                                <span className="label">
+                                                    다음 결제일
+                                                </span>
+                                                <span className="value">
+                                                    {subscription?.nextBillingDate
+                                                        ? new Date(
+                                                              subscription.nextBillingDate
+                                                          ).toLocaleDateString(
+                                                              "ko-KR"
+                                                          )
+                                                        : "-"}
+                                                </span>
+                                            </div>
+
+                                            {/* Mobile-only cancel button inside dates row */}
+                                            {subscription &&
+                                                subscription.plan !==
+                                                    "free" && (
+                                                    <button
+                                                        onClick={
+                                                            handleCancelSubscription
+                                                        }
+                                                        className="current-plan-cancel-btn-mobile current-plan-cancel-outline"
+                                                        aria-disabled={
+                                                            subscription.status ===
+                                                            "cancelled"
+                                                        }
+                                                        disabled={
+                                                            subscription.status ===
+                                                            "cancelled"
+                                                        }
+                                                    >
+                                                        {subscription.status ===
+                                                        "cancelled"
+                                                            ? "취소됨"
+                                                            : "구독 취소"}
+                                                    </button>
+                                                )}
+                                        </div>
+                                    )}
 
                                     <div className="current-plan-meta">
                                         <div className="current-plan-meta-item">

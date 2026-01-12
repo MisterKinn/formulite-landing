@@ -26,6 +26,13 @@ body {
         display: flex !important;
     }
 
+    /* Add safe horizontal padding to the body on small screens */
+    body {
+        box-sizing: border-box;
+        padding-left: calc(1rem + env(safe-area-inset-left, 0px));
+        padding-right: calc(1rem + env(safe-area-inset-right, 0px));
+    }
+
     /* Hide desktop navbar and show mobile sidebar container */
     .desktop-navbar {
         display: none !important;
@@ -34,7 +41,7 @@ body {
     .mobile-sidebar-container {
         display: block !important;
     }
-    
+
     .navbar-inner {
         padding: 0.75rem 1rem;
     }
@@ -297,6 +304,12 @@ body {
 
     .benefits-card-grid {
         gap: 0.625rem;
+        /* force two columns on mobile so cards appear side-by-side */
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .benefit-card-item {
+        min-width: 0; /* allow grid to shrink items without overflow */
     }
 
     .benefit-card-item {
@@ -339,6 +352,8 @@ body {
     /* Features */
     .features-grid {
         gap: 0.75rem;
+        /* force two columns on narrow screens so features appear side-by-side */
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     .feature-card {
@@ -530,7 +545,7 @@ body {
         margin: 0;
         padding: 2rem 1.25rem 1.5rem;
         border-radius: 0;
-        background: #1A1914;
+        background: #1a1914;
     }
 
     .footer-inner {

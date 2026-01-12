@@ -35,6 +35,8 @@ interface AuthContextType {
         displayName?: string
     ) => Promise<User>;
     loginWithGoogle: () => Promise<User>;
+    loginWithNaver: () => Promise<User>;
+    loginWithKakao: () => Promise<User>;
     requestPasswordReset: (email: string) => Promise<void>;
     updateAvatar: (dataUrl: string | null) => Promise<void>;
     updateSubscription: (
@@ -55,6 +57,12 @@ const AuthContext = createContext<AuthContextType>({
         throw new Error("Not implemented");
     },
     loginWithGoogle: async () => {
+        throw new Error("Not implemented");
+    },
+    loginWithNaver: async () => {
+        throw new Error("Not implemented");
+    },
+    loginWithKakao: async () => {
         throw new Error("Not implemented");
     },
     requestPasswordReset: async () => {
@@ -169,11 +177,115 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return cred.user;
     };
 
+    // Helper to open a popup and wait for a postMessage containing { type: 'oauth', provider, customToken }
+    const openPopupForProvider = (
+        url: string,
+        provider: string,
+        timeout = 120000
+    ) =>
+        new Promise<string>((resolve, reject) => {
+            const w = window.open(
+                url,
+                `${provider}-auth`,
+                "width=500,height=700"
+            );
+            if (!w) {
+                reject(new Error("Popup blocked"));
+                return;
+            }
+
+            const timer = setTimeout(() => {
+                window.removeEventListener("message", handler);
+                try {
+                    if (w && typeof (w as any).close === "function")
+                        (w as any).close();
+                } catch (e) {}
+                reject(new Error("Timeout waiting for authentication"));
+            }, timeout);
+
+            function handler(e: MessageEvent) {
+                try {
+                    // Only accept messages from same origin
+                    if (e.origin !== window.location.origin) return;
+                    const data = e.data;
+                    if (
+                        !data ||
+                        data.type !== "oauth" ||
+                        data.provider !== provider
+                    )
+                        return;
+                    clearTimeout(timer);
+                    window.removeEventListener("message", handler);
+                    try {
+                        if (w && typeof (w as any).close === "function")
+                            (w as any).close();
+                    } catch (e) {}
+                    if (data.customToken) {
+                        resolve(String(data.customToken));
+                        return;
+                    }
+                    reject(new Error("No custom token returned"));
+                } catch (err) {
+                    clearTimeout(timer);
+                    window.removeEventListener("message", handler);
+                    try {
+                        if (w && typeof (w as any).close === "function")
+                            (w as any).close();
+                    } catch (e) {}
+                    reject(err);
+                }
+            }
+
+            window.addEventListener("message", handler);
+        });
+
     const loginWithGoogle = async () => {
         const auth = getAuth(app);
         const provider = new GoogleAuthProvider();
-        const cred = await signInWithPopup(auth, provider);
-        setUser(cred.user);
+
+        // Try popup first; if the environment doesn't support popups (e.g. embedded webviews,
+        // some browsers or third-party cookie restrictions), fall back to redirect.
+        let cred: any = null;
+        try {
+            cred = await signInWithPopup(auth, provider);
+            setUser(cred.user);
+        } catch (err: any) {
+            console.error("[AuthContext] signInWithPopup failed", err);
+            const code = err?.code || "";
+
+            // If popups are not supported in this environment, use redirect flow as a fallback.
+            if (
+                String(code).includes("operation-not-supported") ||
+                String(code).includes("popup-blocked") ||
+                String(code).includes("popup-closed-by-user") ||
+                String(code).includes(
+                    "auth/operation-not-supported-in-this-environment"
+                )
+            ) {
+                try {
+                    console.info(
+                        "[AuthContext] Falling back to signInWithRedirect for Google sign-in"
+                    );
+                    // initiates redirect; app will reload and onAuthStateChanged will pick up the logged-in user
+                    await import("firebase/auth").then(
+                        ({ signInWithRedirect }) =>
+                            signInWithRedirect(auth, provider)
+                    );
+                    // return a promise that never resolves here because redirect will navigate away
+                    return new Promise(() => {});
+                } catch (redirectErr) {
+                    console.error(
+                        "[AuthContext] signInWithRedirect failed",
+                        redirectErr
+                    );
+                    throw redirectErr;
+                }
+            }
+
+            // Otherwise rethrow the original error for the UI to show a friendly message
+            throw err;
+        }
+
         // load or create Firestore user doc for avatar
         try {
             const db = getFirestore(app);
@@ -191,7 +303,81 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
         } catch (err) {
             // failed to init user doc after Google login
+            console.error(
+                "[AuthContext] init user doc after Google login failed",
+                err
+            );
         }
+        return cred.user;
+    };
+
+    // New: Login with Naver using popup -> server -> custom token
+    const loginWithNaver = async () => {
+        const auth = getAuth(app);
+        const url = `/api/auth/naver/start?return_to=${encodeURIComponent(
+            window.location.origin
+        )}`;
+        const customToken = await openPopupForProvider(url, "naver");
+        const { signInWithCustomToken } = await import("firebase/auth");
+        const cred = await signInWithCustomToken(auth, customToken);
+        setUser(cred.user);
+
+        // initialize Firestore user doc
+        try {
+            const db = getFirestore(app);
+            const docRef = doc(db, "users", cred.user.uid);
+            const snap = await getDoc(docRef);
+            if (!snap.exists()) {
+                await setDoc(
+                    docRef,
+                    { avatar: null, createdAt: Date.now() },
+                    { merge: true }
+                );
+                setAvatar(null);
+            } else {
+                setAvatar((snap.data() as any).avatar ?? null);
+            }
+        } catch (err) {
+            console.error(
+                "[AuthContext] Failed to init user doc after Naver login",
+                err
+            );
+        }
+
+        return cred.user;
+    };
+
+    const loginWithKakao = async () => {
+        const auth = getAuth(app);
+        const url = `/api/auth/kakao/start?return_to=${encodeURIComponent(
+            window.location.origin
+        )}`;
+        const customToken = await openPopupForProvider(url, "kakao");
+        const { signInWithCustomToken } = await import("firebase/auth");
+        const cred = await signInWithCustomToken(auth, customToken);
+        setUser(cred.user);
+
+        try {
+            const db = getFirestore(app);
+            const docRef = doc(db, "users", cred.user.uid);
+            const snap = await getDoc(docRef);
+            if (!snap.exists()) {
+                await setDoc(
+                    docRef,
+                    { avatar: null, createdAt: Date.now() },
+                    { merge: true }
+                );
+                setAvatar(null);
+            } else {
+                setAvatar((snap.data() as any).avatar ?? null);
+            }
+        } catch (err) {
+            console.error(
+                "[AuthContext] Failed to init user doc after Kakao login",
+                err
+            );
+        }
+
         return cred.user;
     };
 
@@ -451,6 +637,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 loginWithEmail,
                 signupWithEmail,
                 loginWithGoogle,
+                loginWithNaver,
+                loginWithKakao,
                 requestPasswordReset,
                 updateAvatar,
                 updateSubscription,

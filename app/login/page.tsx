@@ -28,6 +28,8 @@ function LoginContent() {
         loginWithEmail,
         signupWithEmail,
         loginWithGoogle,
+        loginWithNaver,
+        loginWithKakao,
         requestPasswordReset,
         isAuthenticated,
         loading,
@@ -184,13 +186,14 @@ function LoginContent() {
             const user = await loginWithGoogle();
             await handlePostLoginRedirect(user);
         } catch (err: unknown) {
-            if (err && typeof err === "object" && "message" in err) {
-                setError(
-                    (err as any).message || "Google 로그인에 실패했습니다."
-                );
-            } else {
-                setError("Google 로그인에 실패했습니다.");
-            }
+            console.error("[Login] Google login failed", err);
+            const code =
+                err && typeof err === "object" ? (err as any).code || "" : "";
+            const message =
+                err && typeof err === "object"
+                    ? (err as any).message || String(err)
+                    : String(err);
+            setError(`${code} — ${message}` || "Google 로그인에 실패했습니다.");
         } finally {
             setSubmitting(false);
         }
@@ -335,6 +338,56 @@ function LoginContent() {
                                 </defs>
                             </svg>
                             <span>Google로 계속하기</span>
+                        </button>
+
+                        <button
+                            type="button"
+                            className="social-btn naver-btn"
+                            onClick={async () => {
+                                setError(null);
+                                setInfo(null);
+                                setSubmitting(true);
+                                try {
+                                    const user = await loginWithNaver();
+                                    await handlePostLoginRedirect(user);
+                                } catch (err: any) {
+                                    console.error("Naver login failed", err);
+                                    setError(
+                                        err?.message ||
+                                            "Naver 로그인에 실패했습니다."
+                                    );
+                                } finally {
+                                    setSubmitting(false);
+                                }
+                            }}
+                            disabled={submitting}
+                        >
+                            <span>네이버로 계속하기</span>
+                        </button>
+
+                        <button
+                            type="button"
+                            className="social-btn kakao-btn"
+                            onClick={async () => {
+                                setError(null);
+                                setInfo(null);
+                                setSubmitting(true);
+                                try {
+                                    const user = await loginWithKakao();
+                                    await handlePostLoginRedirect(user);
+                                } catch (err: any) {
+                                    console.error("Kakao login failed", err);
+                                    setError(
+                                        err?.message ||
+                                            "Kakao 로그인에 실패했습니다."
+                                    );
+                                } finally {
+                                    setSubmitting(false);
+                                }
+                            }}
+                            disabled={submitting}
+                        >
+                            <span>카카오로 계속하기</span>
                         </button>
                     </div>
 

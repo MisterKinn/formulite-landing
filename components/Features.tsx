@@ -154,26 +154,25 @@ export default function Features() {
                     문서 자동화를 위한 강력한 기능
                 </h2>
                 <p className="features-description">
-                    AI 기반 코드 생성으로 HWP 문서 편집을 자동화하는 데 필요한 모든 것을 제공합니다.
+                    AI 기반 코드 생성으로 HWP 문서 편집을
+                    <br />
+                    자동화하는 데 필요한 모든 것을 제공합니다.
                 </p>
 
-                    <div className="features-grid">
-                        {features.map((feature, index) => (
-                            <div
-                                key={index}
-                            className="feature-card"
-                            >
-                                <div className="feature-icon-circle">
-                                    {feature.icon}
-                                </div>
-                                <h3 className="feature-item-title">
-                                    {feature.title}
-                                </h3>
-                                <p className="feature-item-desc">
-                                    {feature.description}
-                                </p>
+                <div className="features-grid">
+                    {features.map((feature, index) => (
+                        <div key={index} className="feature-card">
+                            <div className="feature-icon-circle">
+                                {feature.icon}
                             </div>
-                        ))}
+                            <h3 className="feature-item-title">
+                                {feature.title}
+                            </h3>
+                            <p className="feature-item-desc">
+                                {feature.description}
+                            </p>
+                        </div>
+                    ))}
                 </div>
             </div>
         </section>

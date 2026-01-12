@@ -201,9 +201,17 @@ async function handleBillingKeyIssued(data: any) {
     const userId = extractUserId(data.customerKey);
     if (userId) {
         try {
-            // default to monthly unless we can infer otherwise
+            console.log("🔑 BILLING_KEY_ISSUED 웹훅 수신:", {
+                billingKey: data.billingKey,
+                customerKey: data.customerKey,
+                userId: userId,
+            });
+
+            // Extract billingCycle from metadata or default to monthly
             const billingCycle: "monthly" | "yearly" =
-                (data.billingCycle as any) || "monthly";
+                data.metadata?.billingCycle ||
+                (data.billingCycle as any) ||
+                "monthly";
 
             // Map amount to plan if possible
             const plan =

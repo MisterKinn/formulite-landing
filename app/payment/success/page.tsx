@@ -103,11 +103,43 @@ function Success({
                 </div>
 
                 {resultSubscription?.isRecurring ? (
-                    <div style={{ marginTop: 18, color: "#0b1220" }}>
-                        정기결제가 등록되었습니다{" "}
-                        {resultSubscription?.billingCycle === "yearly"
-                            ? "(연간)"
-                            : "(월간)"}
+                    <div
+                        style={{
+                            background: "#f0fdf4",
+                            border: "1px solid #10b981",
+                            borderRadius: 8,
+                            padding: 12,
+                            marginTop: 16,
+                            textAlign: "center",
+                        }}
+                    >
+                        <p
+                            style={{
+                                color: "#10b981",
+                                margin: 0,
+                                fontWeight: 600,
+                            }}
+                        >
+                            🎉{" "}
+                            {resultSubscription.billingCycle === "yearly"
+                                ? "연간"
+                                : "월간"}{" "}
+                            구독이 성공적으로 등록되었습니다!
+                        </p>
+                        <p
+                            style={{
+                                color: "#059669",
+                                margin: "4px 0 0 0",
+                                fontSize: 14,
+                            }}
+                        >
+                            다음 결제일:{" "}
+                            {resultSubscription.nextBillingDate
+                                ? new Date(
+                                      resultSubscription.nextBillingDate
+                                  ).toLocaleDateString("ko-KR")
+                                : "확인 중..."}
+                        </p>
                     </div>
                 ) : null}
 
@@ -163,7 +195,289 @@ function PaymentSuccessContent() {
                 const paymentKey = searchParams.get("paymentKey");
                 const orderId = searchParams.get("orderId");
                 const amount = searchParams.get("amount");
+                const authKey = searchParams.get("authKey");
+                const customerKey = searchParams.get("customerKey");
+                const isRecurring = searchParams.get("recurring") === "true";
+                const orderName = searchParams.get("orderName") || "";
+                const billingCycle =
+                    searchParams.get("billingCycle") || "monthly";
 
+                // 구독 결제 - 결제위젯으로 진행한 경우 (paymentKey 존재)
+                if (isRecurring && paymentKey && !authKey) {
+                    console.log("═══════════════════════════════════════");
+                    console.log("🔑 결제위젯으로 빌링키 발급 프로세스");
+                    console.log("═══════════════════════════════════════");
+                    console.log("📥 토스페이먼츠에서 받은 데이터:");
+                    console.log("   - paymentKey:", paymentKey);
+                    console.log("   - orderId:", orderId);
+                    console.log("   - amount:", amount);
+
+                    // customerKey는 URL에서 받거나 생성
+                    const urlCustomerKey = searchParams.get("customerKey");
+                    const finalCustomerKey =
+                        urlCustomerKey ||
+                        (user
+                            ? `user_${user.uid
+                                  .replace(/[^a-zA-Z0-9\-_=.@]/g, "")
+                                  .substring(0, 40)}`
+                            : null);
+
+                    if (!finalCustomerKey) {
+                        setError("고객 정보를 찾을 수 없습니다");
+                        return;
+                    }
+
+                    console.log("   - customerKey:", finalCustomerKey);
+                    console.log("");
+
+                    // 1. 일반 결제 승인
+                    console.log("🔄 1단계: 결제 승인 중...");
+                    const confirmRes = await fetch("/api/payment/confirm", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            paymentKey,
+                            orderId,
+                            amount: Number(amount),
+                        }),
+                    });
+
+                    const confirmData = await confirmRes.json();
+
+                    if (!confirmRes.ok) {
+                        console.error("❌ 결제 승인 실패:", confirmData);
+                        setError(confirmData.error || "결제 승인 실패");
+                        return;
+                    }
+
+                    console.log("✅ 결제 승인 완료!");
+                    console.log("");
+
+                    // 토스페이/간편결제는 빌링키 발급 불가
+                    if (
+                        paymentKey.startsWith("tlink") ||
+                        paymentKey.startsWith("tviva")
+                    ) {
+                        console.log(
+                            "⚠️ 토스페이/간편결제는 빌링키 발급이 지원되지 않습니다"
+                        );
+                        console.log(
+                            "   결제는 완료되었으나, 구독은 등록되지 않았습니다"
+                        );
+
+                        setResult({
+                            success: true,
+                            data: confirmData.data,
+                        });
+                        setError(
+                            "⚠️ 카드 직접 결제만 구독이 가능합니다. 결제는 완료되었으나 자동결제는 등록되지 않았습니다."
+                        );
+                        return;
+                    }
+
+                    // 2. 빌링키 발급 (카드 결제만 가능)
+                    console.log("🔄 2단계: 빌링키 발급 요청...");
+                    console.log(
+                        "   API: POST /v1/payments/{paymentKey}/billing-key"
+                    );
+
+                    // 빌링키 발급 API 호출
+                    const billingRes = await fetch(
+                        "/api/billing/issue-from-payment",
+                        {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                paymentKey,
+                                customerKey: finalCustomerKey,
+                                amount: Number(amount),
+                                orderName,
+                                billingCycle,
+                            }),
+                        }
+                    );
+
+                    const billingData = await billingRes.json();
+
+                    if (!billingRes.ok) {
+                        console.log("═══════════════════════════════════════");
+                        console.error("❌ 빌링키 발급 실패!");
+                        console.error("   Status:", billingRes.status);
+                        console.error("   Error:", billingData);
+                        console.log("═══════════════════════════════════════");
+
+                        // 빌링키 발급 실패해도 결제는 성공했으므로 성공 페이지 표시
+                        console.warn(
+                            "⚠️ 빌링키 발급 실패했지만 결제는 완료되었습니다"
+                        );
+                        setResult({
+                            success: true,
+                            data: confirmData.data,
+                        });
+                        return;
+                    }
+
+                    console.log("═══════════════════════════════════════");
+                    console.log("✅ 빌링키 발급 성공!");
+                    console.log("═══════════════════════════════════════");
+                    console.log("🔑 발급된 빌링키:");
+                    console.log(
+                        "   - Billing Key:",
+                        billingData.billingKey?.substring(0, 30) + "..."
+                    );
+                    console.log("");
+                    console.log("📋 구독 정보:");
+                    console.log("   - Plan:", billingData.subscription?.plan);
+                    console.log("   - Amount:", amount, "원");
+                    console.log("   - Billing Cycle:", billingCycle);
+                    console.log(
+                        "   - Status:",
+                        billingData.subscription?.status
+                    );
+                    console.log(
+                        "   - Next Billing:",
+                        billingData.subscription?.nextBillingDate
+                    );
+                    console.log("═══════════════════════════════════════");
+                    console.log("");
+                    console.log("🎉 구독 결제가 모두 완료되었습니다!");
+                    console.log(
+                        "📅 다음 결제일:",
+                        billingData.subscription?.nextBillingDate
+                    );
+                    console.log("═══════════════════════════════════════");
+
+                    setResult({
+                        success: true,
+                        data: confirmData.data,
+                        subscription: billingData.subscription,
+                        billingKey: billingData.billingKey,
+                    });
+
+                    setResultSubscription(billingData.subscription);
+                    return;
+                }
+
+                // 구독 결제 - 빌링 인증 방식 (authKey 존재)
+                if (isRecurring && authKey && customerKey) {
+                    console.log("═══════════════════════════════════════");
+                    console.log("🔑 빌링키 발급 프로세스 시작");
+                    console.log("═══════════════════════════════════════");
+                    console.log("📥 토스페이먼츠에서 받은 데이터:");
+                    console.log("   - authKey:", authKey);
+                    console.log("   - customerKey:", customerKey);
+                    console.log("   - amount:", amount);
+                    console.log("   - orderName:", orderName);
+                    console.log("   - billingCycle:", billingCycle);
+                    console.log("");
+                    console.log("🔄 서버에 빌링키 발급 요청 중...");
+
+                    // 빌링키 발급 요청
+                    const billingRes = await fetch("/api/billing/issue", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            authKey,
+                            customerKey,
+                            amount: Number(amount),
+                            orderName,
+                            billingCycle,
+                        }),
+                    });
+
+                    const billingData = await billingRes.json();
+
+                    if (!billingRes.ok) {
+                        console.log("═══════════════════════════════════════");
+                        console.error("❌ 빌링키 발급 실패!");
+                        console.error("   Status:", billingRes.status);
+                        console.error("   Error:", billingData);
+                        console.log("═══════════════════════════════════════");
+                        setError(billingData.error || "빌링키 발급 실패");
+                        return;
+                    }
+
+                    console.log("═══════════════════════════════════════");
+                    console.log("✅ 빌링키 발급 성공!");
+                    console.log("═══════════════════════════════════════");
+                    console.log("🔑 발급된 빌링키:");
+                    console.log("   - Billing Key:", billingData.billingKey);
+                    console.log("");
+                    console.log("👤 고객 정보:");
+                    console.log("   - Customer Key:", customerKey);
+                    console.log("");
+                    console.log("📋 구독 정보:");
+                    console.log("   - Plan:", billingData.subscription?.plan);
+                    console.log("   - Amount:", amount, "원");
+                    console.log("   - Billing Cycle:", billingCycle);
+                    console.log(
+                        "   - Status:",
+                        billingData.subscription?.status
+                    );
+                    console.log(
+                        "   - Next Billing:",
+                        billingData.subscription?.nextBillingDate
+                    );
+                    console.log("═══════════════════════════════════════");
+                    console.log("");
+
+                    // 첫 결제 실행
+                    console.log("💳 첫 번째 결제 실행 중...");
+                    const chargeRes = await fetch("/api/billing/charge", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            billingKey: billingData.billingKey,
+                            customerKey,
+                            amount: Number(amount),
+                            orderName,
+                        }),
+                    });
+
+                    const chargeData = await chargeRes.json();
+
+                    if (!chargeRes.ok) {
+                        console.log("═══════════════════════════════════════");
+                        console.error("❌ 첫 결제 실패!");
+                        console.error("   Status:", chargeRes.status);
+                        console.error("   Error:", chargeData);
+                        console.log("═══════════════════════════════════════");
+                        setError(chargeData.error || "첫 결제 실패");
+                        return;
+                    }
+
+                    console.log("═══════════════════════════════════════");
+                    console.log("✅ 첫 결제 완료!");
+                    console.log("═══════════════════════════════════════");
+                    console.log("💰 결제 정보:");
+                    console.log("   - Order ID:", chargeData.orderId);
+                    console.log("   - Amount:", chargeData.amount, "원");
+                    console.log("   - Approved At:", chargeData.approvedAt);
+                    console.log("═══════════════════════════════════════");
+                    console.log("");
+                    console.log("🎉 구독 결제가 모두 완료되었습니다!");
+                    console.log(
+                        "📅 다음 결제일:",
+                        billingData.subscription?.nextBillingDate
+                    );
+                    console.log("═══════════════════════════════════════");
+
+                    setResult({
+                        success: true,
+                        data: {
+                            orderId: chargeData.orderId,
+                            totalAmount: amount,
+                            method: "카드 (자동결제)",
+                        },
+                        subscription: billingData.subscription,
+                        billingKey: billingData.billingKey,
+                    });
+
+                    setResultSubscription(billingData.subscription);
+                    return;
+                }
+
+                // 일회성 결제
                 if (!paymentKey || !orderId || !amount) {
                     setError("결제 정보가 누락되었습니다");
                     return;
@@ -191,7 +505,11 @@ function PaymentSuccessContent() {
                 // Immediately try to save subscription if we can identify the user
                 (async () => {
                     try {
+                        console.log("Processing payment success data:", data);
                         const toss = data?.data || data;
+                        console.log("Extracted toss object:", toss);
+
+                        // 안전하게 값들 추출
                         const total = Number(
                             toss?.totalAmount ?? toss?.amount ?? 0
                         );
@@ -201,10 +519,20 @@ function PaymentSuccessContent() {
                                 : total >= 9900
                                 ? "plus"
                                 : null;
-                        const customerKey = toss?.customerKey;
+                        const customerKey = toss?.customerKey || null;
+
+                        console.log("Extracted values:", {
+                            total,
+                            plan,
+                            customerKey,
+                        });
 
                         let targetUserId = user?.uid;
-                        if (!targetUserId && typeof customerKey === "string") {
+                        if (
+                            !targetUserId &&
+                            customerKey &&
+                            typeof customerKey === "string"
+                        ) {
                             const parts = customerKey.split("_");
                             if (parts.length > 1) targetUserId = parts[1];
                         }

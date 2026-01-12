@@ -118,8 +118,9 @@ export default function Benefits() {
                             미래를 경험해보세요
                         </h2>
                         <p className="benefits-main-desc">
-                            복잡한 수식과 반복 작업을 AI에게 맡기고 창의적인
-                            작업에 집중하세요.
+                            복잡한 수식과 반복 작업을 AI에게 맡기고
+                            <br />
+                            창의적인 작업에 집중하세요.
                         </p>
                     </div>
 
