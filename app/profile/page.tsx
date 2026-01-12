@@ -118,7 +118,7 @@ const plansData: PlanData[] = [
     {
         id: "free",
         name: "무료",
-        description: "Nova AI를 처음 시작하는 분들을 위한 플랜",
+        description: "Nova AI를 처음 시작하는\n분들을 위한 가장 간단한 플랜",
         monthlyPrice: 0,
         yearlyPrice: 0,
         icon: <SparklesIcon />,
@@ -135,7 +135,7 @@ const plansData: PlanData[] = [
     {
         id: "plus",
         name: "플러스",
-        description: "전문적인 한글 문서 자동화를 위한 플랜",
+        description: "전문적인 한글 문서 자동화를\n위한 합리적인 플랜",
         monthlyPrice: 9900,
         yearlyPrice: 7900,
         icon: <ZapIcon />,
@@ -153,7 +153,7 @@ const plansData: PlanData[] = [
     {
         id: "pro",
         name: "프로",
-        description: "모든 프리미엄 기능을 위한 플랜",
+        description: "모든 프리미엄 기능을 위한\n가장 강력한 플랜",
         monthlyPrice: 29900,
         yearlyPrice: 23900,
         icon: <CrownIcon />,
@@ -418,6 +418,13 @@ function ProfileContent() {
         return price.toLocaleString("ko-KR");
     };
 
+    // Map plan id to icon component
+    const getPlanIcon = (planId?: string) => {
+        if (planId === "pro") return <CrownIcon />;
+        if (planId === "plus") return <ZapIcon />;
+        return <SparklesIcon />;
+    };
+
     // 구독 결제 처리
     const handleSubscribe = async (plan: PlanData) => {
         if (plan.id === "free") {
@@ -434,9 +441,10 @@ function ProfileContent() {
         try {
             // 결제 페이지로 리다이렉트
             const planName = plan.id === "plus" ? "플러스" : "프로";
-            const planAmount = plan.id === "plus" ? 9900 : 29900;
+            // compute amount based on billing cycle
+            const planAmount = billingCycle === "monthly" ? plan.monthlyPrice : plan.yearlyPrice * 12;
 
-            window.location.href = `/payment?amount=${planAmount}&orderName=Nova AI ${planName} 요금제&recurring=true`;
+            window.location.href = `/payment?amount=${planAmount}&orderName=Nova AI ${planName} 요금제&recurring=true&billingCycle=${billingCycle}`;
         } catch (err: unknown) {
             console.error("결제 오류:", err);
             const error = err as { code?: string };
@@ -835,14 +843,8 @@ function ProfileContent() {
                                             <div
                                                 className={`current-plan-icon ${subscription?.plan}`}
                                             >
-                                                {subscription?.plan ===
-                                                "pro" ? (
-                                                    <CrownIcon />
-                                                ) : subscription?.plan ===
-                                                  "plus" ? (
-                                                    <ZapIcon />
-                                                ) : (
-                                                    <SparklesIcon />
+                                                {getPlanIcon(
+                                                    subscription?.plan
                                                 )}
                                             </div>
 
@@ -999,7 +1001,10 @@ function ProfileContent() {
                                                         ? plan.monthlyPrice
                                                         : plan.yearlyPrice;
                                                 const isCurrentPlan =
-                                                    plan.id === "free";
+                                                    subscription?.plan
+                                                        ? subscription.plan ===
+                                                          plan.id
+                                                        : plan.id === "free";
 
                                                 return (
                                                     <div

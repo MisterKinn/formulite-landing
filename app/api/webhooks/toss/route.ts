@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { saveSubscription, getSubscription } from "@/lib/subscription";
+import { saveSubscription, getSubscription, getNextBillingDate } from "@/lib/subscription";
 import {
     sendPaymentReceipt,
     sendPaymentFailureNotification,
@@ -158,11 +158,16 @@ async function handleBillingKeyIssued(data: any) {
     const userId = extractUserId(data.customerKey);
     if (userId) {
         try {
+            // default to monthly unless we can infer otherwise
+            const billingCycle: "monthly" | "yearly" = (data.billingCycle as any) || "monthly";
             await saveSubscription(userId, {
                 plan: "plus",
                 billingKey: data.billingKey,
                 customerKey: data.customerKey,
+                isRecurring: true,
+                billingCycle,
                 startDate: new Date().toISOString(),
+                nextBillingDate: getNextBillingDate(billingCycle),
                 status: "active",
                 amount: Number(data.totalAmount ?? data.amount ?? 0),
             });
@@ -186,6 +191,20 @@ async function handleBillingPaymentCompleted(data: any) {
             method: "카드 (자동결제)",
             approvedAt: data.approvedAt,
         });
+
+        try {
+            const subscription = await getSubscription(userId);
+            if (subscription) {
+                const billingCycle = subscription.billingCycle || "monthly";
+                await saveSubscription(userId, {
+                    ...subscription,
+                    status: "active",
+                    nextBillingDate: getNextBillingDate(billingCycle),
+                });
+            }
+        } catch (err) {
+            console.error("Failed to update subscription after billing payment:", err);
+        }
     }
 }
 

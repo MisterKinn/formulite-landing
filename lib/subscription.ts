@@ -13,6 +13,10 @@ export interface SubscriptionData {
     plan: "free" | "plus" | "pro";
     billingKey?: string;
     customerKey?: string;
+    /** true for recurring subscriptions */
+    isRecurring?: boolean;
+    /** 'monthly' or 'yearly' when recurring */
+    billingCycle?: "monthly" | "yearly";
     startDate: string;
     nextBillingDate?: string;
     status: "active" | "cancelled" | "expired";
@@ -88,9 +92,13 @@ export async function updateUserPlan(
     }
 }
 
-// Calculate next billing date (30 days from now)
-export function getNextBillingDate(): string {
+// Calculate next billing date (30 days for monthly, 365 days for yearly)
+export function getNextBillingDate(billingCycle: "monthly" | "yearly" = "monthly"): string {
     const date = new Date();
-    date.setDate(date.getDate() + 30);
+    if (billingCycle === "monthly") {
+        date.setDate(date.getDate() + 30);
+    } else {
+        date.setDate(date.getDate() + 365);
+    }
     return date.toISOString();
 }

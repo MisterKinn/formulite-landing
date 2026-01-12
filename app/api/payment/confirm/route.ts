@@ -124,6 +124,7 @@ export async function POST(request: NextRequest) {
                             startDate: new Date().toISOString(),
                             status: "active",
                             customerKey,
+                            isRecurring: false, // confirmed as one-time via payment.confirm
                         });
                         console.log(
                             `(confirm) Updated plan for user ${userId} -> ${plan}`

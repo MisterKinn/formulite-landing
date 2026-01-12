@@ -15,6 +15,8 @@ export default function PaymentClient() {
 
     const amount = Number(searchParams.get("amount") || 9900);
     const orderName = searchParams.get("orderName") || "Nova AI 결제";
+    const recurring = searchParams.get("recurring") === "true";
+    const billingCycle = (searchParams.get("billingCycle") as "monthly" | "yearly") || "monthly";
 
     const widgetRef = useRef<any>(null);
     const [ready, setReady] = useState(false);
@@ -107,8 +109,23 @@ export default function PaymentClient() {
     const handlePay = () => {
         if (!widgetRef.current) return;
 
+        const orderId = "order_" + Date.now();
+
+        if (recurring && widgetRef.current.requestBillingAuth) {
+            // initiate billing authorization (recurring) flow
+            widgetRef.current.requestBillingAuth({
+                orderId,
+                orderName,
+                // include a query so success page knows this was recurring
+                successUrl: `${window.location.origin}/payment/success?recurring=true&billingCycle=${billingCycle}`,
+                failUrl: `${window.location.origin}/payment/fail`,
+            });
+            return;
+        }
+
+        // fallback / one-time payment
         widgetRef.current.requestPayment({
-            orderId: "order_" + Date.now(),
+            orderId,
             orderName,
             successUrl: `${window.location.origin}/payment/success`,
             failUrl: `${window.location.origin}/payment/fail`,
@@ -234,7 +251,9 @@ export default function PaymentClient() {
                     }}
                 >
                     {ready
-                        ? `${amount.toLocaleString()}원 결제하기`
+                        ? (recurring
+                            ? `${amount.toLocaleString()}원 · 정기 결제 등록 (${billingCycle === 'yearly' ? '연간' : '월간'})`
+                            : `${amount.toLocaleString()}원 결제하기`)
                         : "로딩 중..."}
                 </button>
             </div>
