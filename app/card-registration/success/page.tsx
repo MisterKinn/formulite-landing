@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 
 interface BillingKeyResult {
@@ -10,7 +10,7 @@ interface BillingKeyResult {
     subscription?: any;
 }
 
-export default function CardRegistrationSuccessPage() {
+function CardRegistrationSuccessContent() {
     const searchParams = useSearchParams();
     const [result, setResult] = useState<BillingKeyResult | null>(null);
     const [loading, setLoading] = useState(true);
@@ -199,6 +199,22 @@ export default function CardRegistrationSuccessPage() {
                 </div>
             </div>
         </div>
+    );
+}
+
+export default function CardRegistrationSuccessPage() {
+    return (
+        <Suspense fallback={
+            <div style={styles.container}>
+                <div style={styles.card}>
+                    <div style={styles.spinner} />
+                    <h1 style={styles.title}>카드 등록 처리 중...</h1>
+                    <p style={styles.description}>잠시만 기다려주세요</p>
+                </div>
+            </div>
+        }>
+            <CardRegistrationSuccessContent />
+        </Suspense>
     );
 }
 
