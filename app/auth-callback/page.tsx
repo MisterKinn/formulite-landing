@@ -59,7 +59,7 @@ function AuthCallbackContent({
         // Some browsers block window.close() for windows not opened by script.
         // Attempt common fallbacks that sometimes allow closing in those cases.
         try {
-            window.open('', '_self');
+            window.open("", "_self");
             window.close();
         } catch (e) {
             /* ignore */
@@ -68,7 +68,7 @@ function AuthCallbackContent({
         // Final fallback: navigate to about:blank and then try closing again
         setTimeout(() => {
             try {
-                window.location.href = 'about:blank';
+                window.location.href = "about:blank";
                 window.close();
             } catch (e) {
                 /* ignore */
@@ -219,6 +219,10 @@ function AuthCallbackContent({
                             >
                                 Close Window
                             </button>
+                            <p className="text-sm text-gray-400 mt-3">
+                                Served by{" "}
+                                <strong>app/auth-callback/page.tsx</strong>
+                            </p>
                         </div>
                     </>
                 ) : (

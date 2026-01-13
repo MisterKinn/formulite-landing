@@ -291,6 +291,15 @@ ${resetLink}
 감사합니다.
 Nova AI 팀`.trim();
 
+        const baseUrl = (
+            process.env.NEXT_PUBLIC_BASE_URL ||
+            process.env.NEXT_PUBLIC_APP_URL ||
+            process.env.BASE_URL ||
+            "http://localhost:3000"
+        ).replace(/\/$/, "");
+
+        let logoUrl = process.env.EMAIL_LOGO_URL || `${baseUrl}/nova-logo.svg`;
+
         const html = `<!doctype html>
                         <html lang="ko">
                             <body style="margin:0; padding:0; background:#000000; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;">
@@ -303,11 +312,10 @@ Nova AI 팀`.trim();
                                         <tr>
                                         <td style="padding-bottom:24px;">
                                             <img
-                                            src="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/nova-logo.svg"
+                                            src="${logoUrl}"
                                             alt="Nova AI"
-                                            width="48"
                                             height="48"
-                                            style="display:block; margin:0 auto;"
+                                            style="display:block; margin:0 auto; width:auto; height:48px;"
                                             />
                                         </td>
                                         </tr>
@@ -325,8 +333,13 @@ Nova AI 팀`.trim();
                                         <tr>
                                         <td style="padding:0 12px 28px;">
                                             <p style="margin:0; font-size:14px; line-height:1.6; color:#cbd5e1;">
-                                            비밀번호 재설정을 요청하셨습니다.<br/>
+                                            Nova AI 사용자분께서 비밀번호 재설정을 요청하셨습니다.
+                                            <br/>
                                             아래 버튼을 눌러 새 비밀번호를 설정하세요.
+                                            <br />
+                                            링크는 보안을 위해 1시간의 유효기간이 있습니다.
+                                            <br />
+                                            비밀번호 재설정을 신청하지 않으셨다면 무시하셔도 됩니다.
                                             </p>
                                         </td>
                                         </tr>
@@ -400,14 +413,162 @@ Nova AI 팀`.trim();
 export async function sendPasswordChangedNotification(to: string) {
     try {
         const subject = "[Nova AI] 비밀번호가 변경되었습니다";
-        const text = `안녕하세요,
+        const text =
+            `안녕하세요,\n\n고객님의 계정 비밀번호가 성공적으로 변경되었습니다. 만약 본인이 변경하지 않으셨다면 즉시 고객센터로 연락하거나 비밀번호 재설정을 요청하세요.\n\n감사합니다.\nNova AI 팀`.trim();
 
-귀하의 계정 비밀번호가 성공적으로 변경되었습니다. 만약 본인이 변경하지 않으셨다면 즉시 고객센터로 연락하거나 비밀번호 재설정을 요청하세요.
+        const baseUrl = (
+            process.env.NEXT_PUBLIC_BASE_URL ||
+            process.env.NEXT_PUBLIC_APP_URL ||
+            process.env.BASE_URL ||
+            "http://localhost:3000"
+        ).replace(/\/$/, "");
 
-감사합니다.
-Nova AI 팀`.trim();
+        let logoUrl = process.env.EMAIL_LOGO_URL || `${baseUrl}/nova-logo.png`;
 
-        await sendEmail({ to, subject, text });
+        // If the logo will be a localhost URL (dev), and there is no explicit EMAIL_LOGO_URL,
+        // embed a small inline SVG as data URI so recipients see a logo instead of a broken image.
+        const isLocalHostLogo =
+            /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//i.test(logoUrl);
+        if (isLocalHostLogo && !process.env.EMAIL_LOGO_URL) {
+            try {
+                const svg = `<?xml version="1.0" encoding="UTF-8"?><svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' viewBox='0 0 48 48' role='img' aria-label='Nova AI'><rect rx='8' width='48' height='48' fill='#7c3aed'/><text x='50%' y='52%' font-size='22' fill='#ffffff' font-family='-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif' text-anchor='middle' dominant-baseline='middle'>N</text></svg>`;
+                const b64 = Buffer.from(svg).toString("base64");
+                logoUrl = `data:image/svg+xml;base64,${b64}`;
+                console.info(
+                    "[email] using inline SVG logo for emails (dev mode)"
+                );
+            } catch (e) {
+                console.warn(
+                    "[email] failed to create inline SVG logo fallback",
+                    e
+                );
+            }
+        }
+
+        // Optionally embed remote logo as data URI to avoid external image blocking in email clients.
+        // But if the user explicitly sets EMAIL_LOGO_URL, prefer using that URL directly
+        // (do not embed) so recipients fetch the image from the CDN.
+        const embedAllowed =
+            process.env.EMAIL_EMBED_LOGO !== "false" &&
+            !process.env.EMAIL_LOGO_URL;
+        if (embedAllowed && logoUrl && !logoUrl.startsWith("data:")) {
+            try {
+                const resp = await fetch(logoUrl);
+                if (resp.ok) {
+                    const contentType =
+                        resp.headers.get("content-type") || "image/png";
+                    const contentLength = Number(
+                        resp.headers.get("content-length") || "0"
+                    );
+                    const MAX_EMBED_BYTES = 100 * 1024; // 100KB
+
+                    if (!contentLength || contentLength <= MAX_EMBED_BYTES) {
+                        const arrayBuffer = await resp.arrayBuffer();
+                        const buf = Buffer.from(arrayBuffer);
+                        if (buf.length <= MAX_EMBED_BYTES) {
+                            logoUrl = `data:${contentType};base64,${buf.toString(
+                                "base64"
+                            )}`;
+                            console.info(
+                                "[email] embedded remote logo as data URI"
+                            );
+                        } else {
+                            console.info(
+                                "[email] remote logo too large to embed, skipping"
+                            );
+                        }
+                    } else {
+                        console.info(
+                            "[email] remote logo content-length exceeds embed threshold, skipping"
+                        );
+                    }
+                } else {
+                    console.warn(
+                        "[email] failed to fetch logo for embedding",
+                        resp.status
+                    );
+                }
+            } catch (e) {
+                console.warn(
+                    "[email] error when trying to fetch and embed logo",
+                    e
+                );
+            }
+        }
+
+        const html = `<!doctype html>
+<html lang="ko">
+  <body style="margin:0; padding:0; background:#000000; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;">
+    <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#000000;">
+      <tr>
+        <td align="center" style="padding:40px 16px;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="max-width:420px; text-align:center;">
+
+            <!-- Logo -->
+            <tr>
+              <td style="padding-bottom:24px;">
+                <img
+                  src="${logoUrl}"
+                  alt="Nova AI"
+                  height="48"
+                  style="display:block; margin:0 auto; width:auto; height:48px;"
+                />
+              </td>
+            </tr>
+
+            <!-- Title -->
+            <tr>
+              <td style="padding-bottom:12px;">
+                <h1 style="margin:0; font-size:22px; font-weight:700; color:#ffffff;">
+                  비밀번호가 변경되었습니다
+                </h1>
+              </td>
+            </tr>
+
+            <!-- Description -->
+            <tr>
+              <td style="padding:0 12px 24px;">
+                <p style="margin:0; font-size:14px; line-height:1.6; color:#cbd5e1;">
+                  고객님의 계정 비밀번호가 성공적으로 변경되었습니다.
+                </p>
+              </td>
+            </tr>
+
+            <!-- Warning Box -->
+            <tr>
+              <td style="padding:0 12px 32px;">
+                <div style="
+                  background:#020617;
+                  border:1px solid #1e293b;
+                  border-radius:8px;
+                  padding:14px;
+                  font-size:13px;
+                  color:#94a3b8;
+                  line-height:1.5;
+                ">
+                  본인이 변경하지 않으셨다면<br/>
+                  즉시 고객센터로 연락하거나 비밀번호 재설정을 진행하세요.
+                </div>
+              </td>
+            </tr>
+
+            <!-- Footer -->
+            <tr>
+              <td>
+                <p style="margin:0; font-size:11px; color:#64748b;">
+                  Nova AI Team
+                </p>
+              </td>
+            </tr>
+
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+
+        await sendEmail({ to, subject, text, html });
         console.log("✅ Password change notification sent to:", to);
     } catch (error) {
         console.error("Error sending password change notification:", error);

@@ -204,11 +204,6 @@ export default function PasswordResetPage() {
                                     <p>링크를 확인 중입니다…</p>
                                 ) : (
                                     <>
-                                        <p style={{ marginBottom: 12 }}>
-                                            비밀번호를 재설정하려면 아래 새
-                                            비밀번호를 입력해 주세요.
-                                        </p>
-
                                         <label>
                                             <span>새 비밀번호</span>
                                             <div className="password-reset-input">
@@ -287,11 +282,10 @@ export default function PasswordResetPage() {
                                             <div
                                                 style={{
                                                     fontSize: 13,
-                                                    color: "#475569",
                                                     marginBottom: 8,
                                                 }}
                                             >
-                                                재설정 대상:{" "}
+                                                재설정할 계정:{" "}
                                                 <strong>{oobEmail}</strong>
                                             </div>
                                         )}

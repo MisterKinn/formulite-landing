@@ -1,0 +1,61 @@
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - navigation [ref=e2]:
+    - generic [ref=e3]:
+      - link "노바AI 로고" [ref=e4] [cursor=pointer]:
+        - /url: /
+        - img "노바AI 로고" [ref=e6]
+      - generic [ref=e7]:
+        - link "메인" [ref=e8] [cursor=pointer]:
+          - /url: /#home
+        - link "강점" [ref=e9] [cursor=pointer]:
+          - /url: /#benefits
+        - link "기능" [ref=e10] [cursor=pointer]:
+          - /url: /#features
+        - link "후기" [ref=e11] [cursor=pointer]:
+          - /url: /#testimonials
+        - link "요금제" [ref=e12] [cursor=pointer]:
+          - /url: /#pricing
+        - link "FAQ" [ref=e13] [cursor=pointer]:
+          - /url: /#faq
+        - link "지금 다운로드" [ref=e14] [cursor=pointer]:
+          - /url: /download
+      - generic [ref=e15]:
+        - link "로그인" [ref=e16] [cursor=pointer]:
+          - /url: /login
+        - link "다운로드" [ref=e17] [cursor=pointer]:
+          - /url: /download
+  - generic [ref=e19]:
+    - banner [ref=e20]:
+      - generic [ref=e22]: 로그인
+    - generic [ref=e23]:
+      - button "Google로 계속하기" [disabled] [ref=e24]:
+        - img [ref=e25]
+        - generic [ref=e31]: Google로 계속하기
+      - button "네이버로 계속하기" [disabled] [ref=e32]:
+        - generic [ref=e33]: 네이버로 계속하기
+      - button "카카오로 계속하기" [disabled] [ref=e34]:
+        - generic [ref=e35]: 카카오로 계속하기
+    - generic [ref=e37]: 또는
+    - generic [ref=e38]:
+      - generic [ref=e39]:
+        - generic [ref=e40]: 이메일
+        - generic [ref=e41]:
+          - img [ref=e42]
+          - textbox "이메일" [ref=e45]:
+            - /placeholder: you@example.com
+      - generic [ref=e46]:
+        - generic [ref=e47]: 비밀번호
+        - generic [ref=e48]:
+          - img [ref=e49]
+          - textbox "비밀번호" [ref=e52]:
+            - /placeholder: 6자 이상 입력
+      - button "비밀번호를 잊으셨나요?" [ref=e53] [cursor=pointer]
+      - button "로그인" [disabled] [ref=e54]
+    - generic [ref=e55]:
+      - text: 아직 계정이 없으신가요?
+      - button "회원가입으로 이동" [ref=e56] [cursor=pointer]
+  - alert [ref=e57]
+```

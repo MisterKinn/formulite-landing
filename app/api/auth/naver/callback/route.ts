@@ -61,6 +61,7 @@ export async function GET(req: Request) {
     <p class="message">You can close this window.</p>
     <p class="note">This window will attempt to close automatically. If it doesn’t, you can close it manually.</p>
     <button class="btn" onclick="window.close()">Close window</button>
+    <p style="margin-top:12px;font-size:12px;color:#6b7280">Served by <strong>/api/auth/naver/callback (fallback)</strong></p>
   </div>
   <script>
       try {
@@ -194,6 +195,7 @@ export async function GET(req: Request) {
     <p class="message">Signing in... You can close this window.</p>
     <p class="note">This window will attempt to close automatically. If it doesn’t, you can close it manually.</p>
     <button class="btn" onclick="window.close()">Close window</button>
+    <p style="margin-top:12px;font-size:12px;color:#6b7280">Served by <strong>/api/auth/naver/callback</strong></p>
   </div>
   <script>
       try {

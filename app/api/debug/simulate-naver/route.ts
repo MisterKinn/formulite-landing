@@ -67,8 +67,7 @@ export async function GET(req: Request) {
     <h1>Dev-simulated Naver sign-in complete</h1>
     <p class="message">Dev-simulated Naver sign-in complete (dev bypass). You can close this window.</p>
     <p class="note">This window will attempt to close automatically. If it doesn’t, you can close it manually.</p>
-    <button class="btn" onclick="window.close()">Close window</button>
-  </div>
+    <button class="btn" onclick="window.close()">Close window</button>    <p style="margin-top:12px;font-size:12px;color:#6b7280">Served by <strong>/api/debug/simulate-naver (dev)</strong></p>  </div>
   <script>
       try {
         const data = { type: 'oauth-dev', provider: 'naver', profile: ${JSON.stringify(
@@ -137,6 +136,7 @@ export async function GET(req: Request) {
     <p class="message">Dev-simulated Naver sign-in complete. You can close this window.</p>
     <p class="note">This window will attempt to close automatically. If it doesn’t, you can close it manually.</p>
     <button class="btn" onclick="window.close()">Close window</button>
+    <p style="margin-top:12px;font-size:12px;color:#6b7280">Served by <strong>/api/debug/simulate-naver</strong></p>
   </div>
   <script>
       try {

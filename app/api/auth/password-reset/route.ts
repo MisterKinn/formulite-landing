@@ -55,7 +55,7 @@ export async function POST(req: Request) {
                     apiKey || ""
                 )}&lang=${encodeURIComponent(lang)}`;
 
-                await sendPasswordResetEmailToUser(email, appResetLink);
+                await sendPasswordResetEmailToUser(email!, appResetLink);
                 console.info("[password-reset] sent app-hosted reset link", {
                     appResetLink,
                 });
@@ -69,7 +69,7 @@ export async function POST(req: Request) {
         }
 
         // Fallback: Send the original Firebase-hosted link if we couldn't construct an app link
-        await sendPasswordResetEmailToUser(email, link);
+        await sendPasswordResetEmailToUser(email!, link);
 
         return NextResponse.json({ ok: true }, { status: 200 });
     } catch (err: any) {
@@ -261,7 +261,7 @@ export async function POST(req: Request) {
                         "[password-reset] no Firebase API key available for fallback"
                     );
                 }
-            } catch (fallbackErr) {
+            } catch (fallbackErr: any) {
                 console.error(
                     "[password-reset] fallback attempt threw an error",
                     fallbackErr
@@ -350,8 +350,8 @@ export async function POST(req: Request) {
                     const admin = getFirebaseAdmin();
                     const link = await admin
                         .auth()
-                        .generatePasswordResetLink(email);
-                    await sendPasswordResetEmailToUser(email, link);
+                        .generatePasswordResetLink(email!);
+                    await sendPasswordResetEmailToUser(email!, link);
                     console.info(
                         "[password-reset] successful generatePasswordResetLink() without continue URL",
                         { email }
@@ -412,7 +412,7 @@ export async function POST(req: Request) {
                     );
                 }
             }
-        } catch (fallbackErr) {
+        } catch (fallbackErr: any) {
             console.error(
                 "[password-reset] identity-toolkit fallback after unauthorized-continue-uri failed",
                 fallbackErr

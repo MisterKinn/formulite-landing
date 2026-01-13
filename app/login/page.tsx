@@ -313,10 +313,12 @@ function LoginContent() {
                             disabled={submitting}
                         >
                             <svg
-                                width="20"
-                                height="20"
+                                className="social-icon google-icon"
+                                width="28"
+                                height="28"
                                 viewBox="0 0 20 20"
                                 fill="none"
+                                xmlns="http://www.w3.org/2000/svg"
                             >
                                 <g clipPath="url(#clip0_993_771)">
                                     <path
@@ -371,6 +373,11 @@ function LoginContent() {
                             }}
                             disabled={submitting}
                         >
+                            <img
+                                src="/naver-logo.png"
+                                alt="Naver"
+                                className="social-icon"
+                            />
                             <span>네이버로 계속하기</span>
                         </button>
 
@@ -396,6 +403,11 @@ function LoginContent() {
                             }}
                             disabled={submitting}
                         >
+                            <img
+                                src="/kakao-logo.png"
+                                alt="Kakao"
+                                className="social-icon"
+                            />
                             <span>카카오로 계속하기</span>
                         </button>
                     </div>

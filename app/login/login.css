@@ -246,7 +246,7 @@ body {
 .social-login-container {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: 0.5rem;
     margin-bottom: 1.5rem;
 }
 
@@ -270,12 +270,55 @@ body {
     cursor: not-allowed;
 }
 
+.social-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem; /* unified, narrower gap for icons */
+    padding-left: 0.875rem;
+    padding-right: 0.875rem;
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+}
+
 .social-btn:hover:not(:disabled) {
     filter: brightness(0.95);
 }
 
 .social-btn:active:not(:disabled) {
     transform: scale(0.98);
+}
+
+.social-icon {
+    width: 24px; /* larger logo */
+    height: 24px;
+    display: inline-block;
+    object-fit: contain;
+}
+
+/* Naver-specific adjustments: slightly larger icon and narrower gap */
+
+.naver-btn .social-icon {
+    width: 28px; /* slightly larger for Naver */
+    height: 28px;
+}
+
+/* Google sizing: slightly smaller for better balance */
+.google-btn .social-icon,
+.google-icon {
+    width: 26px;
+    height: 26px;
+    display: inline-block;
+}
+
+.kakao-btn .social-icon {
+    width: 24px;
+    height: 24px;
+}
+
+/* Nudge Google text slightly to the right for better visual balance */
+.google-btn span {
+    margin-left: 0.25rem;
 }
 
 .google-btn {

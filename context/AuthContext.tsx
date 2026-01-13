@@ -124,51 +124,85 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
             // load avatar from Firestore when user signs in; also ensure basic profile fields are present
             (async () => {
-                try {
-                    if (firebaseUser) {
-                        const db = getFirestore(app);
-                        const docRef = doc(db, "users", firebaseUser.uid);
-                        const snap = await getDoc(docRef);
-
-                        const avatarFromAuth =
-                            (firebaseUser.photoURL as string) || null;
-                        const displayNameFromAuth =
-                            firebaseUser.displayName || null;
-                        const emailFromAuth = firebaseUser.email || null;
-
-                        if (!snap.exists()) {
-                            // create initial doc from Auth profile when missing
-                            await setDoc(
-                                docRef,
-                                {
-                                    avatar: avatarFromAuth,
-                                    displayName: displayNameFromAuth,
-                                    email: emailFromAuth,
-                                    createdAt: Date.now(),
-                                },
-                                { merge: true }
-                            );
-                            setAvatar(avatarFromAuth);
-                        } else {
-                            const data = snap.data() as any;
-                            // If Firestore doc is missing key profile fields, merge values from Auth
-                            const updates: any = {};
-                            if (!data?.displayName && displayNameFromAuth)
-                                updates.displayName = displayNameFromAuth;
-                            if (!data?.email && emailFromAuth)
-                                updates.email = emailFromAuth;
-                            if (!data?.avatar && avatarFromAuth)
-                                updates.avatar = avatarFromAuth;
-                            if (Object.keys(updates).length > 0) {
-                                await setDoc(docRef, updates, { merge: true });
-                            }
-                            setAvatar(data?.avatar ?? avatarFromAuth);
-                        }
-                    } else {
-                        setAvatar(null);
-                    }
-                } catch (err) {
+                if (!firebaseUser) {
                     setAvatar(null);
+                    return;
+                }
+
+                try {
+                    const db = getFirestore(app);
+                    const docRef = doc(db, "users", firebaseUser.uid);
+
+                    const avatarFromAuth =
+                        (firebaseUser.photoURL as string) || null;
+                    const displayNameFromAuth =
+                        firebaseUser.displayName || null;
+                    const emailFromAuth = firebaseUser.email || null;
+
+                    // Try to read the user doc, with a short retry loop to account for eventual consistency
+                    // when the server has just written the profile during the OAuth callback.
+                    let snap = await getDoc(docRef);
+                    const maxAttempts = 6;
+                    let attempt = 0;
+                    while (
+                        attempt < maxAttempts &&
+                        (!snap.exists() ||
+                            (!snap.data()?.avatar &&
+                                !snap.data()?.displayName &&
+                                !snap.data()?.email))
+                    ) {
+                        // If a doc exists and has some fields, accept it
+                        if (
+                            snap.exists() &&
+                            (snap.data()?.avatar ||
+                                snap.data()?.displayName ||
+                                snap.data()?.email)
+                        )
+                            break;
+                        // wait and retry
+                        await new Promise((r) => setTimeout(r, 250));
+                        snap = await getDoc(docRef);
+                        attempt++;
+                    }
+
+                    if (!snap.exists()) {
+                        // create initial doc from Auth profile when missing
+                        await setDoc(
+                            docRef,
+                            {
+                                avatar: avatarFromAuth,
+                                displayName: displayNameFromAuth,
+                                email: emailFromAuth,
+                                createdAt: Date.now(),
+                            },
+                            { merge: true }
+                        );
+                        setAvatar(avatarFromAuth);
+                        return;
+                    }
+
+                    const data = snap.data() as any;
+
+                    // If Firestore doc is missing key profile fields, merge values from Auth
+                    const updates: any = {};
+                    if (!data?.displayName && displayNameFromAuth)
+                        updates.displayName = displayNameFromAuth;
+                    if (!data?.email && emailFromAuth)
+                        updates.email = emailFromAuth;
+                    if (!data?.avatar && avatarFromAuth)
+                        updates.avatar = avatarFromAuth;
+                    if (Object.keys(updates).length > 0) {
+                        await setDoc(docRef, updates, { merge: true });
+                    }
+
+                    // Prefer Firestore avatar when present, otherwise fall back to Auth avatar
+                    setAvatar(data?.avatar ?? avatarFromAuth);
+                } catch (err) {
+                    // If anything goes wrong, do not clobber a previously-set avatar (best-effort).
+                    console.warn(
+                        "[AuthContext] Failed to load or init user doc (non-fatal)",
+                        err
+                    );
                 }
             })();
         });
@@ -295,9 +329,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
             function handler(e: MessageEvent) {
                 try {
-                    // Only accept messages from same origin
-                    if (e.origin !== window.location.origin) return;
+                    // Accept messages from the same origin.
+                    // In development, accept messages from the same hostname even if the port differs
+                    if (e.origin !== window.location.origin) {
+                        try {
+                            const senderHost = new URL(e.origin).hostname;
+                            const myHost = window.location.hostname;
+                            if (
+                                process.env.NODE_ENV === "production" ||
+                                senderHost !== myHost
+                            ) {
+                                console.warn(
+                                    "[AuthContext] Ignoring message from origin",
+                                    e.origin
+                                );
+                                return;
+                            }
+                            console.warn(
+                                "[AuthContext] Accepting message from different origin (dev):",
+                                e.origin
+                            );
+                        } catch (err) {
+                            console.warn(
+                                "[AuthContext] Failed to parse message origin",
+                                e.origin,
+                                err
+                            );
+                            return;
+                        }
+                    }
+
                     const data = e.data;
+                    console.debug(
+                        "[AuthContext] received oauth message",
+                        e.origin,
+                        data
+                    );
 
                     // Standard flow: { type: 'oauth', provider, customToken, profile? }
                     if (
@@ -816,7 +883,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             return user;
         }
 
-        let customToken: string;
+        // Initialize to `null` so TypeScript won't report "used before assigned" when we
+        // branch between direct server flow, code-exchange flow, or raw token string.
+        let customToken: string | null = null;
         let profile: any = null;
 
         // Direct server flow (server returned customToken/profile)
@@ -869,17 +938,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Update Firebase Auth profile and email when profile is provided
         try {
             if (profile) {
-                const displayName =
-                    profile?.nickname || profile?.profile?.nickname || null;
-                const photoURL =
+                // Normalize Kakao profile fields (provider returns different shapes)
+                const kakaoEmail =
+                    profile?.kakao_account?.email || profile?.email || null;
+                const kakaoDisplayName =
+                    profile?.kakao_account?.profile?.nickname ||
+                    profile?.properties?.nickname ||
+                    profile?.profile?.nickname ||
+                    profile?.nickname ||
+                    null;
+                const kakaoAvatar =
+                    profile?.kakao_account?.profile?.profile_image_url ||
+                    profile?.properties?.profile_image ||
                     profile?.profile_image ||
                     profile?.profile?.profile_image ||
                     null;
-                if (displayName || photoURL) {
+
+                if (kakaoDisplayName || kakaoAvatar) {
                     try {
                         await updateProfile(cred.user, {
-                            displayName: displayName || undefined,
-                            photoURL: photoURL || undefined,
+                            displayName: kakaoDisplayName || undefined,
+                            photoURL: kakaoAvatar || undefined,
                         });
                     } catch (err) {
                         console.warn(
@@ -888,9 +967,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                         );
                     }
                 }
-                if (profile?.email) {
+                if (kakaoEmail) {
                     try {
-                        await updateEmail(cred.user, profile.email);
+                        await updateEmail(cred.user, kakaoEmail);
                     } catch (err) {
                         console.warn(
                             "[AuthContext] updateEmail failed (kakao)",
@@ -906,42 +985,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                         err
                     );
                 }
-            }
-            const db = getFirestore(app);
-            const docRef = doc(db, "users", cred.user.uid);
-            if (profile) {
-                await setDoc(
-                    docRef,
-                    {
-                        avatar:
-                            profile?.profile_image ||
-                            profile?.profile?.profile_image ||
-                            null,
-                        displayName:
-                            profile?.nickname ||
-                            profile?.profile?.nickname ||
-                            null,
-                        email: profile?.email || null,
-                        createdAt: Date.now(),
-                    },
-                    { merge: true }
-                );
-                setAvatar(
-                    profile?.profile_image ||
-                        profile?.profile?.profile_image ||
-                        null
-                );
-            } else {
-                const snap = await getDoc(docRef);
-                if (!snap.exists()) {
+
+                const db = getFirestore(app);
+                const docRef = doc(db, "users", cred.user.uid);
+
+                if (profile) {
                     await setDoc(
                         docRef,
-                        { avatar: null, createdAt: Date.now() },
+                        {
+                            avatar: kakaoAvatar,
+                            displayName: kakaoDisplayName,
+                            email: kakaoEmail,
+                            createdAt: Date.now(),
+                        },
                         { merge: true }
                     );
-                    setAvatar(null);
+                    setAvatar(kakaoAvatar);
                 } else {
-                    setAvatar((snap.data() as any).avatar ?? null);
+                    const snap = await getDoc(docRef);
+                    if (!snap.exists()) {
+                        await setDoc(
+                            docRef,
+                            { avatar: null, createdAt: Date.now() },
+                            { merge: true }
+                        );
+                        setAvatar(null);
+                    } else {
+                        setAvatar((snap.data() as any).avatar ?? null);
+                    }
                 }
             }
         } catch (err) {

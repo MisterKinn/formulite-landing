@@ -10,8 +10,15 @@ export async function GET(req: Request) {
     const cookieState = req.headers
         .get("cookie")
         ?.match(/oauth_state=([^;]+)/)?.[1];
-    const returnTo =
+    // decode return_to if it was URL-encoded when set
+    const rawReturnTo =
         req.headers.get("cookie")?.match(/oauth_return_to=([^;]+)/)?.[1] || "";
+    let returnTo = "";
+    try {
+        returnTo = rawReturnTo ? decodeURIComponent(rawReturnTo) : "";
+    } catch (err) {
+        returnTo = rawReturnTo || "";
+    }
 
     if (!code) return new NextResponse("Missing code", { status: 400 });
     if (!state || !cookieState || state !== cookieState) {
@@ -43,6 +50,7 @@ export async function GET(req: Request) {
     <p class="message">You can close this window.</p>
     <p class="note">This window will attempt to close automatically. If it doesn’t, you can close it manually.</p>
     <button class="btn" onclick="window.close()">Close window</button>
+    <p style="margin-top:12px;font-size:12px;color:#6b7280">Served by <strong>/api/auth/kakao/callback (fallback)</strong></p>
   </div>
   <script>
       try {
@@ -164,6 +172,103 @@ export async function GET(req: Request) {
             );
         }
 
+        // If debug cookie is present, render a non-closing diagnostic that displays the
+        // payload and target origin so devs can inspect and manually postMessage from the popup.
+        const cookies = req.headers.get("cookie") || "";
+        if (
+            process.env.NODE_ENV !== "production" &&
+            cookies.includes("oauth_debug=1")
+        ) {
+            const debugHtml = `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Signing in (debug)</title>
+  <style>
+    body{margin:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial;background:#f7f8fa;color:#111;display:flex;align-items:center;justify-content:center;height:100vh}
+    .card{background:#fff;padding:28px;border-radius:12px;box-shadow:0 8px 30px rgba(2,6,23,.08);max-width:740px;text-align:left}
+    pre{background:#0f172a;color:#fff;padding:12px;border-radius:8px;overflow:auto}
+    .btn{display:inline-block;margin-top:14px;padding:8px 14px;border-radius:8px;background:#2563eb;color:#fff;text-decoration:none;border:none;cursor:pointer}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Signing in (debug)</h1>
+    <p class="message">This debug page will not automatically close so you can inspect the payload and call window.opener.postMessage manually if needed.</p>
+    <h3>Payload</h3>
+    <pre id="payload">${JSON.stringify(
+        { type: "oauth", provider: "kakao", customToken, profile },
+        null,
+        2
+    )}</pre>
+    <h3>Target</h3>
+    <pre id="target">${
+        returnTo
+            ? JSON.stringify(returnTo)
+            : "window.opener?.location?.origin || '*'"
+    }</pre>
+    <div style="margin-top:10px">
+      <button class="btn" id="post">Post message to opener</button>
+      <button class="btn" id="close" style="background:#6b7280">Close window</button>
+    </div>
+  </div>
+  <script>
+    document.getElementById('post').addEventListener('click', () => {
+      try {
+        const data = { type: 'oauth', provider: 'kakao', customToken: ${JSON.stringify(
+            customToken
+        )}, profile: ${JSON.stringify(profile)} };
+        const target = ${
+            returnTo
+                ? JSON.stringify(returnTo)
+                : "window.opener?.location?.origin || '*'"
+        };
+        console.log('Posting', data, 'to', target);
+        window.opener && window.opener.postMessage(data, target);
+        // Close the popup automatically a short time after posting so the opener has time to receive the message.
+        try { setTimeout(() => window.close(), 150); } catch (e) { /* ignore */ }
+      } catch (e) { console.error(e); }
+    });
+
+    // Auto-post on load (small delay to allow opener to attach message handler)
+    try {
+      setTimeout(() => {
+        try {
+          const data = { type: 'oauth', provider: 'kakao', customToken: ${JSON.stringify(
+              customToken
+          )}, profile: ${JSON.stringify(profile)} };
+          const target = ${
+              returnTo
+                  ? JSON.stringify(returnTo)
+                  : "window.opener?.location?.origin || '*'"
+          };
+          console.log('Auto-posting', data, 'to', target);
+          window.opener && window.opener.postMessage(data, target);
+          try { setTimeout(() => window.close(), 150); } catch (e) { /* ignore */ }
+        } catch (postErr) {
+          console.error('Auto-post failed', postErr);
+        }
+      }, 50);
+    } catch (e) {
+      console.error('Auto-post setup failed', e);
+    }
+    document.getElementById('close').addEventListener('click', () => window.close());
+  </script>
+</body>
+</html>`;
+            const resDebug = new NextResponse(debugHtml, {
+                headers: { "Content-Type": "text/html" },
+            });
+            resDebug.cookies.set({ name: "oauth_state", value: "", maxAge: 0 });
+            resDebug.cookies.set({
+                name: "oauth_return_to",
+                value: "",
+                maxAge: 0,
+            });
+            return resDebug;
+        }
+
         const html = `<!doctype html>
 <html>
 <head>
@@ -187,6 +292,7 @@ export async function GET(req: Request) {
     <p class="message">Signing in... You can close this window.</p>
     <p class="note">This window will attempt to close automatically. If it doesn’t, you can close it manually.</p>
     <button class="btn" onclick="window.close()">Close window</button>
+    <p style="margin-top:12px;font-size:12px;color:#6b7280">Served by <strong>/api/auth/kakao/callback</strong></p>
   </div>
   <script>
       try {

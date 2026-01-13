@@ -1,9 +1,41 @@
 "use client";
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
+import { getFirestore, doc, getDoc } from "firebase/firestore";
+import { app } from "../firebaseConfig";
 
 export function Navbar() {
     const { isAuthenticated, avatar, logout, user } = useAuth();
+    const [displayName, setDisplayName] = useState<string | null>(null);
+
+    useEffect(() => {
+        let mounted = true;
+        async function loadName() {
+            if (!user) {
+                if (mounted) setDisplayName(null);
+                return;
+            }
+            if (user.displayName) {
+                if (mounted) setDisplayName(user.displayName);
+                return;
+            }
+            try {
+                const db = getFirestore(app);
+                const docRef = doc(db, "users", user.uid);
+                const snap = await getDoc(docRef);
+                if (mounted && snap.exists()) {
+                    const data = snap.data() as any;
+                    setDisplayName(data?.displayName ?? null);
+                }
+            } catch (err) {
+                // non-fatal
+            }
+        }
+        loadName();
+        return () => {
+            mounted = false;
+        };
+    }, [user]);
     const [menuOpen, setMenuOpen] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
 
@@ -74,7 +106,7 @@ export function Navbar() {
                                 />
                                 <div className="nav-profile-info">
                                     <span className="nav-profile-email">
-                                        {user?.email || "사용자"}
+                                        {displayName ?? user?.email ?? "사용자"}
                                     </span>
                                     <span className="nav-profile-plan">
                                         무료 플랜
