@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
     getAuth,
@@ -21,7 +21,7 @@ const Sidebar = dynamic(() => import("../../components/Sidebar"), {
     ssr: false,
 });
 
-export default function PasswordResetPage() {
+function PasswordResetContent() {
     const router = useRouter();
     const [currentPassword, setCurrentPassword] = useState("");
     const [newPassword, setNewPassword] = useState("");
@@ -457,5 +457,29 @@ export default function PasswordResetPage() {
                 </div>
             </div>
         </>
+    );
+}
+
+export default function PasswordResetPage() {
+    return (
+        <Suspense fallback={
+            <>
+                <div className="desktop-navbar">
+                    <Navbar />
+                </div>
+                <div className="mobile-sidebar-container">
+                    <Sidebar />
+                </div>
+                <div className="password-reset-outer-bg">
+                    <div className="password-reset-container">
+                        <div className="password-reset-card">
+                            <h2 className="password-reset-title">로딩 중...</h2>
+                        </div>
+                    </div>
+                </div>
+            </>
+        }>
+            <PasswordResetContent />
+        </Suspense>
     );
 }

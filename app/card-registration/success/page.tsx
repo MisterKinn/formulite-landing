@@ -204,15 +204,17 @@ function CardRegistrationSuccessContent() {
 
 export default function CardRegistrationSuccessPage() {
     return (
-        <Suspense fallback={
-            <div style={styles.container}>
-                <div style={styles.card}>
-                    <div style={styles.spinner} />
-                    <h1 style={styles.title}>카드 등록 처리 중...</h1>
-                    <p style={styles.description}>잠시만 기다려주세요</p>
+        <Suspense
+            fallback={
+                <div style={styles.container}>
+                    <div style={styles.card}>
+                        <div style={styles.spinner} />
+                        <h1 style={styles.title}>카드 등록 처리 중...</h1>
+                        <p style={styles.description}>잠시만 기다려주세요</p>
+                    </div>
                 </div>
-            </div>
-        }>
+            }
+        >
             <CardRegistrationSuccessContent />
         </Suspense>
     );
