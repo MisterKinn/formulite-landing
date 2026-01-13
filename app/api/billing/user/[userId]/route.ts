@@ -7,7 +7,7 @@ import { billUserImmediately } from "@/lib/scheduledBilling";
  */
 export async function POST(
     request: NextRequest,
-    { params }: { params: { userId: string } }
+    { params }: { params: Promise<{ userId: string }> }
 ) {
     try {
         // 간단한 관리자 인증 (프로덕션에서는 더 강력한 인증 필요)
@@ -27,7 +27,7 @@ export async function POST(
             }
         }
 
-        const { userId } = params;
+        const { userId } = await params;
 
         if (!userId) {
             return NextResponse.json(

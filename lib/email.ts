@@ -302,28 +302,28 @@ Nova AI 팀`.trim();
 
         const html = `<!doctype html>
                         <html lang="ko">
-                            <body style="margin:0; padding:0; background:#000000; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;">
-                                <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#000000;">
+                            <body style="margin:0; padding:0; background:#f9fafb; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;">
+                                <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#f9fafb;">
                                 <tr>
                                     <td align="center" style="padding:40px 16px;">
-                                    <table width="100%" cellpadding="0" cellspacing="0" style="max-width:420px; background:#000000; text-align:center;">
+                                    <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px; background:#ffffff; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.08);">
                                         
                                         <!-- Logo -->
                                         <tr>
-                                        <td style="padding-bottom:24px;">
+                                        <td style="padding:32px 32px 24px;">
                                             <img
                                             src="${logoUrl}"
                                             alt="Nova AI"
                                             height="48"
-                                            style="display:block; margin:0 auto; width:auto; height:48px;"
+                                            style="display:block; width:auto; height:48px;"
                                             />
                                         </td>
                                         </tr>
 
                                         <!-- Title -->
                                         <tr>
-                                        <td style="padding-bottom:12px;">
-                                            <h1 style="margin:0; font-size:22px; font-weight:700; color:#ffffff;">
+                                        <td style="padding:0 32px 16px;">
+                                            <h1 style="margin:0; font-size:24px; font-weight:700; color:#111827; line-height:1.3;">
                                             비밀번호 재설정
                                             </h1>
                                         </td>
@@ -331,14 +331,14 @@ Nova AI 팀`.trim();
 
                                         <!-- Description -->
                                         <tr>
-                                        <td style="padding:0 12px 28px;">
-                                            <p style="margin:0; font-size:14px; line-height:1.6; color:#cbd5e1;">
+                                        <td style="padding:0 32px 24px;">
+                                            <p style="margin:0; font-size:15px; line-height:1.6; color:#374151;">
                                             Nova AI 사용자분께서 비밀번호 재설정을 요청하셨습니다.
                                             <br/>
                                             아래 버튼을 눌러 새 비밀번호를 설정하세요.
-                                            <br />
+                                            <br/>
                                             링크는 보안을 위해 1시간의 유효기간이 있습니다.
-                                            <br />
+                                            <br/>
                                             비밀번호 재설정을 신청하지 않으셨다면 무시하셔도 됩니다.
                                             </p>
                                         </td>
@@ -346,16 +346,16 @@ Nova AI 팀`.trim();
 
                                         <!-- CTA Button -->
                                         <tr>
-                                        <td style="padding-bottom:24px;">
+                                        <td style="padding:0 32px 24px;">
                                             <a
                                             href="${resetLink}"
                                             style="
                                                 display:inline-block;
-                                                padding:14px 24px;
+                                                padding:14px 32px;
                                                 border-radius:8px;
                                                 background:#3b82f6;
                                                 color:#ffffff;
-                                                font-size:14px;
+                                                font-size:15px;
                                                 font-weight:600;
                                                 text-decoration:none;
                                             "
@@ -367,12 +367,12 @@ Nova AI 팀`.trim();
 
                                         <!-- Fallback Link -->
                                         <tr>
-                                        <td style="padding:0 12px 32px;">
-                                            <p style="margin:0 0 8px; font-size:12px; color:#94a3b8;">
+                                        <td style="padding:0 32px 32px;">
+                                            <p style="margin:0 0 8px; font-size:13px; color:#6b7280;">
                                             버튼이 작동하지 않으면 아래 링크를 사용하세요
                                             </p>
-                                            <p style="margin:0; font-size:12px; word-break:break-all;">
-                                            <a href="${resetLink}" style="color:#60a5fa; text-decoration:none;">
+                                            <p style="margin:0; font-size:13px; word-break:break-all;">
+                                            <a href="${resetLink}" style="color:#3b82f6; text-decoration:none;">
                                                 ${resetLink}
                                             </a>
                                             </p>
@@ -381,9 +381,12 @@ Nova AI 팀`.trim();
 
                                         <!-- Footer -->
                                         <tr>
-                                        <td style="padding-top:12px;">
-                                            <p style="margin:0; font-size:11px; color:#64748b;">
+                                        <td style="padding:24px 32px; background:#f9fafb; border-top:1px solid #e5e7eb;">
+                                            <p style="margin:0 0 4px; font-size:12px; color:#6b7280; line-height:1.5;">
                                             Nova AI Team
+                                            </p>
+                                            <p style="margin:0; font-size:11px; color:#9ca3af; line-height:1.5;">
+                                            ※ 본 메일은 발신 전용이므로, 회신 내용을 확인할 수 없습니다.
                                             </p>
                                         </td>
                                         </tr>

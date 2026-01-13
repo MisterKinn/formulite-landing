@@ -20,44 +20,33 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        console.log("빌링키 발급 및 구독 생성 요청:", {
-            authKey,
-            customerKey,
-            amount,
-            orderName,
-            billingCycle,
-        });
-
         console.log("═══════════════════════════════════════");
         console.log("🔑 [서버] 빌링키 발급 프로세스");
         console.log("═══════════════════════════════════════");
-        console.log("🔄 토스페이먼츠 API 호출 중...");
-        console.log("   - API: /v1/billing/authorizations/issue");
+        console.log("📥 요청:");
         console.log("   - authKey:", authKey.substring(0, 20) + "...");
         console.log("   - customerKey:", customerKey);
 
+        const secretKey = process.env.TOSS_SECRET_KEY!;
+        const encodedKey = Buffer.from(secretKey + ":").toString("base64");
+
         // 토스페이먼츠 빌링키 발급 API 호출
         const response = await fetch(
-            "https://api.tosspayments.com/v1/billing/authorizations/issue",
+            `https://api.tosspayments.com/v1/billing/authorizations/${authKey}`,
             {
                 method: "POST",
                 headers: {
-                    Authorization: `Basic ${Buffer.from(
-                        process.env.TOSS_SECRET_KEY + ":"
-                    ).toString("base64")}`,
+                    Authorization: `Basic ${encodedKey}`,
                     "Content-Type": "application/json",
                 },
-                body: JSON.stringify({
-                    authKey,
-                    customerKey,
-                }),
+                body: JSON.stringify({ customerKey }),
             }
         );
 
         const result = await response.json();
 
         if (!response.ok) {
-            console.error("토스페이먼츠 빌링키 발급 실패:", result);
+            console.error("❌ 토스페이먼츠 빌링키 발급 실패:", result);
             return NextResponse.json(
                 {
                     success: false,
@@ -73,7 +62,6 @@ export async function POST(request: NextRequest) {
 
         console.log("✅ [서버] 빌링키 발급 성공!");
         console.log("   - billingKey:", billingKey.substring(0, 30) + "...");
-        console.log("   - 카드정보:", result.card?.number || "N/A");
         console.log("───────────────────────────────────────");
 
         if (!billingKey) {
