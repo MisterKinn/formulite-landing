@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useSearchParams } from "next/navigation";
 
@@ -10,7 +10,7 @@ declare global {
     }
 }
 
-export default function CardRegistrationPage() {
+function CardRegistrationContent() {
     const [ready, setReady] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
@@ -204,6 +204,25 @@ export default function CardRegistrationPage() {
                 </div>
             </div>
         </div>
+    );
+}
+
+export default function CardRegistrationPage() {
+    return (
+        <Suspense
+            fallback={
+                <div style={styles.container}>
+                    <div style={styles.card}>
+                        <h1 style={styles.title}>⏳ 로딩 중...</h1>
+                        <p style={styles.description}>
+                            카드 등록 페이지를 준비하고 있습니다.
+                        </p>
+                    </div>
+                </div>
+            }
+        >
+            <CardRegistrationContent />
+        </Suspense>
     );
 }
 

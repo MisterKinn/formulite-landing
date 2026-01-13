@@ -74,14 +74,16 @@ function CardRegistrationFailContent() {
 
 export default function CardRegistrationFailPage() {
     return (
-        <Suspense fallback={
-            <div style={styles.container}>
-                <div style={styles.card}>
-                    <div style={styles.errorIcon}>⏳</div>
-                    <p>로딩 중...</p>
+        <Suspense
+            fallback={
+                <div style={styles.container}>
+                    <div style={styles.card}>
+                        <div style={styles.errorIcon}>⏳</div>
+                        <p>로딩 중...</p>
+                    </div>
                 </div>
-            </div>
-        }>
+            }
+        >
             <CardRegistrationFailContent />
         </Suspense>
     );
