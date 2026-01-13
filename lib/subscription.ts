@@ -47,11 +47,11 @@ export async function saveSubscription(userId: string, data: SubscriptionData) {
     try {
         const userRef = doc(db, "users", userId);
         const sanitized = sanitizeForFirestore(data as any);
-        
+
         // Get current user data to preserve aiCallUsage if it exists
         const userDoc = await getDoc(userRef);
         const currentData = userDoc.exists() ? userDoc.data() : {};
-        
+
         await setDoc(
             userRef,
             {

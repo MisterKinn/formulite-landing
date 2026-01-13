@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
  * Example API endpoint that uses AI call limits
  * POST /api/ai/generate
  * Body: { userId: string, prompt: string }
- * 
+ *
  * This demonstrates how to:
  * 1. Check if user can make an AI call
  * 2. Perform the AI operation
@@ -23,7 +23,9 @@ export async function POST(request: NextRequest) {
 
         // Step 1: Check if user can make an AI call
         const checkResponse = await fetch(
-            `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/api/ai/check-limit?userId=${userId}`,
+            `${
+                process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
+            }/api/ai/check-limit?userId=${userId}`,
             { method: "GET" }
         );
 
@@ -54,7 +56,9 @@ export async function POST(request: NextRequest) {
 
         // Step 3: Increment usage counter after successful AI call
         const incrementResponse = await fetch(
-            `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/api/ai/increment-usage`,
+            `${
+                process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
+            }/api/ai/increment-usage`,
             {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -92,7 +96,7 @@ async function simulateAIGeneration(prompt: string): Promise<string> {
     // In production, replace this with your actual AI service:
     // const response = await openai.chat.completions.create({ ... });
     // return response.choices[0].message.content;
-    
+
     await new Promise((resolve) => setTimeout(resolve, 100));
     return `Generated response for: ${prompt}`;
 }

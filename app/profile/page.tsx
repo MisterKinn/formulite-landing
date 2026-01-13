@@ -1181,7 +1181,10 @@ function ProfileContent() {
 
                                 {/* AI Usage Stats */}
                                 {aiUsage && (
-                                    <div className="current-plan-card" style={{ marginTop: "2rem" }}>
+                                    <div
+                                        className="current-plan-card"
+                                        style={{ marginTop: "2rem" }}
+                                    >
                                         <div className="current-plan-header">
                                             <div className="current-plan-left">
                                                 <div className="current-plan-icon usage">
@@ -1205,37 +1208,56 @@ function ProfileContent() {
                                                         </span>
                                                     </div>
                                                     <span className="current-plan-desc">
-                                                        {aiUsage.currentUsage} / {aiUsage.limit} 회 사용
+                                                        {aiUsage.currentUsage} /{" "}
+                                                        {aiUsage.limit} 회 사용
                                                     </span>
                                                 </div>
                                             </div>
                                         </div>
-                                        
+
                                         {/* Usage Progress Bar */}
-                                        <div style={{ 
-                                            width: '100%', 
-                                            height: '8px', 
-                                            backgroundColor: '#f3f4f6', 
-                                            borderRadius: '4px',
-                                            overflow: 'hidden',
-                                            marginTop: '1rem'
-                                        }}>
-                                            <div style={{
-                                                width: `${Math.min((aiUsage.currentUsage / aiUsage.limit) * 100, 100)}%`,
-                                                height: '100%',
-                                                backgroundColor: aiUsage.currentUsage >= aiUsage.limit ? '#ef4444' : '#3b82f6',
-                                                transition: 'width 0.3s ease'
-                                            }} />
+                                        <div
+                                            style={{
+                                                width: "100%",
+                                                height: "8px",
+                                                backgroundColor: "#f3f4f6",
+                                                borderRadius: "4px",
+                                                overflow: "hidden",
+                                                marginTop: "1rem",
+                                            }}
+                                        >
+                                            <div
+                                                style={{
+                                                    width: `${Math.min(
+                                                        (aiUsage.currentUsage /
+                                                            aiUsage.limit) *
+                                                            100,
+                                                        100
+                                                    )}%`,
+                                                    height: "100%",
+                                                    backgroundColor:
+                                                        aiUsage.currentUsage >=
+                                                        aiUsage.limit
+                                                            ? "#ef4444"
+                                                            : "#3b82f6",
+                                                    transition:
+                                                        "width 0.3s ease",
+                                                }}
+                                            />
                                         </div>
-                                        
-                                        {aiUsage.currentUsage >= aiUsage.limit && (
-                                            <p style={{
-                                                marginTop: '1rem',
-                                                color: '#ef4444',
-                                                fontSize: '14px',
-                                                fontWeight: '500'
-                                            }}>
-                                                사용 한도에 도달했습니다. 플랜을 업그레이드하여 계속 이용하세요.
+
+                                        {aiUsage.currentUsage >=
+                                            aiUsage.limit && (
+                                            <p
+                                                style={{
+                                                    marginTop: "1rem",
+                                                    color: "#ef4444",
+                                                    fontSize: "14px",
+                                                    fontWeight: "500",
+                                                }}
+                                            >
+                                                사용 한도에 도달했습니다. 플랜을
+                                                업그레이드하여 계속 이용하세요.
                                             </p>
                                         )}
                                     </div>

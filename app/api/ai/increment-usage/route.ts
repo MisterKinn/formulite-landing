@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getFirestore, doc, getDoc, updateDoc, increment } from "firebase/firestore";
+import {
+    getFirestore,
+    doc,
+    getDoc,
+    updateDoc,
+    increment,
+} from "firebase/firestore";
 import { app } from "@/firebaseConfig";
 import { getTierLimit, PlanTier } from "@/lib/tierLimits";
 
