@@ -133,19 +133,37 @@ const plansData: PlanData[] = [
         ctaText: "현재 플랜",
     },
     {
-        id: "plus",
-        name: "플러스",
-        description: "전문적인 한글 문서 자동화를\n위한 합리적인 플랜",
+        id: "basic",
+        name: "베이직",
+        description: "전문적인 한글 문서 자동화를\n시작해보세요",
         monthlyPrice: 9900,
         yearlyPrice: 7900,
         icon: <ZapIcon />,
-        popular: true,
+        popular: false,
         features: [
-            { text: "무제한 AI 생성", included: true },
+            { text: "제한된 AI 생성", included: true },
             { text: "모든 수식 자동화", included: true },
-            { text: "AI 최적화 기능", included: true },
             { text: "코드 저장 & 관리", included: true },
             { text: "우선 지원 서비스", included: true },
+            { text: "AI 최적화 기능", included: true },
+            { text: "API 액세스", included: false },
+        ],
+        ctaText: "베이직으로 업그레이드",
+    },
+    {
+        id: "plus",
+        name: "플러스",
+        description: "더 많은 기능과\n우선 지원을 받으세요",
+        monthlyPrice: 19900,
+        yearlyPrice: 15900,
+        icon: <ZapIcon />,
+        popular: true,
+        features: [
+            { text: "베이직 모든 기능", included: true },
+            { text: "고급 AI 모델", included: true },
+            { text: "팀 공유 기능", included: true },
+            { text: "우선 지원 서비스", included: true },
+            { text: "월 1회 1:1 컨설팅", included: true },
             { text: "API 액세스", included: false },
         ],
         ctaText: "플러스로 업그레이드",
@@ -219,6 +237,11 @@ function ProfileContent() {
     const [deleting, setDeleting] = useState<boolean>(false);
     const [subscription, setSubscription] = useState<any>(null);
     const [loadingSubscription, setLoadingSubscription] = useState(true);
+    const [aiUsage, setAiUsage] = useState<{
+        currentUsage: number;
+        limit: number;
+        plan: string;
+    } | null>(null);
 
     // Load subscription data
     useEffect(() => {
@@ -237,6 +260,31 @@ function ProfileContent() {
         }
 
         loadSubscription();
+    }, [authUser]);
+
+    // Load AI usage data
+    useEffect(() => {
+        async function loadAiUsage() {
+            if (!authUser) return;
+
+            try {
+                const response = await fetch(
+                    `/api/ai/check-limit?userId=${authUser.uid}`
+                );
+                if (response.ok) {
+                    const data = await response.json();
+                    setAiUsage({
+                        currentUsage: data.currentUsage,
+                        limit: data.limit,
+                        plan: data.plan,
+                    });
+                }
+            } catch (error) {
+                console.error("Failed to load AI usage:", error);
+            }
+        }
+
+        loadAiUsage();
     }, [authUser]);
 
     // Check for tab query parameter and sessionStorage
@@ -963,6 +1011,9 @@ function ProfileContent() {
                                                             : subscription?.plan ===
                                                               "plus"
                                                             ? "플러스 플랜"
+                                                            : subscription?.plan ===
+                                                              "basic"
+                                                            ? "베이직 플랜"
                                                             : "무료 플랜"}
                                                     </span>
                                                 </div>
@@ -974,6 +1025,9 @@ function ProfileContent() {
                                                         : subscription?.plan ===
                                                           "plus"
                                                         ? "전문 기능을 이용 중입니다"
+                                                        : subscription?.plan ===
+                                                          "basic"
+                                                        ? "베이직 기능을 이용 중입니다"
                                                         : "기본 기능을 이용 중입니다"}
                                                 </span>
                                             </div>
@@ -1124,6 +1178,68 @@ function ProfileContent() {
                                         </div>
                                     </div>
                                 </div>
+
+                                {/* AI Usage Stats */}
+                                {aiUsage && (
+                                    <div className="current-plan-card" style={{ marginTop: "2rem" }}>
+                                        <div className="current-plan-header">
+                                            <div className="current-plan-left">
+                                                <div className="current-plan-icon usage">
+                                                    <svg
+                                                        width="24"
+                                                        height="24"
+                                                        viewBox="0 0 24 24"
+                                                        fill="none"
+                                                        stroke="currentColor"
+                                                        strokeWidth="2"
+                                                        strokeLinecap="round"
+                                                        strokeLinejoin="round"
+                                                    >
+                                                        <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+                                                    </svg>
+                                                </div>
+                                                <div className="current-plan-text">
+                                                    <div className="current-plan-title">
+                                                        <span className="current-plan-name">
+                                                            AI 호출 사용량
+                                                        </span>
+                                                    </div>
+                                                    <span className="current-plan-desc">
+                                                        {aiUsage.currentUsage} / {aiUsage.limit} 회 사용
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        {/* Usage Progress Bar */}
+                                        <div style={{ 
+                                            width: '100%', 
+                                            height: '8px', 
+                                            backgroundColor: '#f3f4f6', 
+                                            borderRadius: '4px',
+                                            overflow: 'hidden',
+                                            marginTop: '1rem'
+                                        }}>
+                                            <div style={{
+                                                width: `${Math.min((aiUsage.currentUsage / aiUsage.limit) * 100, 100)}%`,
+                                                height: '100%',
+                                                backgroundColor: aiUsage.currentUsage >= aiUsage.limit ? '#ef4444' : '#3b82f6',
+                                                transition: 'width 0.3s ease'
+                                            }} />
+                                        </div>
+                                        
+                                        {aiUsage.currentUsage >= aiUsage.limit && (
+                                            <p style={{
+                                                marginTop: '1rem',
+                                                color: '#ef4444',
+                                                fontSize: '14px',
+                                                fontWeight: '500'
+                                            }}>
+                                                사용 한도에 도달했습니다. 플랜을 업그레이드하여 계속 이용하세요.
+                                            </p>
+                                        )}
+                                    </div>
+                                )}
 
                                 <div className="profile-form">
                                     {/* 결제 주기 선택 */}

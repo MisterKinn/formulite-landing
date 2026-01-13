@@ -1281,11 +1281,11 @@ nextjs-portal {
 
 @media (min-width: 768px) {
     .pricing-grid {
-        /* Use fixed card width columns so cards don't stretch full width */
-        grid-template-columns: repeat(3, minmax(0, 360px));
+        /* Display all 4 cards in one horizontal row with equal width */
+        grid-template-columns: repeat(4, 1fr);
         gap: 1.5rem;
-        justify-content: center; /* center the grid inside container */
-        column-gap: 2rem;
+        max-width: 1400px;
+        margin: 0 auto;
     }
 }
 

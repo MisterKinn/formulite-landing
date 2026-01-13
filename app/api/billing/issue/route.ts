@@ -94,10 +94,22 @@ export async function POST(request: NextRequest) {
         console.log("   - userId:", userId);
 
         // 구독 정보가 있으면 활성 구독으로 설정
+        // Determine plan based on amount
+        let plan: "free" | "basic" | "plus" | "pro" = "free";
+        if (amount) {
+            if (amount >= 29900) {
+                plan = "pro";
+            } else if (amount >= 19900) {
+                plan = "plus";
+            } else if (amount >= 9900) {
+                plan = "basic";
+            }
+        }
+
         const subscriptionData = {
             billingKey,
             customerKey,
-            plan: amount ? (amount >= 29900 ? "pro" : "plus") : "free",
+            plan,
             status: amount ? "active" : "billing_registered", // 구독 정보가 있으면 바로 활성화
             registeredAt: new Date().toISOString(),
             isRecurring: !!amount, // 금액이 있으면 구독 활성화

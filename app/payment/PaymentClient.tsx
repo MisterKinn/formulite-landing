@@ -3,12 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-
-declare global {
-    interface Window {
-        PaymentWidget: any;
-    }
-}
+import { loadTossPayments } from "@tosspayments/tosspayments-sdk";
 
 export default function PaymentClient() {
     const searchParams = useSearchParams();
@@ -20,7 +15,7 @@ export default function PaymentClient() {
     const billingCycle =
         (searchParams.get("billingCycle") as "monthly" | "yearly") || "monthly";
 
-    const widgetRef = useRef<any>(null);
+    const paymentRef = useRef<any>(null);
 
     const [ready, setReady] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -31,38 +26,28 @@ export default function PaymentClient() {
     useEffect(() => {
         const init = async () => {
             try {
-                if (!document.getElementById("toss-widget-sdk")) {
-                    const script = document.createElement("script");
-                    script.id = "toss-widget-sdk";
-                    script.src =
-                        "https://js.tosspayments.com/v1/payment-widget";
-                    script.async = true;
+                if (!user?.uid) return;
 
-                    await new Promise<void>((resolve, reject) => {
-                        script.onload = () => resolve();
-                        script.onerror = () =>
-                            reject(new Error("SDK load failed"));
-                        document.head.appendChild(script);
-                    });
-                }
+                const customerKey = `user_${user.uid
+                    .replace(/[^a-zA-Z0-9\\-_=.@]/g, "")
+                    .substring(0, 40)}`;
 
-                if (!window.PaymentWidget) {
-                    throw new Error("PaymentWidget not found");
-                }
+                setCurrentCustomerKey(customerKey);
 
-                let customerKey = window.PaymentWidget.ANONYMOUS;
+                console.log("📦 TossPayments SDK 초기화 (API 개별 연동)");
+                console.log("🔑 CustomerKey:", customerKey);
 
-                if (recurring && user?.uid) {
-                    customerKey = `user_${user.uid.substring(0, 40)}`;
-                    setCurrentCustomerKey(customerKey);
-                }
-
-                const widget = await window.PaymentWidget(
-                    process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY!,
-                    customerKey
+                const tossPayments = await loadTossPayments(
+                    process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY!
                 );
 
-                widgetRef.current = widget;
+                const payment = tossPayments.payment({
+                    customerKey,
+                });
+
+                paymentRef.current = payment;
+
+                console.log("✅ TossPayments 초기화 완료");
                 setReady(true);
             } catch (e: any) {
                 setError(e.message || "결제 초기화 실패");
@@ -71,19 +56,6 @@ export default function PaymentClient() {
 
         init();
     }, [reloadKey, recurring, user]);
-
-    /* ---------------- RENDER UI ---------------- */
-    useEffect(() => {
-        if (!ready || !widgetRef.current) return;
-
-        widgetRef.current.renderPaymentMethods(
-            "#payment-method",
-            { value: amount },
-            { variant: "DEFAULT" }
-        );
-
-        widgetRef.current.renderAgreement("#payment-agreement");
-    }, [ready, amount]);
 
     /* ---------------- PAY ---------------- */
     const handlePay = async () => {
@@ -95,16 +67,45 @@ export default function PaymentClient() {
         const orderId = `${recurring ? "billing" : "order"}_${Date.now()}`;
 
         try {
-            await widgetRef.current.requestPayment({
-                orderId,
-                orderName,
-                customerName: user.displayName || "고객",
-                customerEmail: user.email || "test@example.com",
-                successUrl: recurring
-                    ? `${window.location.origin}/payment/success?recurring=true`
-                    : `${window.location.origin}/payment/success`,
-                failUrl: `${window.location.origin}/payment/fail`,
-            });
+            if (!paymentRef.current) {
+                setError("결제 시스템이 준비되지 않았습니다.");
+                return;
+            }
+
+            if (recurring) {
+                console.log("📞 payment.requestBillingAuth() 호출");
+
+                await paymentRef.current.requestBillingAuth({
+                    method: "CARD",
+                    successUrl: `${
+                        window.location.origin
+                    }/payment/success?recurring=true&amount=${amount}&orderName=${encodeURIComponent(
+                        orderName
+                    )}&billingCycle=monthly`,
+                    failUrl: `${window.location.origin}/payment/fail`,
+                    customerEmail: user.email,
+                    customerName: user.displayName || "고객",
+                });
+
+                console.log("✅ 카드 등록 요청 완료");
+            } else {
+                console.log("📞 payment.requestPayment() 호출");
+
+                await paymentRef.current.requestPayment({
+                    method: "CARD",
+                    amount: {
+                        value: amount,
+                    },
+                    orderId,
+                    orderName,
+                    successUrl: `${window.location.origin}/payment/success`,
+                    failUrl: `${window.location.origin}/payment/fail`,
+                    customerEmail: user.email || "test@example.com",
+                    customerName: user.displayName || "고객",
+                });
+
+                console.log("✅ 결제 요청 완료");
+            }
         } catch (e: any) {
             setError(e.message || "결제 요청 실패");
         }
@@ -149,16 +150,6 @@ export default function PaymentClient() {
                         </div>
                     </div>
                 )}
-
-                {/* 결제 수단 */}
-                <div style={section}>
-                    <div id="payment-method" style={widgetBox} />
-                </div>
-
-                {/* 약관 */}
-                <div style={section}>
-                    <div id="payment-agreement" style={agreementBox} />
-                </div>
 
                 {/* CTA */}
                 <button

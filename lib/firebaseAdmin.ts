@@ -41,7 +41,7 @@ export default function getFirebaseAdmin() {
         // Log detected projectId for easier diagnostics (non-sensitive)
         try {
             const projectId =
-                admin?.app?.options?.projectId ||
+                admin?.app()?.options?.projectId ||
                 process.env.FIREBASE_PROJECT_ID ||
                 process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ||
                 null;

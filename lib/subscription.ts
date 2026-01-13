@@ -10,7 +10,7 @@ import { app } from "../firebaseConfig";
 const db = getFirestore(app);
 
 export interface SubscriptionData {
-    plan: "free" | "plus" | "pro";
+    plan: "free" | "basic" | "plus" | "pro";
     billingKey?: string;
     customerKey?: string;
     /** true for recurring subscriptions */
@@ -47,10 +47,17 @@ export async function saveSubscription(userId: string, data: SubscriptionData) {
     try {
         const userRef = doc(db, "users", userId);
         const sanitized = sanitizeForFirestore(data as any);
+        
+        // Get current user data to preserve aiCallUsage if it exists
+        const userDoc = await getDoc(userRef);
+        const currentData = userDoc.exists() ? userDoc.data() : {};
+        
         await setDoc(
             userRef,
             {
                 subscription: sanitized,
+                plan: data.plan, // Store plan at root level for easy access
+                aiCallUsage: currentData.aiCallUsage ?? 0, // Preserve existing usage or initialize to 0
                 updatedAt: new Date().toISOString(),
             },
             { merge: true }

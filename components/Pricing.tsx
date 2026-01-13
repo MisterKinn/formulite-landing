@@ -44,16 +44,31 @@ const plans: PricingPlan[] = [
         cta: "무료로 시작하기",
     },
     {
-        name: "플러스 요금제",
+        name: "베이직 요금제",
         subDescription: "전문적인 한글 문서 자동화를 시작해보세요.",
         price: "9,900",
         period: "/월",
         features: [
-            "무제한 AI 생성",
+            "제한된 AI 생성",
             "모든 수식 자동화",
             "코드 저장 & 관리",
             "우선 지원 서비스",
             "AI 최적화 기능",
+        ],
+        cta: "베이직 시작하기",
+        popular: false,
+    },
+    {
+        name: "플러스 요금제",
+        subDescription: "더 많은 기능과 우선 지원을 받으세요.",
+        price: "19,900",
+        period: "/월",
+        features: [
+            "베이직 모든 기능",
+            "고급 AI 모델",
+            "팀 공유 기능",
+            "우선 지원 서비스",
+            "월 1회 1:1 컨설팅",
         ],
         cta: "플러스 시작하기",
         popular: true,
@@ -81,10 +96,15 @@ export default function Pricing() {
         if (planName === "무료") {
             // 무료 플랜은 로그인 페이지로 이동
             router.push("/login");
+        } else if (planName === "베이직 요금제") {
+            // 베이직 플랜으로 결제 페이지 이동 (월간 구독)
+            router.push(
+                "/payment?amount=9900&orderName=Nova AI 베이직 요금제&recurring=true"
+            );
         } else if (planName === "플러스 요금제") {
             // 플러스 플랜으로 결제 페이지 이동 (월간 구독)
             router.push(
-                "/payment?amount=9900&orderName=Nova AI 플러스 요금제&recurring=true"
+                "/payment?amount=19900&orderName=Nova AI 플러스 요금제&recurring=true"
             );
         } else if (planName === "프로 요금제") {
             // 프로 플랜으로 결제 페이지 이동 (월간 구독)

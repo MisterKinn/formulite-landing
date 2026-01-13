@@ -173,6 +173,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                                 avatar: avatarFromAuth,
                                 displayName: displayNameFromAuth,
                                 email: emailFromAuth,
+                                plan: "free",
+                                aiCallUsage: 0,
                                 createdAt: Date.now(),
                             },
                             { merge: true }
@@ -191,6 +193,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                         updates.email = emailFromAuth;
                     if (!data?.avatar && avatarFromAuth)
                         updates.avatar = avatarFromAuth;
+                    if (!data?.plan) updates.plan = "free";
+                    if (data?.aiCallUsage === undefined)
+                        updates.aiCallUsage = 0;
                     if (Object.keys(updates).length > 0) {
                         await setDoc(docRef, updates, { merge: true });
                     }
