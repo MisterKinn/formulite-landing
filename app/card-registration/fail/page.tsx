@@ -1,9 +1,9 @@
 "use client";
 
-import React from "react";
+import React, { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 
-export default function CardRegistrationFailPage() {
+function CardRegistrationFailContent() {
     const searchParams = useSearchParams();
     const code = searchParams.get("code");
     const message = searchParams.get("message");
@@ -69,6 +69,21 @@ export default function CardRegistrationFailPage() {
                 </div>
             </div>
         </div>
+    );
+}
+
+export default function CardRegistrationFailPage() {
+    return (
+        <Suspense fallback={
+            <div style={styles.container}>
+                <div style={styles.card}>
+                    <div style={styles.errorIcon}>⏳</div>
+                    <p>로딩 중...</p>
+                </div>
+            </div>
+        }>
+            <CardRegistrationFailContent />
+        </Suspense>
     );
 }
 
