@@ -106,7 +106,7 @@ function AuthCallbackContent({
                 })
             );
 
-            // If session ID is provided, store user info server-side for Python app
+            // If session ID is provided, store user info server-side for desktop app
             if (sessionId) {
                 fetch("/api/auth/complete-session", {
                     method: "POST",
@@ -120,8 +120,20 @@ function AuthCallbackContent({
                         tier,
                     }),
                 }).then(() => {
-                    // Show success message and close
-                    setTimeout(() => tryClose(), 2000);
+                    // Don't show detailed info for desktop sessions
+                    setShowInfo(false);
+                    // Auto-close after 3 seconds
+                    setCountdown(3);
+                    const timer = setInterval(() => {
+                        setCountdown((prev) => {
+                            if (prev <= 1) {
+                                clearInterval(timer);
+                                tryClose();
+                                return 0;
+                            }
+                            return prev - 1;
+                        });
+                    }, 1000);
                 }).catch(console.error);
                 return;
             }
@@ -159,13 +171,26 @@ function AuthCallbackContent({
     }, [searchParams]);
 
     return (
-        <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-            <div className="max-w-2xl w-full bg-white rounded-lg shadow-lg p-8">
-                <h1 className="text-3xl font-bold mb-8 text-center">
-                    🔐 Login Callback
-                </h1>
-
-                {showInfo && userInfo ? (
+        <div className="min-h-screen flex items-center justify-center p-4"
+             style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
+            <div className="max-w-lg w-full bg-white rounded-2xl shadow-2xl p-12 text-center">
+                {!showInfo && userInfo ? (
+                    // Desktop app session - show simple success message
+                    <>
+                        <div className="text-6xl mb-6">✓</div>
+                        <h1 className="text-3xl font-bold mb-4 text-gray-900">
+                            로그인 성공!
+                        </h1>
+                        <p className="text-lg text-gray-600 mb-2">
+                            데스크톱 앱으로 돌아가세요.
+                        </p>
+                        <p className="text-sm text-gray-400 mt-8">
+                            이 창은 <span className="text-blue-600 font-bold">{countdown}</span>초 후 자동으로 닫힙니다.
+                        </p>
+                    </>
+                ) : showInfo && userInfo ? (
+                    // Regular web session - show detailed info
+                    <>
                     <>
                         <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
                             <p className="text-green-800 font-semibold">
@@ -258,9 +283,13 @@ function AuthCallbackContent({
                         </div>
                     </>
                 ) : (
-                    <div className="text-center py-12">
-                        <p className="text-gray-500 text-lg">
-                            Waiting for callback data...
+                    <div>
+                        <div className="text-4xl mb-4">🔐</div>
+                        <h1 className="text-2xl font-bold mb-4 text-gray-900">
+                            Login Callback
+                        </h1>
+                        <p className="text-gray-500">
+                            Processing authentication...
                         </p>
                     </div>
                 )}
