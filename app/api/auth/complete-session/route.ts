@@ -7,7 +7,10 @@ export async function POST(request: NextRequest) {
         const { sessionId, uid, name, email, photoUrl, tier } =
             await request.json();
 
+        console.log("Completing session:", { sessionId, uid, email });
+
         if (!sessionId || !uid) {
+            console.error("Missing required fields:", { sessionId, uid });
             return NextResponse.json(
                 { error: "Session ID and user ID required" },
                 { status: 400 }
@@ -23,6 +26,7 @@ export async function POST(request: NextRequest) {
             .get();
 
         if (!sessionDoc.exists) {
+            console.error("Session not found:", sessionId);
             return NextResponse.json(
                 { error: "Session not found" },
                 { status: 404 }
@@ -32,6 +36,7 @@ export async function POST(request: NextRequest) {
         const sessionData = sessionDoc.data();
 
         if (!sessionData) {
+            console.error("Session data not found:", sessionId);
             return NextResponse.json(
                 { error: "Session data not found" },
                 { status: 404 }
@@ -40,6 +45,7 @@ export async function POST(request: NextRequest) {
 
         // Check if expired
         if (sessionData.expiresAt < Date.now()) {
+            console.error("Session expired:", sessionId);
             await db.collection("oauth_sessions").doc(sessionId).delete();
             return NextResponse.json(
                 { error: "Session expired" },
@@ -61,6 +67,7 @@ export async function POST(request: NextRequest) {
                 completedAt: admin.firestore.FieldValue.serverTimestamp(),
             });
 
+        console.log("Session completed successfully:", sessionId);
         return NextResponse.json({ success: true });
     } catch (error) {
         console.error("Error completing session:", error);

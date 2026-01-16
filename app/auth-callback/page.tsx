@@ -108,6 +108,7 @@ function AuthCallbackContent({
 
             // If session ID is provided, store user info server-side for desktop app
             if (sessionId) {
+                console.log("Desktop session detected:", sessionId);
                 fetch("/api/auth/complete-session", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -120,7 +121,18 @@ function AuthCallbackContent({
                         tier,
                     }),
                 })
-                    .then(() => {
+                    .then((response) => {
+                        if (!response.ok) {
+                            console.error("Failed to complete session:", response.status);
+                            return response.json().then(data => {
+                                console.error("Error details:", data);
+                                throw new Error(data.error || "Failed to complete session");
+                            });
+                        }
+                        return response.json();
+                    })
+                    .then((data) => {
+                        console.log("Session completed successfully:", data);
                         // Don't show detailed info for desktop sessions
                         setShowInfo(false);
                         // Auto-close after 3 seconds
@@ -136,7 +148,9 @@ function AuthCallbackContent({
                             });
                         }, 1000);
                     })
-                    .catch(console.error);
+                    .catch((error) => {
+                        console.error("Session completion error:", error);
+                    });
                 return;
             }
 
