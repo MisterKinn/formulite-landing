@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getFirebaseAdmin } from "@/lib/firebaseAdmin";
+import getFirebaseAdmin from "@/lib/firebaseAdmin";
 
 // Poll endpoint for Python app to get user info after login
 export async function GET(request: NextRequest) {
