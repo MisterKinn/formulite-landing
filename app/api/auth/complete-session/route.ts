@@ -4,7 +4,8 @@ import getFirebaseAdmin from "@/lib/firebaseAdmin";
 // Complete OAuth session with user info
 export async function POST(request: NextRequest) {
     try {
-        const { sessionId, uid, name, email, photoUrl, tier } = await request.json();
+        const { sessionId, uid, name, email, photoUrl, tier } =
+            await request.json();
 
         if (!sessionId || !uid) {
             return NextResponse.json(
@@ -16,7 +17,10 @@ export async function POST(request: NextRequest) {
         const admin = getFirebaseAdmin();
         const db = admin.firestore();
 
-        const sessionDoc = await db.collection("oauth_sessions").doc(sessionId).get();
+        const sessionDoc = await db
+            .collection("oauth_sessions")
+            .doc(sessionId)
+            .get();
 
         if (!sessionDoc.exists) {
             return NextResponse.json(
@@ -44,15 +48,18 @@ export async function POST(request: NextRequest) {
         }
 
         // Update session with user info
-        await db.collection("oauth_sessions").doc(sessionId).update({
-            status: "completed",
-            uid,
-            name: name || null,
-            email: email || null,
-            photoUrl: photoUrl || null,
-            tier: tier || "free",
-            completedAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
+        await db
+            .collection("oauth_sessions")
+            .doc(sessionId)
+            .update({
+                status: "completed",
+                uid,
+                name: name || null,
+                email: email || null,
+                photoUrl: photoUrl || null,
+                tier: tier || "free",
+                completedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
 
         return NextResponse.json({ success: true });
     } catch (error) {

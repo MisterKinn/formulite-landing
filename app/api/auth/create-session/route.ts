@@ -8,18 +8,28 @@ export async function POST(request: NextRequest) {
         const db = admin.firestore();
 
         // Generate unique session ID
-        const sessionId = `session_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+        const sessionId = `session_${Date.now()}_${Math.random()
+            .toString(36)
+            .substring(2, 15)}`;
 
         // Store session with pending status (expires in 10 minutes)
-        await db.collection("oauth_sessions").doc(sessionId).set({
-            status: "pending",
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-            expiresAt: Date.now() + 10 * 60 * 1000, // 10 minutes
-        });
+        await db
+            .collection("oauth_sessions")
+            .doc(sessionId)
+            .set({
+                status: "pending",
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                expiresAt: Date.now() + 10 * 60 * 1000, // 10 minutes
+            });
+
+        const baseUrl =
+            process.env.NEXT_PUBLIC_APP_URL ||
+            process.env.NEXT_PUBLIC_BASE_URL ||
+            "https://nova-ai.work";
 
         return NextResponse.json({
             sessionId,
-            loginUrl: `${process.env.NEXT_PUBLIC_APP_URL}/login?session=${sessionId}`,
+            loginUrl: `https://nova-ai.work/login?session=${sessionId}`,
         });
     } catch (error) {
         console.error("Error creating session:", error);

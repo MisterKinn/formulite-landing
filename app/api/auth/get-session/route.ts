@@ -16,7 +16,10 @@ export async function GET(request: NextRequest) {
         const admin = getFirebaseAdmin();
         const db = admin.firestore();
 
-        const sessionDoc = await db.collection("oauth_sessions").doc(sessionId).get();
+        const sessionDoc = await db
+            .collection("oauth_sessions")
+            .doc(sessionId)
+            .get();
 
         if (!sessionDoc.exists) {
             return NextResponse.json(

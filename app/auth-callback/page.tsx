@@ -119,22 +119,24 @@ function AuthCallbackContent({
                         photoUrl,
                         tier,
                     }),
-                }).then(() => {
-                    // Don't show detailed info for desktop sessions
-                    setShowInfo(false);
-                    // Auto-close after 3 seconds
-                    setCountdown(3);
-                    const timer = setInterval(() => {
-                        setCountdown((prev) => {
-                            if (prev <= 1) {
-                                clearInterval(timer);
-                                tryClose();
-                                return 0;
-                            }
-                            return prev - 1;
-                        });
-                    }, 1000);
-                }).catch(console.error);
+                })
+                    .then(() => {
+                        // Don't show detailed info for desktop sessions
+                        setShowInfo(false);
+                        // Auto-close after 3 seconds
+                        setCountdown(3);
+                        const timer = setInterval(() => {
+                            setCountdown((prev) => {
+                                if (prev <= 1) {
+                                    clearInterval(timer);
+                                    tryClose();
+                                    return 0;
+                                }
+                                return prev - 1;
+                            });
+                        }, 1000);
+                    })
+                    .catch(console.error);
                 return;
             }
 
@@ -144,9 +146,10 @@ function AuthCallbackContent({
                 if (uid) redirectUrl.searchParams.set("uid", uid);
                 if (name) redirectUrl.searchParams.set("name", name);
                 if (email) redirectUrl.searchParams.set("email", email);
-                if (photoUrl) redirectUrl.searchParams.set("photo_url", photoUrl);
+                if (photoUrl)
+                    redirectUrl.searchParams.set("photo_url", photoUrl);
                 if (tier) redirectUrl.searchParams.set("tier", tier);
-                
+
                 window.location.href = redirectUrl.toString();
                 return;
             }
@@ -171,8 +174,12 @@ function AuthCallbackContent({
     }, [searchParams]);
 
     return (
-        <div className="min-h-screen flex items-center justify-center p-4"
-             style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
+        <div
+            className="min-h-screen flex items-center justify-center p-4"
+            style={{
+                background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+            }}
+        >
             <div className="max-w-lg w-full bg-white rounded-2xl shadow-2xl p-12 text-center">
                 {!showInfo && userInfo ? (
                     // Desktop app session - show simple success message
@@ -185,7 +192,11 @@ function AuthCallbackContent({
                             데스크톱 앱으로 돌아가세요.
                         </p>
                         <p className="text-sm text-gray-400 mt-8">
-                            이 창은 <span className="text-blue-600 font-bold">{countdown}</span>초 후 자동으로 닫힙니다.
+                            이 창은{" "}
+                            <span className="text-blue-600 font-bold">
+                                {countdown}
+                            </span>
+                            초 후 자동으로 닫힙니다.
                         </p>
                     </>
                 ) : showInfo && userInfo ? (
