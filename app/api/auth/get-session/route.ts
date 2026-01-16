@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
         console.log("📊 Session data:", {
             status: sessionData.status,
             expiresAt: new Date(sessionData.expiresAt).toISOString(),
-            hasUserData: !!sessionData.uid
+            hasUserData: !!sessionData.uid,
         });
 
         // Check if expired

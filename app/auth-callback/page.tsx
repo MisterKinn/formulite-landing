@@ -123,10 +123,15 @@ function AuthCallbackContent({
                 })
                     .then((response) => {
                         if (!response.ok) {
-                            console.error("Failed to complete session:", response.status);
-                            return response.json().then(data => {
+                            console.error(
+                                "Failed to complete session:",
+                                response.status
+                            );
+                            return response.json().then((data) => {
                                 console.error("Error details:", data);
-                                throw new Error(data.error || "Failed to complete session");
+                                throw new Error(
+                                    data.error || "Failed to complete session"
+                                );
                             });
                         }
                         return response.json();
@@ -191,28 +196,32 @@ function AuthCallbackContent({
         <div
             className="min-h-screen flex items-center justify-center p-4"
             style={{
-                background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+                background: "#000000",
             }}
         >
-            <div className="max-w-lg w-full bg-white rounded-2xl shadow-2xl p-12 text-center">
+            <div className="max-w-lg w-full text-center">
                 {!showInfo && userInfo ? (
                     // Desktop app session - show simple success message
-                    <>
-                        <div className="text-6xl mb-6">✓</div>
-                        <h1 className="text-3xl font-bold mb-4 text-gray-900">
-                            로그인 성공!
-                        </h1>
-                        <p className="text-lg text-gray-600 mb-2">
-                            데스크톱 앱으로 돌아가세요.
-                        </p>
-                        <p className="text-sm text-gray-400 mt-8">
-                            이 창은{" "}
-                            <span className="text-blue-600 font-bold">
-                                {countdown}
-                            </span>
-                            초 후 자동으로 닫힙니다.
-                        </p>
-                    </>
+                    <div className="space-y-8">
+                        <div className="inline-flex items-center justify-center w-24 h-24 rounded-full bg-white/10 backdrop-blur-sm">
+                            <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                        </div>
+                        <div className="space-y-4">
+                            <h1 className="text-5xl font-light text-white tracking-tight">
+                                Login Complete
+                            </h1>
+                            <p className="text-xl text-gray-400 font-light">
+                                You can close this window
+                            </p>
+                        </div>
+                        <div className="pt-4">
+                            <p className="text-sm text-gray-500 font-mono">
+                                Closing in {countdown}s
+                            </p>
+                        </div>
+                    </div>
                 ) : showInfo && userInfo ? (
                     // Regular web session - show detailed info
                     <>
