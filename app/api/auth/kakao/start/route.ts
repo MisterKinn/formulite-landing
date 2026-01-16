@@ -37,6 +37,18 @@ export async function GET(req: Request) {
         console.info("[KAKAO start] using provided state from client");
     }
 
+    // Log redirect_uri in production to diagnose KOE006 mismatches
+    try {
+        console.info("[KAKAO start] redirect_uri", {
+            redirectUri,
+            origin: url.origin,
+            host: url.host,
+            returnTo,
+        });
+    } catch (e) {
+        // ignore logging errors
+    }
+
     const authorizeUrl = new URL("https://kauth.kakao.com/oauth/authorize");
     authorizeUrl.searchParams.set("response_type", "code");
     authorizeUrl.searchParams.set("client_id", clientId);
