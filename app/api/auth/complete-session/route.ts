@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getFirebaseAdmin } from "@/lib/firebaseAdmin";
+import getFirebaseAdmin from "@/lib/firebaseAdmin";
 
 // Complete OAuth session with user info
 export async function POST(request: NextRequest) {

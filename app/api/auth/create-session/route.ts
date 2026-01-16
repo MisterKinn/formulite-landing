@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getFirebaseAdmin } from "@/lib/firebaseAdmin";
+import getFirebaseAdmin from "@/lib/firebaseAdmin";
 
 // Generate unique session token for OAuth flow
 export async function POST(request: NextRequest) {
