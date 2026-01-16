@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getFirestore, doc, getDoc } from "firebase/firestore";
-import { app } from "@/firebaseConfig";
+import getFirebaseAdmin from "@/lib/firebaseAdmin";
 import { getTierLimit, PlanTier } from "@/lib/tierLimits";
 
 /**
@@ -19,18 +18,18 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        const db = getFirestore(app);
-        const userRef = doc(db, "users", userId);
-        const userDoc = await getDoc(userRef);
+        const admin = await getFirebaseAdmin();
+        const db = admin.firestore();
+        const userDoc = await db.collection("users").doc(userId).get();
 
-        if (!userDoc.exists()) {
+        if (!userDoc.exists) {
             return NextResponse.json(
                 { error: "User not found" },
                 { status: 404 }
             );
         }
 
-        const userData = userDoc.data();
+        const userData = userDoc.data() || {};
         const plan = (userData.plan || "free") as PlanTier;
         const currentUsage = userData.aiCallUsage || 0;
         const limit = getTierLimit(plan);

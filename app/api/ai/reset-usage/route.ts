@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getFirestore, doc, updateDoc } from "firebase/firestore";
-import { app } from "@/firebaseConfig";
+import getFirebaseAdmin from "@/lib/firebaseAdmin";
 
 /**
  * Reset AI usage counter (admin only or monthly reset)
@@ -35,10 +34,11 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        const db = getFirestore(app);
-        const userRef = doc(db, "users", userId);
+        const admin = await getFirebaseAdmin();
+        const db = admin.firestore();
+        const userRef = db.collection("users").doc(userId);
 
-        await updateDoc(userRef, {
+        await userRef.update({
             aiCallUsage: 0,
             usageResetAt: new Date().toISOString(),
         });

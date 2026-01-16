@@ -1,8 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getFirestore, doc, setDoc, getDoc } from "firebase/firestore";
-import { app } from "@/firebaseConfig";
-
-const db = getFirestore(app);
+import getFirebaseAdmin from "@/lib/firebaseAdmin";
 
 /**
  * 빌링키 발급 API
@@ -186,19 +183,21 @@ async function saveBillingKeyToFirestore(
     subscriptionData: any
 ) {
     try {
-        const userRef = doc(db, "users", userId);
+        const admin = await getFirebaseAdmin();
+        const db = admin.firestore();
+        const userRef = db.collection("users").doc(userId);
 
         // 기존 사용자 데이터 조회
-        const userDoc = await getDoc(userRef);
-        const existingData = userDoc.exists() ? userDoc.data() : {};
+        const userDoc = await userRef.get();
+        const existingData = userDoc.exists ? userDoc.data() || {} : {};
 
         // subscription 정보 업데이트
-        await setDoc(
-            userRef,
+        await userRef.set(
             {
                 ...existingData,
+                plan: subscriptionData.plan,
                 subscription: {
-                    ...existingData.subscription,
+                    ...(existingData.subscription || {}),
                     ...subscriptionData,
                 },
                 updatedAt: new Date().toISOString(),
