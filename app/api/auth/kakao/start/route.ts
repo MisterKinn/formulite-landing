@@ -15,7 +15,7 @@ export async function GET(req: Request) {
         process.env.KAKAO_CLIENT_ID || process.env.KAKAO_REST_API_KEY;
     const redirectUri =
         process.env.KAKAO_REDIRECT_URI ||
-        `https://nova-ai.work/api/auth/kakao/callback`;
+        `https://www.nova-ai.work/api/auth/kakao/callback`;
 
     if (!clientId) {
         return NextResponse.json(
