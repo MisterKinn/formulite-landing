@@ -12,6 +12,8 @@ export async function POST(request: NextRequest) {
             .toString(36)
             .substring(2, 15)}`;
 
+        console.log("🔑 Creating new session:", sessionId);
+
         // Store session with pending status (expires in 10 minutes)
         await db
             .collection("oauth_sessions")
@@ -27,10 +29,14 @@ export async function POST(request: NextRequest) {
             process.env.NEXT_PUBLIC_BASE_URL ||
             "https://nova-ai.work";
 
-        return NextResponse.json({
+        const response = {
             sessionId,
             loginUrl: `https://nova-ai.work/login?session=${sessionId}`,
-        });
+        };
+
+        console.log("📤 Sending to program:", response);
+
+        return NextResponse.json(response);
     } catch (error) {
         console.error("Error creating session:", error);
         return NextResponse.json(
