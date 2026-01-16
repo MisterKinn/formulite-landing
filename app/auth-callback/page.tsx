@@ -191,7 +191,6 @@ function AuthCallbackContent({
                 ) : showInfo && userInfo ? (
                     // Regular web session - show detailed info
                     <>
-                    <>
                         <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
                             <p className="text-green-800 font-semibold">
                                 ✅ Login successful! Window will close in{" "}

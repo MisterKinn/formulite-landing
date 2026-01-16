@@ -27,6 +27,13 @@ export async function POST(request: NextRequest) {
 
         const sessionData = sessionDoc.data();
 
+        if (!sessionData) {
+            return NextResponse.json(
+                { error: "Session data not found" },
+                { status: 404 }
+            );
+        }
+
         // Check if expired
         if (sessionData.expiresAt < Date.now()) {
             await db.collection("oauth_sessions").doc(sessionId).delete();
