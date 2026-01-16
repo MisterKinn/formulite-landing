@@ -65,6 +65,33 @@ function LoginContent() {
     // Helper function to handle redirect after successful login
     const handlePostLoginRedirect = async (user: any) => {
         const redirectUri = searchParams?.get("redirect_uri");
+        const sessionId = searchParams?.get("session");
+
+        if (sessionId) {
+            // Server-side OAuth flow for Python app
+            try {
+                // Fetch user tier from Firestore
+                const tier = await getUserTier(user.uid);
+
+                // Redirect to /auth-callback with user info and session ID
+                // The auth-callback page will store info server-side
+                const params = new URLSearchParams({
+                    uid: user.uid || "",
+                    name: user.displayName || user.email?.split("@")[0] || "",
+                    email: user.email || "",
+                    photo_url: user.photoURL || "",
+                    tier: tier,
+                    session: sessionId,
+                });
+
+                const callbackUrl = `/auth-callback?${params.toString()}`;
+                window.location.href = callbackUrl;
+                return;
+            } catch (err) {
+                console.error("Session redirect failed:", err);
+                // Fall through to default redirect
+            }
+        }
 
         if (redirectUri) {
             try {
@@ -74,18 +101,19 @@ function LoginContent() {
                 // Fetch user tier from Firestore
                 const tier = await getUserTier(user.uid);
 
-                // Build redirect URL with user info as query parameters
+                // Redirect to /auth-callback with user info and redirect_uri
+                // The auth-callback page will then redirect to the external redirect_uri
                 const params = new URLSearchParams({
                     uid: user.uid || "",
                     name: user.displayName || user.email?.split("@")[0] || "",
                     email: user.email || "",
                     photo_url: user.photoURL || "",
                     tier: tier,
+                    redirect_uri: redirectUri,
                 });
 
-                const redirectUrl = `${redirectUri}?${params.toString()}`;
-                console.log("Redirecting to:", redirectUrl);
-                window.location.href = redirectUrl;
+                const callbackUrl = `/auth-callback?${params.toString()}`;
+                window.location.href = callbackUrl;
                 return;
             } catch (err) {
                 console.error("Invalid redirect_uri or redirect failed:", err);

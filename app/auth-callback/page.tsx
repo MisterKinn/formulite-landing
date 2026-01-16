@@ -83,6 +83,8 @@ function AuthCallbackContent({
         const email = searchParams?.get("email") ?? null;
         const photoUrl = searchParams?.get("photo_url") ?? null;
         const tier = searchParams?.get("tier") ?? null;
+        const redirectUri = searchParams?.get("redirect_uri") ?? null;
+        const sessionId = searchParams?.get("session") ?? null;
 
         if (uid || email) {
             const info: UserInfo = {
@@ -95,9 +97,6 @@ function AuthCallbackContent({
             setUserInfo(info);
             setShowInfo(true);
 
-            // Log to console
-            console.log("Received user info:", info);
-
             // Store in localStorage for persistence
             localStorage.setItem(
                 "lastLoginInfo",
@@ -106,6 +105,39 @@ function AuthCallbackContent({
                     timestamp: new Date().toISOString(),
                 })
             );
+
+            // If session ID is provided, store user info server-side for Python app
+            if (sessionId) {
+                fetch("/api/auth/complete-session", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        sessionId,
+                        uid,
+                        name,
+                        email,
+                        photoUrl,
+                        tier,
+                    }),
+                }).then(() => {
+                    // Show success message and close
+                    setTimeout(() => tryClose(), 2000);
+                }).catch(console.error);
+                return;
+            }
+
+            // If redirect_uri is provided, redirect there with user info
+            if (redirectUri) {
+                const redirectUrl = new URL(redirectUri);
+                if (uid) redirectUrl.searchParams.set("uid", uid);
+                if (name) redirectUrl.searchParams.set("name", name);
+                if (email) redirectUrl.searchParams.set("email", email);
+                if (photoUrl) redirectUrl.searchParams.set("photo_url", photoUrl);
+                if (tier) redirectUrl.searchParams.set("tier", tier);
+                
+                window.location.href = redirectUrl.toString();
+                return;
+            }
 
             // Start countdown to close window
             const timer = setInterval(() => {
