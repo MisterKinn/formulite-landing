@@ -127,9 +127,11 @@ function LoginContent() {
 
     useEffect(() => {
         if (!loading && isAuthenticated) {
-            // If user is already logged in, respect redirect_uri if present
+            // If user is already logged in, handle redirect_uri or session
             const redirectUri = searchParams?.get("redirect_uri");
-            if (redirectUri) {
+            const sessionId = searchParams?.get("session");
+            
+            if (redirectUri || sessionId) {
                 // Get the current user and redirect with their info
                 const auth = require("firebase/auth").getAuth(app);
                 const currentUser = auth.currentUser;
