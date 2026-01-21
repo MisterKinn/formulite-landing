@@ -33,13 +33,13 @@ export async function GET(req: Request) {
     const clientProvidedState = url.searchParams.get("state");
     const state = clientProvidedState || Math.random().toString(36).slice(2);
 
-    const authorizeUrl = new URL("https://nid.naver.com/oauth2.0/authorize");
-    authorizeUrl.searchParams.set("response_type", "code");
-    authorizeUrl.searchParams.set("client_id", clientId);
-    authorizeUrl.searchParams.set("redirect_uri", redirectUri);
-    authorizeUrl.searchParams.set("state", state);
+    // Build authorize URL exactly as per Naver docs:
+    // https://nid.naver.com/oauth2.0/authorize?client_id={CLIENT_ID}&response_type=code&redirect_uri={CALLBACK_URL_ENCODED}&state={STATE}
+    const authorizeUrl = `https://nid.naver.com/oauth2.0/authorize?client_id=${encodeURIComponent(clientId)}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}`;
+    
+    console.info("[/api/auth/naver/start] authorizeUrl:", authorizeUrl);
 
-    const res = NextResponse.redirect(authorizeUrl.toString());
+    const res = NextResponse.redirect(authorizeUrl);
 
     if (!clientProvidedState) {
         // set cookies for state and returnTo (include path & reasonable maxAge)

@@ -20,7 +20,7 @@ export async function GET(req: Request) {
         });
         console.info(
             "[/api/auth/naver/callback] cookie header present:",
-            Boolean(rawCookies)
+            Boolean(rawCookies),
         );
         console.info("[/api/auth/naver/callback] cookieState", cookieState);
     } catch (e) {}
@@ -66,9 +66,9 @@ export async function GET(req: Request) {
   <script>
       try {
         const data = { type: 'oauth-code', provider: 'naver', code: ${JSON.stringify(
-            code
+            code,
         )}, state: ${JSON.stringify(state)}, returnTo: ${JSON.stringify(
-            returnTo
+            returnTo,
         )} };
         const target = window.opener?.location?.origin || '*';
         window.opener && window.opener.postMessage(data, target);
@@ -92,23 +92,31 @@ export async function GET(req: Request) {
 
     const clientId = process.env.NAVER_CLIENT_ID;
     const clientSecret = process.env.NAVER_CLIENT_SECRET;
-    const tokenUrl = "https://nid.naver.com/oauth2.0/token";
-    
+
     // redirect_uri must match exactly what was sent in the authorize request
     const redirectUri =
         process.env.NAVER_REDIRECT_URI ||
         "https://www.nova-ai.work/api/auth/naver/callback";
 
-    // Exchange code for access token - include redirect_uri as per Naver docs
-    const tokenResp = await fetch(
-        `${tokenUrl}?grant_type=authorization_code&client_id=${encodeURIComponent(
-            clientId || ""
-        )}&client_secret=${encodeURIComponent(
-            clientSecret || ""
-        )}&redirect_uri=${encodeURIComponent(
-            redirectUri
-        )}&code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`
-    );
+    // Exchange code for access token as per Naver Node.js example:
+    // https://nid.naver.com/oauth2.0/token?grant_type=authorization_code&client_id=...&client_secret=...&redirect_uri=...&code=...&state=...
+    const tokenUrl = `https://nid.naver.com/oauth2.0/token?grant_type=authorization_code&client_id=${encodeURIComponent(
+        clientId || ""
+    )}&client_secret=${encodeURIComponent(
+        clientSecret || ""
+    )}&redirect_uri=${encodeURIComponent(
+        redirectUri
+    )}&code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`;
+
+    console.info("[/api/auth/naver/callback] tokenUrl:", tokenUrl.replace(clientSecret || "", "***"));
+
+    const tokenResp = await fetch(tokenUrl, {
+        method: "GET",
+        headers: {
+            "X-Naver-Client-Id": clientId || "",
+            "X-Naver-Client-Secret": clientSecret || "",
+        },
+    });
 
     if (!tokenResp.ok) {
         const txt = await tokenResp.text();
@@ -169,12 +177,12 @@ export async function GET(req: Request) {
                         email: profile?.response?.email || null,
                         createdAt: Date.now(),
                     },
-                    { merge: true }
+                    { merge: true },
                 );
         } catch (err: any) {
             console.warn(
                 "[NAVER callback] Failed to persist profile to Firestore",
-                err?.message || err
+                err?.message || err,
             );
         }
 
@@ -207,7 +215,7 @@ export async function GET(req: Request) {
   <script>
       try {
         const data = { type: 'oauth', provider: 'naver', customToken: ${JSON.stringify(
-            customToken
+            customToken,
         )}, profile: ${JSON.stringify(profile.response)} };
         const target = ${
             returnTo
@@ -267,7 +275,7 @@ export async function GET(req: Request) {
     <script>
       document.getElementById('copy')?.addEventListener('click', async () => {
         try { await navigator.clipboard.writeText(JSON.stringify(${JSON.stringify(
-            profile
+            profile,
         )}, null, 2)); alert('Copied'); } catch(e) { alert('Copy failed'); }
       });
     </script>

@@ -33,7 +33,6 @@ export async function POST(req: Request) {
 
         const clientId = process.env.NAVER_CLIENT_ID;
         const clientSecret = process.env.NAVER_CLIENT_SECRET;
-        const tokenUrl = "https://nid.naver.com/oauth2.0/token";
         // Must match exactly what was registered in Naver Developers
         const redirectUri =
             process.env.NAVER_REDIRECT_URI ||
@@ -43,20 +42,23 @@ export async function POST(req: Request) {
             return new NextResponse("Server misconfiguration", { status: 500 });
         }
 
-        // Exchange code for access token
-        const params = new URLSearchParams({
-            grant_type: "authorization_code",
-            client_id: clientId,
-            client_secret: clientSecret,
-            code,
-            state: state || "",
-            redirect_uri: redirectUri,
-        });
+        // Exchange code for access token - using GET method as per Naver Node.js example
+        const tokenUrl = `https://nid.naver.com/oauth2.0/token?grant_type=authorization_code&client_id=${encodeURIComponent(
+            clientId
+        )}&client_secret=${encodeURIComponent(
+            clientSecret
+        )}&redirect_uri=${encodeURIComponent(
+            redirectUri
+        )}&code=${encodeURIComponent(code)}&state=${encodeURIComponent(state || "")}`;
+
+        console.info("[NAVER exchange] tokenUrl:", tokenUrl.replace(clientSecret, "***"));
 
         const tokenResp = await fetch(tokenUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            body: params.toString(),
+            method: "GET",
+            headers: {
+                "X-Naver-Client-Id": clientId,
+                "X-Naver-Client-Secret": clientSecret,
+            },
         });
 
         if (!tokenResp.ok) {
