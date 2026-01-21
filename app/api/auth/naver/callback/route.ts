@@ -93,10 +93,10 @@ export async function GET(req: Request) {
     const clientId = process.env.NAVER_CLIENT_ID;
     const clientSecret = process.env.NAVER_CLIENT_SECRET;
 
-    // redirect_uri must match exactly what was sent in the authorize request
+    // redirect_uri must match exactly what was sent in the authorize request (no www for Naver)
     const redirectUri =
         process.env.NAVER_REDIRECT_URI ||
-        "https://www.nova-ai.work/api/auth/naver/callback";
+        "https://nova-ai.work/api/auth/naver/callback";
 
     // Exchange code for access token as per Naver Node.js example:
     // https://nid.naver.com/oauth2.0/token?grant_type=authorization_code&client_id=...&client_secret=...&redirect_uri=...&code=...&state=...

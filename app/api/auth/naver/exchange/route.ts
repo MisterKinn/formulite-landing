@@ -33,10 +33,10 @@ export async function POST(req: Request) {
 
         const clientId = process.env.NAVER_CLIENT_ID;
         const clientSecret = process.env.NAVER_CLIENT_SECRET;
-        // Must match exactly what was registered in Naver Developers
+        // Must match exactly what was registered in Naver Developers (no www for Naver)
         const redirectUri =
             process.env.NAVER_REDIRECT_URI ||
-            "https://www.nova-ai.work/api/auth/naver/callback";
+            "https://nova-ai.work/api/auth/naver/callback";
 
         if (!clientId || !clientSecret) {
             return new NextResponse("Server misconfiguration", { status: 500 });
