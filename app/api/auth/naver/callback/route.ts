@@ -93,13 +93,20 @@ export async function GET(req: Request) {
     const clientId = process.env.NAVER_CLIENT_ID;
     const clientSecret = process.env.NAVER_CLIENT_SECRET;
     const tokenUrl = "https://nid.naver.com/oauth2.0/token";
+    
+    // redirect_uri must match exactly what was sent in the authorize request
+    const redirectUri =
+        process.env.NAVER_REDIRECT_URI ||
+        "https://www.nova-ai.work/api/auth/naver/callback";
 
-    // Exchange code for access token
+    // Exchange code for access token - include redirect_uri as per Naver docs
     const tokenResp = await fetch(
         `${tokenUrl}?grant_type=authorization_code&client_id=${encodeURIComponent(
             clientId || ""
         )}&client_secret=${encodeURIComponent(
             clientSecret || ""
+        )}&redirect_uri=${encodeURIComponent(
+            redirectUri
         )}&code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`
     );
 
