@@ -6,7 +6,14 @@ export async function GET(req: Request) {
     const returnTo = url.searchParams.get("return_to") || "";
 
     const clientId = process.env.NAVER_CLIENT_ID;
-    const redirectUri = `${url.origin}/api/auth/naver/callback`;
+    // Use env var or default to production www domain
+    const redirectUri =
+        process.env.NAVER_REDIRECT_URI ||
+        (url.origin.includes("localhost")
+            ? `${url.origin}/api/auth/naver/callback`
+            : "https://www.nova-ai.work/api/auth/naver/callback");
+    
+    console.info("[/api/auth/naver/start] redirect_uri:", redirectUri, "origin:", url.origin);
 
     if (!clientId) {
         return NextResponse.json(
