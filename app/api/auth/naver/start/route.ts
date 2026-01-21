@@ -12,13 +12,18 @@ export async function GET(req: Request) {
         (url.origin.includes("localhost")
             ? `${url.origin}/api/auth/naver/callback`
             : "https://www.nova-ai.work/api/auth/naver/callback");
-    
-    console.info("[/api/auth/naver/start] redirect_uri:", redirectUri, "origin:", url.origin);
+
+    console.info(
+        "[/api/auth/naver/start] redirect_uri:",
+        redirectUri,
+        "origin:",
+        url.origin,
+    );
 
     if (!clientId) {
         return NextResponse.json(
             { error: "NAVER_CLIENT_ID not configured" },
-            { status: 500 }
+            { status: 500 },
         );
     }
 
@@ -69,7 +74,7 @@ export async function GET(req: Request) {
         try {
             console.info(
                 "[/api/auth/naver/start] using client-provided state",
-                { state, returnTo }
+                { state, returnTo },
             );
         } catch (e) {}
     }

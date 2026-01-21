@@ -10,11 +10,20 @@ export async function POST(req: Request) {
     try {
         // Only allow same-origin POSTs from the client
         const origin = req.headers.get("origin");
-        if (
-            origin &&
-            origin !== `${process.env.NEXT_PUBLIC_APP_URL}` &&
-            origin !== "http://localhost:3000"
-        ) {
+        const allowedOrigins = [
+            process.env.NEXT_PUBLIC_APP_URL,
+            "https://www.nova-ai.work",
+            "https://nova-ai.work",
+            "http://localhost:3000",
+        ].filter(Boolean);
+
+        if (origin && !allowedOrigins.includes(origin)) {
+            console.error(
+                "[NAVER exchange] origin rejected:",
+                origin,
+                "allowed:",
+                allowedOrigins,
+            );
             return new NextResponse("Forbidden", { status: 403 });
         }
 
@@ -104,12 +113,12 @@ export async function POST(req: Request) {
                         email: profile?.response?.email || null,
                         createdAt: Date.now(),
                     },
-                    { merge: true }
+                    { merge: true },
                 );
             } catch (err: any) {
                 console.warn(
                     "[NAVER exchange] Failed to persist profile to Firestore",
-                    err?.message || err
+                    err?.message || err,
                 );
             }
 
@@ -120,11 +129,11 @@ export async function POST(req: Request) {
         } catch (err: any) {
             console.error(
                 "[NAVER exchange] Failed to create custom token",
-                err
+                err,
             );
             return new NextResponse(
                 "Server misconfiguration: Firebase Admin not configured",
-                { status: 500 }
+                { status: 500 },
             );
         }
     } catch (err) {
