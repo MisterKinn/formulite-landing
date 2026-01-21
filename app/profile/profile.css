@@ -328,6 +328,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    color: #1f2937; /* Dark gray for default/free/basic plans */
 }
 
 @media (max-width: 640px) {
@@ -337,14 +338,29 @@
     }
 }
 
+.current-plan-icon.free {
+    background: #f3f4f6;
+    color: #1f2937;
+}
+
+.current-plan-icon.basic {
+    background: #f3f4f6;
+    color: #1f2937;
+}
+
 .current-plan-icon.plus {
     background: #eef2ff;
-    color: #4f46e5;
+    color: #1f2937;
 }
 
 .current-plan-icon.pro {
     background: #fff7ed;
-    color: #ea580c;
+    color: #1f2937;
+}
+
+.current-plan-icon.usage {
+    background: #f3f4f6;
+    color: #1f2937;
 }
 
 .current-plan-title-row {
@@ -1861,6 +1877,8 @@
     font-size: 0.875rem;
     color: var(--muted-foreground);
     margin-left: 0.25rem;
+    align-self: baseline;
+    line-height: 1;
 }
 
 .profile-plan-item-yearly {

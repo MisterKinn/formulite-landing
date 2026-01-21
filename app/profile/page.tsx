@@ -187,6 +187,43 @@ const plansData: PlanData[] = [
     },
 ];
 
+// Helper function to get tier order for comparison
+function getTierOrder(planId: string): number {
+    const tierOrder: { [key: string]: number } = {
+        free: 0,
+        basic: 1,
+        plus: 2,
+        pro: 3,
+    };
+    return tierOrder[planId] ?? 0;
+}
+
+// Helper function to get CTA text based on current plan
+function getCtaText(planId: string, currentPlanId: string): string {
+    const planOrder = getTierOrder(planId);
+    const currentOrder = getTierOrder(currentPlanId);
+    
+    if (planOrder < currentOrder) {
+        // Downgrade
+        const planNames: { [key: string]: string } = {
+            free: "무료로",
+            basic: "베이직으로",
+            plus: "플러스로",
+            pro: "프로로",
+        };
+        return `${planNames[planId]}<br />다운그레이드`;
+    } else {
+        // Upgrade
+        const planNames: { [key: string]: string } = {
+            free: "무료로",
+            basic: "베이직으로",
+            plus: "플러스로",
+            pro: "프로로",
+        };
+        return `${planNames[planId]}<br />업그레이드`;
+    }
+}
+
 export default function ProfilePage() {
     return (
         <React.Suspense
@@ -488,17 +525,106 @@ function ProfileContent() {
     const getPlanIcon = (planId?: string) => {
         if (planId === "pro") return <CrownIcon />;
         if (planId === "plus") return <ZapIcon />;
+        if (planId === "basic") return <ZapIcon />;
         return <SparklesIcon />;
+    };
+
+    // Get plan display info
+    const getPlanInfo = (planId?: string) => {
+        const plan = planId || "free";
+        const planMap: Record<string, { name: string; description: string }> = {
+            pro: {
+                name: "프로 플랜",
+                description: "모든 프리미엄 기능을 이용 중입니다",
+            },
+            plus: {
+                name: "플러스 플랜",
+                description: "전문 기능을 이용 중입니다",
+            },
+            basic: {
+                name: "베이직 플랜",
+                description: "베이직 기능을 이용 중입니다",
+            },
+            free: {
+                name: "무료 플랜",
+                description: "기본 기능을 이용 중입니다",
+            },
+        };
+        return planMap[plan] || planMap.free;
     };
 
     // 구독 결제 처리
     const handleSubscribe = async (plan: PlanData) => {
-        if (plan.id === "free") {
+        if (!authUser) {
+            setError("로그인이 필요합니다.");
             return;
         }
 
-        if (!authUser) {
-            setError("결제를 진행하려면 로그인이 필요합니다.");
+        const currentPlanId = subscription?.plan || "free";
+        const targetPlanOrder = getTierOrder(plan.id);
+        const currentPlanOrder = getTierOrder(currentPlanId);
+
+        // Handle downgrade
+        if (targetPlanOrder < currentPlanOrder) {
+            const confirmMessage = 
+                plan.id === "free"
+                    ? "무료 플랜으로 다운그레이드하시겠습니까? 프리미엄 기능을 더 이상 사용할 수 없습니다."
+                    : `${plan.name} 플랜으로 다운그레이드하시겠습니까? 일부 기능이 제한됩니다.`;
+            
+            if (!confirm(confirmMessage)) {
+                return;
+            }
+
+            setLoadingPlan(plan.id);
+
+            try {
+                // Get Firebase Auth token
+                const auth = getAuth();
+                const currentUser = auth.currentUser;
+                if (!currentUser) {
+                    throw new Error("사용자 인증 실패");
+                }
+                const token = await currentUser.getIdToken();
+
+                // Call API to change plan
+                const response = await fetch("/api/subscription/change-plan", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${token}`,
+                    },
+                    body: JSON.stringify({
+                        plan: plan.id,
+                    }),
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || "플랜 변경 실패");
+                }
+
+                // Reload subscription data
+                const { getSubscription } = await import("@/lib/subscription");
+                const data = await getSubscription(authUser.uid);
+                setSubscription(data);
+
+                setStatus(`${plan.name} 플랜으로 변경되었습니다.`);
+                setTimeout(() => setStatus(null), 3000);
+            } catch (err) {
+                console.error("플랜 변경 오류:", err);
+                setError(
+                    err instanceof Error
+                        ? err.message
+                        : "플랜 변경 중 오류가 발생했습니다. 다시 시도해주세요."
+                );
+            } finally {
+                setLoadingPlan(null);
+            }
+            return;
+        }
+
+        // Handle upgrade - redirect to payment for paid plans
+        if (plan.id === "free") {
             return;
         }
 
@@ -506,7 +632,13 @@ function ProfileContent() {
 
         try {
             // 결제 페이지로 리다이렉트
-            const planName = plan.id === "plus" ? "플러스" : "프로";
+            const planNameMap: Record<string, string> = {
+                basic: "베이직",
+                plus: "플러스",
+                pro: "프로",
+            };
+            const planName = planNameMap[plan.id] || plan.name;
+            
             // compute amount based on billing cycle
             const planAmount =
                 billingCycle === "monthly"
@@ -1005,30 +1137,12 @@ function ProfileContent() {
                                             <div className="current-plan-text">
                                                 <div className="current-plan-title">
                                                     <span className="current-plan-name">
-                                                        {subscription?.plan ===
-                                                        "pro"
-                                                            ? "프로 플랜"
-                                                            : subscription?.plan ===
-                                                              "plus"
-                                                            ? "플러스 플랜"
-                                                            : subscription?.plan ===
-                                                              "basic"
-                                                            ? "베이직 플랜"
-                                                            : "무료 플랜"}
+                                                        {getPlanInfo(subscription?.plan).name}
                                                     </span>
                                                 </div>
 
                                                 <span className="current-plan-desc">
-                                                    {subscription?.plan ===
-                                                    "pro"
-                                                        ? "모든 프리미엄 기능을 이용 중입니다"
-                                                        : subscription?.plan ===
-                                                          "plus"
-                                                        ? "전문 기능을 이용 중입니다"
-                                                        : subscription?.plan ===
-                                                          "basic"
-                                                        ? "베이직 기능을 이용 중입니다"
-                                                        : "기본 기능을 이용 중입니다"}
+                                                    {getPlanInfo(subscription?.plan).description}
                                                 </span>
                                             </div>
                                         </div>
@@ -1311,11 +1425,15 @@ function ProfileContent() {
                                                     billingCycle === "monthly"
                                                         ? plan.monthlyPrice
                                                         : plan.yearlyPrice;
+                                                const currentPlanId = subscription?.plan || "free";
                                                 const isCurrentPlan =
                                                     subscription?.plan
                                                         ? subscription.plan ===
                                                           plan.id
                                                         : plan.id === "free";
+                                                const ctaText = isCurrentPlan 
+                                                    ? "현재 플랜" 
+                                                    : getCtaText(plan.id, currentPlanId);
 
                                                 return (
                                                     <div
@@ -1439,7 +1557,7 @@ function ProfileContent() {
                                                             ) : isCurrentPlan ? (
                                                                 "현재 플랜"
                                                             ) : (
-                                                                plan.ctaText
+                                                                <span dangerouslySetInnerHTML={{ __html: ctaText }} />
                                                             )}
                                                         </button>
                                                     </div>

@@ -7,17 +7,20 @@ import { app } from "../firebaseConfig";
 export function Navbar() {
     const { isAuthenticated, avatar, logout, user } = useAuth();
     const [displayName, setDisplayName] = useState<string | null>(null);
+    const [userPlan, setUserPlan] = useState<string>("free");
 
     useEffect(() => {
         let mounted = true;
-        async function loadName() {
+        async function loadUserData() {
             if (!user) {
-                if (mounted) setDisplayName(null);
+                if (mounted) {
+                    setDisplayName(null);
+                    setUserPlan("free");
+                }
                 return;
             }
             if (user.displayName) {
                 if (mounted) setDisplayName(user.displayName);
-                return;
             }
             try {
                 const db = getFirestore(app);
@@ -26,18 +29,32 @@ export function Navbar() {
                 if (mounted && snap.exists()) {
                     const data = snap.data() as any;
                     setDisplayName(data?.displayName ?? null);
+                    // Get plan from subscription or default to free
+                    const plan = data?.subscription?.plan || data?.plan || "free";
+                    setUserPlan(plan);
                 }
             } catch (err) {
                 // non-fatal
             }
         }
-        loadName();
+        loadUserData();
         return () => {
             mounted = false;
         };
     }, [user]);
     const [menuOpen, setMenuOpen] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
+
+    // Get plan display name
+    const getPlanDisplayName = (plan: string): string => {
+        const planNames: Record<string, string> = {
+            pro: "프로 플랜",
+            plus: "플러스 플랜",
+            basic: "베이직 플랜",
+            free: "무료 플랜",
+        };
+        return planNames[plan] || "무료 플랜";
+    };
 
     // Close menu on outside click
     React.useEffect(() => {
@@ -109,7 +126,7 @@ export function Navbar() {
                                         {displayName ?? user?.email ?? "사용자"}
                                     </span>
                                     <span className="nav-profile-plan">
-                                        무료 플랜
+                                        {getPlanDisplayName(userPlan)}
                                     </span>
                                 </div>
                                 <svg
