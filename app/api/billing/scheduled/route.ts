@@ -3,7 +3,9 @@ import { processScheduledBilling } from "@/lib/scheduledBilling";
 import { Resend } from "resend";
 
 // Initialize Resend for email notifications
-const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
+const resend = process.env.RESEND_API_KEY
+    ? new Resend(process.env.RESEND_API_KEY)
+    : null;
 
 /**
  * Send billing report email to admin
@@ -23,9 +25,10 @@ async function sendBillingReport(summary: {
         ? `⚠️ [Nova AI] 빌링 오류 발생 - ${summary.failed}건 실패`
         : `✅ [Nova AI] 빌링 완료 - ${summary.successful}건 성공`;
 
-    const failedList = summary.failedUsers
-        ?.map((f) => `• ${f.userId}: ${f.error}`)
-        .join("\n") || "없음";
+    const failedList =
+        summary.failedUsers
+            ?.map((f) => `• ${f.userId}: ${f.error}`)
+            .join("\n") || "없음";
 
     const html = `
         <h2>Nova AI 자동 결제 리포트</h2>
@@ -38,10 +41,14 @@ async function sendBillingReport(summary: {
             <li>실패: ${summary.failed}건</li>
             <li>총 결제금액: ${summary.totalAmount.toLocaleString()}원</li>
         </ul>
-        ${hasFailures ? `
+        ${
+            hasFailures
+                ? `
             <h3 style="color: red;">실패 내역</h3>
             <pre>${failedList}</pre>
-        ` : ""}
+        `
+                : ""
+        }
     `;
 
     try {
@@ -93,7 +100,10 @@ export async function POST(request: NextRequest) {
 
         const failedUsers = results
             .filter((r) => !r.success)
-            .map((r) => ({ userId: r.userId, error: r.error || "Unknown error" }));
+            .map((r) => ({
+                userId: r.userId,
+                error: r.error || "Unknown error",
+            }));
 
         const summary = {
             timestamp: new Date().toISOString(),

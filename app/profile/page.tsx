@@ -279,6 +279,11 @@ function ProfileContent() {
         limit: number;
         plan: string;
     } | null>(null);
+    const [paymentHistory, setPaymentHistory] = useState<any[]>([]);
+    const [loadingPayments, setLoadingPayments] = useState(false);
+    const [refundingPayment, setRefundingPayment] = useState<string | null>(
+        null,
+    );
 
     // Refresh key for forcing data reload
     const [refreshKey, setRefreshKey] = useState(0);
@@ -336,6 +341,67 @@ function ProfileContent() {
 
         loadAiUsage();
     }, [authUser, subscription?.plan, refreshKey]);
+
+    // Load payment history
+    useEffect(() => {
+        async function loadPaymentHistory() {
+            if (!authUser) return;
+            setLoadingPayments(true);
+
+            try {
+                const response = await fetch(
+                    `/api/payments/history?userId=${authUser.uid}`,
+                );
+                if (response.ok) {
+                    const data = await response.json();
+                    setPaymentHistory(data.payments || []);
+                }
+            } catch (error) {
+                console.error("Failed to load payment history:", error);
+            } finally {
+                setLoadingPayments(false);
+            }
+        }
+
+        loadPaymentHistory();
+    }, [authUser, refreshKey]);
+
+    // Handle refund
+    const handleRefund = async (paymentKey: string) => {
+        if (!authUser) return;
+        if (
+            !confirm("정말 환불하시겠습니까? 환불 후 플랜이 무료로 변경됩니다.")
+        )
+            return;
+
+        setRefundingPayment(paymentKey);
+        try {
+            const response = await fetch("/api/payments/refund", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    userId: authUser.uid,
+                    paymentKey,
+                    reason: "고객 요청에 의한 환불",
+                }),
+            });
+
+            const result = await response.json();
+
+            if (!response.ok || !result.success) {
+                throw new Error(result.error || "환불 처리에 실패했습니다");
+            }
+
+            setStatus(
+                `환불이 완료되었습니다. (${result.refundAmount?.toLocaleString()}원)`,
+            );
+            setRefreshKey((k) => k + 1);
+        } catch (error: any) {
+            setError(error?.message || "환불 처리에 실패했습니다");
+        } finally {
+            setRefundingPayment(null);
+        }
+    };
 
     // Check for tab query parameter and sessionStorage
     useEffect(() => {
@@ -608,6 +674,7 @@ function ProfileContent() {
                     },
                     body: JSON.stringify({
                         plan: plan.id,
+                        billingCycle: billingCycle,
                     }),
                 });
 
@@ -1215,7 +1282,33 @@ function ProfileContent() {
                                             </div>
                                         </div>
 
-                                        <div className="current-plan-right">
+                                        <div
+                                            className="current-plan-right"
+                                            style={{
+                                                display: "flex",
+                                                gap: "0.5rem",
+                                            }}
+                                        >
+                                            {subscription &&
+                                                subscription.plan !== "free" &&
+                                                subscription.status !==
+                                                    "cancelled" && (
+                                                    <button
+                                                        onClick={() =>
+                                                            (window.location.href =
+                                                                "/update-card")
+                                                        }
+                                                        className="current-plan-cancel-btn"
+                                                        style={{
+                                                            background:
+                                                                "#f3f4f6",
+                                                            color: "#374151",
+                                                            border: "1px solid #d1d5db",
+                                                        }}
+                                                    >
+                                                        카드 변경
+                                                    </button>
+                                                )}
                                             {subscription &&
                                                 subscription.plan !==
                                                     "free" && (
@@ -1410,6 +1503,220 @@ function ProfileContent() {
                                         )}
                                     </div>
                                 )}
+
+                                {/* Payment History */}
+                                <div
+                                    className="current-plan-card"
+                                    style={{ marginTop: "2rem" }}
+                                >
+                                    <div className="current-plan-header">
+                                        <div className="current-plan-left">
+                                            <div
+                                                className="current-plan-icon"
+                                                style={{
+                                                    background: "#f0fdf4",
+                                                }}
+                                            >
+                                                <svg
+                                                    width="24"
+                                                    height="24"
+                                                    viewBox="0 0 24 24"
+                                                    fill="none"
+                                                    stroke="#22c55e"
+                                                    strokeWidth="2"
+                                                    strokeLinecap="round"
+                                                    strokeLinejoin="round"
+                                                >
+                                                    <rect
+                                                        x="1"
+                                                        y="4"
+                                                        width="22"
+                                                        height="16"
+                                                        rx="2"
+                                                        ry="2"
+                                                    />
+                                                    <line
+                                                        x1="1"
+                                                        y1="10"
+                                                        x2="23"
+                                                        y2="10"
+                                                    />
+                                                </svg>
+                                            </div>
+                                            <div className="current-plan-text">
+                                                <div className="current-plan-title">
+                                                    <span className="current-plan-name">
+                                                        결제 내역
+                                                    </span>
+                                                </div>
+                                                <span className="current-plan-desc">
+                                                    최근 결제 및 환불 내역
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {loadingPayments ? (
+                                        <p
+                                            style={{
+                                                padding: "1rem",
+                                                color: "#6b7280",
+                                            }}
+                                        >
+                                            로딩 중...
+                                        </p>
+                                    ) : paymentHistory.length === 0 ? (
+                                        <p
+                                            style={{
+                                                padding: "1rem",
+                                                color: "#6b7280",
+                                            }}
+                                        >
+                                            결제 내역이 없습니다.
+                                        </p>
+                                    ) : (
+                                        <div style={{ marginTop: "1rem" }}>
+                                            {paymentHistory.map((payment) => (
+                                                <div
+                                                    key={payment.paymentKey}
+                                                    style={{
+                                                        display: "flex",
+                                                        justifyContent:
+                                                            "space-between",
+                                                        alignItems: "center",
+                                                        padding: "1rem",
+                                                        borderBottom:
+                                                            "1px solid #e5e7eb",
+                                                    }}
+                                                >
+                                                    <div>
+                                                        <p
+                                                            style={{
+                                                                fontWeight: 500,
+                                                                marginBottom:
+                                                                    "4px",
+                                                            }}
+                                                        >
+                                                            {payment.orderName}
+                                                        </p>
+                                                        <p
+                                                            style={{
+                                                                fontSize:
+                                                                    "14px",
+                                                                color: "#6b7280",
+                                                            }}
+                                                        >
+                                                            {new Date(
+                                                                payment.approvedAt,
+                                                            ).toLocaleDateString(
+                                                                "ko-KR",
+                                                                {
+                                                                    year: "numeric",
+                                                                    month: "long",
+                                                                    day: "numeric",
+                                                                },
+                                                            )}
+                                                            {payment.card
+                                                                ?.company &&
+                                                                ` · ${payment.card.company}`}
+                                                        </p>
+                                                    </div>
+                                                    <div
+                                                        style={{
+                                                            textAlign: "right",
+                                                        }}
+                                                    >
+                                                        <p
+                                                            style={{
+                                                                fontWeight: 600,
+                                                                marginBottom:
+                                                                    "4px",
+                                                                color:
+                                                                    payment.status ===
+                                                                    "REFUNDED"
+                                                                        ? "#ef4444"
+                                                                        : "#111827",
+                                                            }}
+                                                        >
+                                                            {payment.status ===
+                                                            "REFUNDED" ? (
+                                                                <span
+                                                                    style={{
+                                                                        textDecoration:
+                                                                            "line-through",
+                                                                    }}
+                                                                >
+                                                                    {payment.amount?.toLocaleString()}
+                                                                    원
+                                                                </span>
+                                                            ) : (
+                                                                `${payment.amount?.toLocaleString()}원`
+                                                            )}
+                                                        </p>
+                                                        {payment.status ===
+                                                        "REFUNDED" ? (
+                                                            <span
+                                                                style={{
+                                                                    fontSize:
+                                                                        "12px",
+                                                                    color: "#ef4444",
+                                                                    fontWeight: 500,
+                                                                }}
+                                                            >
+                                                                환불됨
+                                                            </span>
+                                                        ) : payment.refundable ? (
+                                                            <button
+                                                                onClick={() =>
+                                                                    handleRefund(
+                                                                        payment.paymentKey,
+                                                                    )
+                                                                }
+                                                                disabled={
+                                                                    refundingPayment ===
+                                                                    payment.paymentKey
+                                                                }
+                                                                style={{
+                                                                    fontSize:
+                                                                        "12px",
+                                                                    color: "#ef4444",
+                                                                    background:
+                                                                        "none",
+                                                                    border: "1px solid #ef4444",
+                                                                    borderRadius:
+                                                                        "4px",
+                                                                    padding:
+                                                                        "4px 8px",
+                                                                    cursor: "pointer",
+                                                                    opacity:
+                                                                        refundingPayment ===
+                                                                        payment.paymentKey
+                                                                            ? 0.5
+                                                                            : 1,
+                                                                }}
+                                                            >
+                                                                {refundingPayment ===
+                                                                payment.paymentKey
+                                                                    ? "처리 중..."
+                                                                    : "환불"}
+                                                            </button>
+                                                        ) : (
+                                                            <span
+                                                                style={{
+                                                                    fontSize:
+                                                                        "12px",
+                                                                    color: "#9ca3af",
+                                                                }}
+                                                            >
+                                                                환불 기간 만료
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
 
                                 <div className="profile-form">
                                     {/* 결제 주기 선택 */}

@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
 
         const userId = decodedToken.uid;
         const body = await request.json();
-        const { plan } = body;
+        const { plan, billingCycle } = body;
 
         // Validate plan
         const validPlans = ["free", "basic", "plus", "pro"];
@@ -57,20 +57,28 @@ export async function POST(request: NextRequest) {
             );
         }
 
+        // Validate billing cycle
+        const validCycles = ["monthly", "yearly"];
+        const cycle = validCycles.includes(billingCycle)
+            ? billingCycle
+            : "monthly";
+
         // Get current subscription
         const userDoc = await db.collection("users").doc(userId).get();
         const currentSubscription = userDoc.exists
             ? userDoc.data()?.subscription
             : null;
 
-        // Determine the correct amount for the new plan
-        const planAmounts: Record<string, number> = {
-            free: 0,
-            basic: 9900,
-            plus: 19900,
-            pro: 29900,
-        };
-        const newAmount = planAmounts[plan] || 0;
+        // Determine the correct amount for the new plan based on billing cycle
+        const planAmounts: Record<string, { monthly: number; yearly: number }> =
+            {
+                free: { monthly: 0, yearly: 0 },
+                basic: { monthly: 9900, yearly: 99000 },
+                plus: { monthly: 19900, yearly: 199000 },
+                pro: { monthly: 29900, yearly: 299000 },
+            };
+        const newAmount =
+            planAmounts[plan]?.[cycle as "monthly" | "yearly"] || 0;
 
         // Plan display names for orderName
         const planNames: Record<string, string> = {
@@ -114,12 +122,13 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        // Update subscription - just update amount and orderName for plan changes
+        // Update subscription - update amount, orderName, and billingCycle for plan changes
         // The scheduled billing will use the new amount automatically
         const updatedSubscription = {
             ...currentSubscription,
             plan: plan,
             amount: newAmount,
+            billingCycle: cycle,
             orderName: `Nova AI ${planNames[plan]} 요금제`,
             status: plan === "free" ? "cancelled" : "active",
             startDate:

@@ -1,0 +1,407 @@
+.admin-container {
+    min-height: 100vh;
+    background: #000000;
+    padding-top: 1rem;
+}
+
+.admin-nav {
+    display: flex;
+    gap: 0;
+    background: #18181b;
+    border-bottom: 1px solid #27272a;
+    padding: 0 2rem;
+    border-radius: 12px 12px 0 0;
+    margin: 0 2rem;
+}
+
+.admin-nav-btn {
+    padding: 1rem 1.5rem;
+    border: none;
+    background: none;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #a1a1aa;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+}
+
+.admin-nav-btn:hover {
+    color: #ffffff;
+}
+
+.admin-nav-btn.active {
+    color: #ffffff;
+    border-bottom-color: #ffffff;
+}
+
+.admin-main {
+    padding: 2rem;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.admin-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    gap: 1rem;
+    color: #a1a1aa;
+    background: #000000;
+}
+
+.admin-loading-inline {
+    display: flex;
+    justify-content: center;
+    padding: 3rem;
+}
+
+.admin-spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid #e5e7eb;
+    border-top-color: #2563eb;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Stats Grid */
+.admin-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.admin-stat-card {
+    background: #18181b;
+    padding: 1.5rem;
+    border-radius: 12px;
+    border: 1px solid #27272a;
+}
+
+.admin-stat-card h3 {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #a1a1aa;
+    margin-bottom: 0.5rem;
+}
+
+.admin-stat-value {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #ffffff;
+}
+
+.admin-stat-sub {
+    font-size: 0.875rem;
+    color: #71717a;
+    margin-top: 0.25rem;
+}
+
+/* Sections */
+.admin-section {
+    background: #18181b;
+    padding: 1.5rem;
+    border-radius: 12px;
+    border: 1px solid #27272a;
+    margin-bottom: 1.5rem;
+}
+
+.admin-section h2 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #ffffff;
+    margin-bottom: 1rem;
+}
+
+/* Plan Grid */
+.admin-plan-grid {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.admin-plan-card {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    background: #27272a;
+    border-radius: 8px;
+}
+
+.admin-plan-badge {
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.admin-plan-badge.free {
+    background: #f3f4f6;
+    color: #6b7280;
+}
+
+.admin-plan-badge.basic {
+    background: #dbeafe;
+    color: #1d4ed8;
+}
+
+.admin-plan-badge.plus {
+    background: #fef3c7;
+    color: #d97706;
+}
+
+.admin-plan-badge.pro {
+    background: #ede9fe;
+    color: #7c3aed;
+}
+
+.admin-plan-count {
+    font-weight: 600;
+    color: #ffffff;
+}
+
+/* Status Grid */
+.admin-status-grid {
+    display: flex;
+    gap: 2rem;
+    flex-wrap: wrap;
+}
+
+.admin-status-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.admin-status-label {
+    font-size: 0.875rem;
+    color: #a1a1aa;
+}
+
+.admin-status-value {
+    font-weight: 600;
+    font-size: 1.125rem;
+}
+
+.admin-status-value.active {
+    color: #22c55e;
+}
+
+.admin-status-value.cancelled {
+    color: #ef4444;
+}
+
+.admin-status-value.suspended {
+    color: #f59e0b;
+}
+
+.admin-status-value.free {
+    color: #6b7280;
+}
+
+.admin-refund-info {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #ef4444;
+}
+
+/* Filters */
+.admin-filters {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.admin-search {
+    padding: 0.5rem 1rem;
+    border: 1px solid #27272a;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    min-width: 200px;
+    background: #18181b;
+    color: #ffffff;
+}
+
+.admin-search:focus {
+    outline: none;
+    border-color: #3f3f46;
+    box-shadow: 0 0 0 3px rgba(63, 63, 70, 0.3);
+}
+
+.admin-search::placeholder {
+    color: #71717a;
+}
+
+.admin-select {
+    padding: 0.5rem 1rem;
+    border: 1px solid #27272a;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    background: #18181b;
+    color: #ffffff;
+    cursor: pointer;
+}
+
+.admin-date {
+    padding: 0.5rem;
+    border: 1px solid #27272a;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    background: #18181b;
+    color: #ffffff;
+}
+
+.admin-result-count {
+    font-size: 0.875rem;
+    color: #a1a1aa;
+    margin-bottom: 1rem;
+}
+
+/* Table */
+.admin-table-wrapper {
+    overflow-x: auto;
+    background: #18181b;
+    border-radius: 12px;
+    border: 1px solid #27272a;
+}
+
+.admin-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.admin-table th {
+    text-align: left;
+    padding: 1rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #a1a1aa;
+    text-transform: uppercase;
+    border-bottom: 1px solid #27272a;
+    background: #18181b;
+}
+
+.admin-table td {
+    padding: 1rem;
+    font-size: 0.875rem;
+    color: #ffffff;
+    border-bottom: 1px solid #27272a;
+}
+
+.admin-table tr:hover {
+    background: #27272a;
+}
+
+.admin-table td.refunded {
+    text-decoration: line-through;
+    color: #ef4444;
+}
+
+.admin-status-badge {
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.admin-status-badge.active {
+    background: #dcfce7;
+    color: #16a34a;
+}
+
+.admin-status-badge.cancelled {
+    background: #fee2e2;
+    color: #dc2626;
+}
+
+.admin-status-badge.suspended {
+    background: #fef3c7;
+    color: #d97706;
+}
+
+.admin-status-badge.none {
+    background: #f3f4f6;
+    color: #6b7280;
+}
+
+.admin-failure-count {
+    background: #fee2e2;
+    color: #dc2626;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: help;
+}
+
+.admin-payment-status {
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.admin-payment-status.DONE {
+    background: #dcfce7;
+    color: #16a34a;
+}
+
+.admin-payment-status.REFUNDED {
+    background: #fee2e2;
+    color: #dc2626;
+}
+
+.admin-card-number {
+    margin-left: 0.5rem;
+    color: #9ca3af;
+    font-size: 0.75rem;
+}
+
+.admin-payment-key {
+    font-family: monospace;
+    font-size: 0.75rem;
+    color: #9ca3af;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .admin-header {
+        padding: 1rem;
+    }
+
+    .admin-nav {
+        padding: 0 1rem;
+        overflow-x: auto;
+    }
+
+    .admin-nav-btn {
+        padding: 0.75rem 1rem;
+        white-space: nowrap;
+    }
+
+    .admin-main {
+        padding: 1rem;
+    }
+
+    .admin-filters {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .admin-search {
+        min-width: auto;
+    }
+}

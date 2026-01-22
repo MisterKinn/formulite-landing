@@ -12,6 +12,7 @@ import {
     getDocs,
     doc,
     updateDoc,
+    setDoc,
 } from "firebase/firestore";
 import { app } from "../firebaseConfig";
 import { saveSubscription, getNextBillingDate } from "./subscription";
@@ -33,8 +34,16 @@ async function chargeBillingKey(
     billingKey: string,
     customerKey: string,
     amount: number,
-    orderName: string
-): Promise<{ success: boolean; orderId?: string; error?: string }> {
+    orderName: string,
+): Promise<{
+    success: boolean;
+    orderId?: string;
+    paymentKey?: string;
+    approvedAt?: string;
+    method?: string;
+    card?: { company: string | null; number: string | null } | null;
+    error?: string;
+}> {
     try {
         const orderId = `recurring_${Date.now()}_${Math.random()
             .toString(36)
@@ -46,7 +55,7 @@ async function chargeBillingKey(
                 method: "POST",
                 headers: {
                     Authorization: `Basic ${Buffer.from(
-                        process.env.TOSS_SECRET_KEY + ":"
+                        process.env.TOSS_SECRET_KEY + ":",
                     ).toString("base64")}`,
                     "Content-Type": "application/json",
                 },
@@ -57,13 +66,25 @@ async function chargeBillingKey(
                     orderId,
                     orderName,
                 }),
-            }
+            },
         );
 
         const result = await response.json();
 
         if (response.ok && result.status === "DONE") {
-            return { success: true, orderId };
+            return {
+                success: true,
+                orderId,
+                paymentKey: result.paymentKey,
+                approvedAt: result.approvedAt,
+                method: result.method,
+                card: result.card
+                    ? {
+                          company: result.card.company || null,
+                          number: result.card.number || null,
+                      }
+                    : null,
+            };
         } else {
             console.error("Billing charge failed:", result);
             return {
@@ -96,14 +117,14 @@ export async function processScheduledBilling(): Promise<BillingResult[]> {
             usersRef,
             where("subscription.status", "==", "active"),
             where("subscription.isRecurring", "==", true),
-            where("subscription.nextBillingDate", "<=", todayStr)
+            where("subscription.nextBillingDate", "<=", todayStr),
         );
 
         const snapshot = await getDocs(q);
         const results: BillingResult[] = [];
 
         console.log(
-            `📋 Found ${snapshot.docs.length} subscriptions to process`
+            `📋 Found ${snapshot.docs.length} subscriptions to process`,
         );
 
         for (const userDoc of snapshot.docs) {
@@ -131,7 +152,7 @@ export async function processScheduledBilling(): Promise<BillingResult[]> {
             console.log(`   - 금액: ${subscription.amount}원`);
             console.log(`   - 플랜: ${subscription.plan}`);
             console.log(
-                `   - 결제주기: ${subscription.billingCycle || "monthly"}`
+                `   - 결제주기: ${subscription.billingCycle || "monthly"}`,
             );
 
             // 토스페이먼츠 자동 결제 실행
@@ -141,13 +162,13 @@ export async function processScheduledBilling(): Promise<BillingResult[]> {
                 subscription.amount,
                 `Nova AI ${subscription.plan} 요금제 (${
                     subscription.billingCycle === "yearly" ? "연간" : "월간"
-                } 구독)`
+                } 구독)`,
             );
 
             if (billingResult.success) {
                 // 결제 성공: 다음 결제일 업데이트
                 const nextBillingDate = getNextBillingDate(
-                    subscription.billingCycle || "monthly"
+                    subscription.billingCycle || "monthly",
                 );
 
                 await saveSubscription(userId, {
@@ -157,8 +178,34 @@ export async function processScheduledBilling(): Promise<BillingResult[]> {
                     lastOrderId: billingResult.orderId,
                 });
 
+                // Save payment to history
+                const orderName = `Nova AI ${subscription.plan} 요금제 (${
+                    subscription.billingCycle === "yearly" ? "연간" : "월간"
+                } 구독)`;
+
+                await setDoc(
+                    doc(
+                        db,
+                        "users",
+                        userId,
+                        "payments",
+                        billingResult.paymentKey!,
+                    ),
+                    {
+                        paymentKey: billingResult.paymentKey,
+                        orderId: billingResult.orderId,
+                        amount: subscription.amount,
+                        orderName,
+                        method: billingResult.method || "카드",
+                        status: "DONE",
+                        approvedAt: billingResult.approvedAt,
+                        card: billingResult.card || null,
+                        createdAt: new Date().toISOString(),
+                    },
+                );
+
                 console.log(
-                    `✅ Billing successful for user ${userId}, next billing: ${nextBillingDate}`
+                    `✅ Billing successful for user ${userId}, next billing: ${nextBillingDate}`,
                 );
 
                 results.push({
@@ -171,21 +218,33 @@ export async function processScheduledBilling(): Promise<BillingResult[]> {
                 // TODO: 성공 알림 이메일 발송
                 // await sendPaymentReceipt(userId, { ... });
             } else {
-                // 결제 실패: 재시도 로직 또는 구독 일시정지
+                // 결제 실패: 재시도 로직
                 console.error(
                     `❌ Billing failed for user ${userId}:`,
-                    billingResult.error
+                    billingResult.error,
                 );
 
-                // 실패 횟수 증가 (선택사항)
+                // 실패 횟수 증가
                 const failureCount = (subscription.failureCount || 0) + 1;
                 let newStatus = subscription.status;
+                let nextRetryDate: string | null = null;
 
-                // 3번 연속 실패 시 구독 일시정지 (정책에 따라 조정 가능)
-                if (failureCount >= 3) {
+                // Retry schedule: 1st fail -> retry in 2 days, 2nd fail -> retry in 3 days, 3rd fail -> suspend
+                if (failureCount < 3) {
+                    // Schedule next retry
+                    const retryDays = failureCount === 1 ? 2 : 3; // 2 days after 1st fail, 3 days after 2nd
+                    const retryDate = new Date();
+                    retryDate.setDate(retryDate.getDate() + retryDays);
+                    nextRetryDate = retryDate.toISOString().split("T")[0];
+
+                    console.log(
+                        `🔄 Scheduling retry for user ${userId} in ${retryDays} days (attempt ${failureCount + 1}/3)`,
+                    );
+                } else {
+                    // 3번 연속 실패 시 구독 일시정지
                     newStatus = "suspended";
                     console.log(
-                        `🚫 Subscription suspended for user ${userId} after ${failureCount} failures`
+                        `🚫 Subscription suspended for user ${userId} after ${failureCount} failures`,
                     );
                 }
 
@@ -195,6 +254,8 @@ export async function processScheduledBilling(): Promise<BillingResult[]> {
                     status: newStatus,
                     lastFailureDate: new Date().toISOString(),
                     lastFailureReason: billingResult.error,
+                    // Update next billing date to retry date if still retrying
+                    ...(nextRetryDate && { nextBillingDate: nextRetryDate }),
                 });
 
                 results.push({
@@ -214,7 +275,7 @@ export async function processScheduledBilling(): Promise<BillingResult[]> {
         console.log(
             `🏁 Scheduled billing completed. Processed: ${
                 results.length
-            }, Successful: ${results.filter((r) => r.success).length}`
+            }, Successful: ${results.filter((r) => r.success).length}`,
         );
 
         return results;
@@ -228,7 +289,7 @@ export async function processScheduledBilling(): Promise<BillingResult[]> {
  * 특정 사용자의 구독을 즉시 결제합니다. (관리자 기능 또는 테스트용)
  */
 export async function billUserImmediately(
-    userId: string
+    userId: string,
 ): Promise<BillingResult> {
     try {
         const userRef = doc(db, "users", userId);
@@ -262,12 +323,12 @@ export async function billUserImmediately(
             subscription.billingKey,
             subscription.customerKey,
             subscription.amount,
-            `Nova AI ${subscription.plan} 요금제 (즉시 결제)`
+            `Nova AI ${subscription.plan} 요금제 (즉시 결제)`,
         );
 
         if (billingResult.success) {
             const nextBillingDate = getNextBillingDate(
-                subscription.billingCycle || "monthly"
+                subscription.billingCycle || "monthly",
             );
 
             await saveSubscription(userId, {

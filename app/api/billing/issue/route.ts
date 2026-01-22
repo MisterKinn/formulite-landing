@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import getFirebaseAdmin from "@/lib/firebaseAdmin";
+import { savePaymentRecord } from "@/lib/paymentHistory";
 
 /**
  * 빌링키 발급 API
@@ -144,6 +145,18 @@ export async function POST(request: NextRequest) {
                           }
                         : null,
                 };
+
+                // Save payment to history
+                await savePaymentRecord(userId, {
+                    paymentKey: firstPaymentResult.paymentKey,
+                    orderId: firstPaymentResult.orderId,
+                    amount: firstPaymentResult.amount,
+                    orderName: orderName || "Nova AI 구독",
+                    method: firstPaymentResult.method || "카드",
+                    status: "DONE",
+                    approvedAt: firstPaymentResult.approvedAt,
+                    card: firstPaymentResult.card,
+                });
             } catch (paymentError) {
                 console.error("❌ 결제 요청 중 오류:", paymentError);
                 return NextResponse.json(
