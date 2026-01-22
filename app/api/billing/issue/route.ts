@@ -7,7 +7,7 @@ import getFirebaseAdmin from "@/lib/firebaseAdmin";
  */
 export async function POST(request: NextRequest) {
     try {
-        const { authKey, customerKey, amount, orderName, billingCycle } =
+        const { authKey, customerKey, userId: passedUserId, amount, orderName, billingCycle } =
             await request.json();
 
         if (!authKey || !customerKey) {
@@ -72,8 +72,8 @@ export async function POST(request: NextRequest) {
         console.log("   - 빌링키:", billingKey);
         console.log("   - customerKey:", customerKey);
 
-        // customerKey에서 userId 추출 (customer_ 형식과 user_ 형식 모두 지원)
-        const userId = extractUserIdFromCustomerKey(customerKey);
+        // Use passed userId or extract from customerKey as fallback
+        const userId = passedUserId || extractUserIdFromCustomerKey(customerKey);
 
         console.log("💾 Firestore 저장 중...");
         console.log("   - userId:", userId);
@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
             return NextResponse.json(
                 {
                     success: false,
-                    error: "유효하지 않은 customerKey 형식입니다",
+                    error: "userId가 필요합니다",
                 },
                 { status: 400 }
             );
