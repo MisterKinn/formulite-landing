@@ -35,7 +35,7 @@ export default function PaymentClient() {
                 setCurrentCustomerKey(customerKey);
 
                 const tossPayments = await loadTossPayments(
-                    process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY!
+                    process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY!,
                 );
 
                 const payment = tossPayments.payment({
@@ -73,7 +73,7 @@ export default function PaymentClient() {
                     successUrl: `${
                         window.location.origin
                     }/payment/success?recurring=true&amount=${amount}&orderName=${encodeURIComponent(
-                        orderName
+                        orderName,
                     )}&billingCycle=monthly`,
                     failUrl: `${window.location.origin}/payment/fail`,
                     customerEmail: user.email,

@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
         if (!paymentKey || !customerKey) {
             return NextResponse.json(
                 { success: false, error: "필수 파라미터 누락" },
-                { status: 400 }
+                { status: 400 },
             );
         }
 
@@ -25,14 +25,14 @@ export async function POST(request: NextRequest) {
                 method: "POST",
                 headers: {
                     Authorization: `Basic ${Buffer.from(
-                        process.env.TOSS_SECRET_KEY + ":"
+                        process.env.TOSS_SECRET_KEY + ":",
                     ).toString("base64")}`,
                     "Content-Type": "application/json",
                 },
                 body: JSON.stringify({
                     customerKey,
                 }),
-            }
+            },
         );
 
         const result = await response.json();
@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
                         result.message ||
                         `토스페이먼츠 API 오류 (${response.status})`,
                 },
-                { status: response.status }
+                { status: response.status },
             );
         }
 
@@ -58,7 +58,13 @@ export async function POST(request: NextRequest) {
         const subscriptionData = {
             billingKey,
             customerKey,
-            plan: amount ? (amount >= 29900 ? "pro" : amount >= 19900 ? "plus" : "basic") : "free",
+            plan: amount
+                ? amount >= 29900
+                    ? "pro"
+                    : amount >= 19900
+                      ? "plus"
+                      : "basic"
+                : "free",
             status: "active",
             registeredAt: new Date().toISOString(),
             isRecurring: true,
@@ -66,21 +72,20 @@ export async function POST(request: NextRequest) {
             orderName: orderName || "Nova AI 구독",
             billingCycle: billingCycle || "monthly",
             nextBillingDate: new Date(
-                Date.now() + 30 * 24 * 60 * 60 * 1000
+                Date.now() + 30 * 24 * 60 * 60 * 1000,
             ).toISOString(),
         };
 
         // Firestore 저장
-        const { getFirestore, doc, setDoc } = await import(
-            "firebase/firestore"
-        );
+        const { getFirestore, doc, setDoc } =
+            await import("firebase/firestore");
         const { app } = await import("../../../../firebaseConfig");
         const db = getFirestore(app);
 
         await setDoc(
             doc(db, "users", userId, "subscription", "current"),
             subscriptionData,
-            { merge: true }
+            { merge: true },
         );
 
         return NextResponse.json({
@@ -92,7 +97,7 @@ export async function POST(request: NextRequest) {
         console.error("빌링키 발급 오류:", error);
         return NextResponse.json(
             { success: false, error: error.message || "서버 오류" },
-            { status: 500 }
+            { status: 500 },
         );
     }
 }

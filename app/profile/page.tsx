@@ -202,7 +202,7 @@ function getTierOrder(planId: string): number {
 function getCtaText(planId: string, currentPlanId: string): string {
     const planOrder = getTierOrder(planId);
     const currentOrder = getTierOrder(currentPlanId);
-    
+
     if (planOrder < currentOrder) {
         // Downgrade
         const planNames: { [key: string]: string } = {
@@ -268,7 +268,7 @@ function ProfileContent() {
         "profile" | "subscription" | "account"
     >("profile");
     const [billingCycle, setBillingCycle] = useState<"monthly" | "yearly">(
-        "monthly"
+        "monthly",
     );
     const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
     const [deleting, setDeleting] = useState<boolean>(false);
@@ -319,7 +319,7 @@ function ProfileContent() {
 
             try {
                 const response = await fetch(
-                    `/api/ai/check-limit?userId=${authUser.uid}`
+                    `/api/ai/check-limit?userId=${authUser.uid}`,
                 );
                 if (response.ok) {
                     const data = await response.json();
@@ -451,7 +451,7 @@ function ProfileContent() {
             const dataUrl = await fileToDataUrl(file);
             if (dataUrl.length > 800_000) {
                 setError(
-                    "이미지 크기가 너무 큽니다. 더 작은 이미지를 사용해주세요 (약 800KB 이하 권장)."
+                    "이미지 크기가 너무 큽니다. 더 작은 이미지를 사용해주세요 (약 800KB 이하 권장).",
                 );
                 setProcessingImage(false);
                 return;
@@ -505,7 +505,7 @@ function ProfileContent() {
                     } catch (err) {
                         console.error(
                             "Failed to update displayName (background)",
-                            err
+                            err,
                         );
                     }
                 }
@@ -579,11 +579,11 @@ function ProfileContent() {
 
         // Handle downgrade
         if (targetPlanOrder < currentPlanOrder) {
-            const confirmMessage = 
+            const confirmMessage =
                 plan.id === "free"
                     ? "무료 플랜으로 다운그레이드하시겠습니까? 프리미엄 기능을 더 이상 사용할 수 없습니다."
                     : `${plan.name} 플랜으로 다운그레이드하시겠습니까? 일부 기능이 제한됩니다.`;
-            
+
             if (!confirm(confirmMessage)) {
                 return;
             }
@@ -628,7 +628,7 @@ function ProfileContent() {
                 setError(
                     err instanceof Error
                         ? err.message
-                        : "플랜 변경 중 오류가 발생했습니다. 다시 시도해주세요."
+                        : "플랜 변경 중 오류가 발생했습니다. 다시 시도해주세요.",
                 );
             } finally {
                 setLoadingPlan(null);
@@ -651,7 +651,7 @@ function ProfileContent() {
                 pro: "프로",
             };
             const planName = planNameMap[plan.id] || plan.name;
-            
+
             // compute amount based on billing cycle
             const planAmount =
                 billingCycle === "monthly"
@@ -666,7 +666,7 @@ function ProfileContent() {
                 console.log("사용자가 결제를 취소했습니다.");
             } else {
                 setError(
-                    "결제 처리 중 오류가 발생했습니다. 다시 시도해주세요."
+                    "결제 처리 중 오류가 발생했습니다. 다시 시도해주세요.",
                 );
             }
         } finally {
@@ -680,7 +680,7 @@ function ProfileContent() {
 
         if (
             !confirm(
-                "구독을 취소하시겠습니까? 다음 결제일까지 서비스를 이용할 수 있습니다."
+                "구독을 취소하시겠습니까? 다음 결제일까지 서비스를 이용할 수 있습니다.",
             )
         ) {
             return;
@@ -711,7 +711,10 @@ function ProfileContent() {
             setRefreshKey((k) => k + 1); // Refresh data
         } catch (error: any) {
             console.error("Failed to cancel subscription:", error);
-            setError(error?.message || "구독 취소에 실패했습니다. 다시 시도해주세요.");
+            setError(
+                error?.message ||
+                    "구독 취소에 실패했습니다. 다시 시도해주세요.",
+            );
         }
     };
 
@@ -729,7 +732,7 @@ function ProfileContent() {
         const confirmed =
             typeof window !== "undefined"
                 ? window.confirm(
-                      "정말로 계정을 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다."
+                      "정말로 계정을 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.",
                   )
                 : true;
         if (!confirmed) return;
@@ -765,7 +768,7 @@ function ProfileContent() {
                 router.push("/login");
             } else {
                 setError(
-                    "계정 삭제 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
+                    "계정 삭제 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
                 );
             }
         } finally {
@@ -1046,7 +1049,7 @@ function ProfileContent() {
                                                 value={displayName}
                                                 onChange={(e) =>
                                                     setDisplayName(
-                                                        e.target.value
+                                                        e.target.value,
                                                     )
                                                 }
                                                 placeholder="이름을 입력하세요"
@@ -1131,8 +1134,8 @@ function ProfileContent() {
                                             {saving
                                                 ? "저장 중..."
                                                 : processingImage
-                                                ? "이미지 처리 중..."
-                                                : "변경 사항 저장"}
+                                                  ? "이미지 처리 중..."
+                                                  : "변경 사항 저장"}
                                         </button>
                                     </div>
                                 </form>
@@ -1153,19 +1156,27 @@ function ProfileContent() {
                                                 className={`current-plan-icon ${subscription?.plan}`}
                                             >
                                                 {getPlanIcon(
-                                                    subscription?.plan
+                                                    subscription?.plan,
                                                 )}
                                             </div>
 
                                             <div className="current-plan-text">
                                                 <div className="current-plan-title">
                                                     <span className="current-plan-name">
-                                                        {getPlanInfo(subscription?.plan).name}
+                                                        {
+                                                            getPlanInfo(
+                                                                subscription?.plan,
+                                                            ).name
+                                                        }
                                                     </span>
                                                 </div>
 
                                                 <span className="current-plan-desc">
-                                                    {getPlanInfo(subscription?.plan).description}
+                                                    {
+                                                        getPlanInfo(
+                                                            subscription?.plan,
+                                                        ).description
+                                                    }
                                                 </span>
                                             </div>
                                         </div>
@@ -1180,9 +1191,9 @@ function ProfileContent() {
                                                     <span className="value">
                                                         {new Date(
                                                             subscription?.billingStartDate ||
-                                                                subscription?.startDate
+                                                                subscription?.startDate,
                                                         ).toLocaleDateString(
-                                                            "ko-KR"
+                                                            "ko-KR",
                                                         )}
                                                     </span>
                                                 </div>
@@ -1195,9 +1206,9 @@ function ProfileContent() {
                                                 <span className="value">
                                                     {subscription?.nextBillingDate
                                                         ? new Date(
-                                                              subscription.nextBillingDate
+                                                              subscription.nextBillingDate,
                                                           ).toLocaleDateString(
-                                                              "ko-KR"
+                                                              "ko-KR",
                                                           )
                                                         : "-"}
                                                 </span>
@@ -1248,9 +1259,9 @@ function ProfileContent() {
                                                     <span className="value">
                                                         {new Date(
                                                             subscription?.billingStartDate ||
-                                                                subscription?.startDate
+                                                                subscription?.startDate,
                                                         ).toLocaleDateString(
-                                                            "ko-KR"
+                                                            "ko-KR",
                                                         )}
                                                     </span>
                                                 </div>
@@ -1263,9 +1274,9 @@ function ProfileContent() {
                                                 <span className="value">
                                                     {subscription?.nextBillingDate
                                                         ? new Date(
-                                                              subscription.nextBillingDate
+                                                              subscription.nextBillingDate,
                                                           ).toLocaleDateString(
-                                                              "ko-KR"
+                                                              "ko-KR",
                                                           )
                                                         : "-"}
                                                 </span>
@@ -1306,9 +1317,9 @@ function ProfileContent() {
                                             <span className="value">
                                                 {subscription?.nextBillingDate
                                                     ? new Date(
-                                                          subscription.nextBillingDate
+                                                          subscription.nextBillingDate,
                                                       ).toLocaleDateString(
-                                                          "ko-KR"
+                                                          "ko-KR",
                                                       )
                                                     : "-"}
                                             </span>
@@ -1369,7 +1380,7 @@ function ProfileContent() {
                                                         (aiUsage.currentUsage /
                                                             aiUsage.limit) *
                                                             100,
-                                                        100
+                                                        100,
                                                     )}%`,
                                                     height: "100%",
                                                     backgroundColor:
@@ -1448,15 +1459,20 @@ function ProfileContent() {
                                                     billingCycle === "monthly"
                                                         ? plan.monthlyPrice
                                                         : plan.yearlyPrice;
-                                                const currentPlanId = subscription?.plan || "free";
+                                                const currentPlanId =
+                                                    subscription?.plan ||
+                                                    "free";
                                                 const isCurrentPlan =
                                                     subscription?.plan
                                                         ? subscription.plan ===
                                                           plan.id
                                                         : plan.id === "free";
-                                                const ctaText = isCurrentPlan 
-                                                    ? "현재 플랜" 
-                                                    : getCtaText(plan.id, currentPlanId);
+                                                const ctaText = isCurrentPlan
+                                                    ? "현재 플랜"
+                                                    : getCtaText(
+                                                          plan.id,
+                                                          currentPlanId,
+                                                      );
 
                                                 return (
                                                     <div
@@ -1499,7 +1515,7 @@ function ProfileContent() {
                                                             </span>
                                                             <span className="profile-plan-item-amount">
                                                                 {formatPrice(
-                                                                    price
+                                                                    price,
                                                                 )}
                                                             </span>
                                                             <span className="profile-plan-item-period">
@@ -1515,7 +1531,7 @@ function ProfileContent() {
                                                                     연간 ₩
                                                                     {formatPrice(
                                                                         price *
-                                                                            12
+                                                                            12,
                                                                     )}{" "}
                                                                     결제
                                                                 </div>
@@ -1525,7 +1541,7 @@ function ProfileContent() {
                                                             {plan.features.map(
                                                                 (
                                                                     feature,
-                                                                    index
+                                                                    index,
                                                                 ) => (
                                                                     <li
                                                                         key={
@@ -1548,7 +1564,7 @@ function ProfileContent() {
                                                                             }
                                                                         </span>
                                                                     </li>
-                                                                )
+                                                                ),
                                                             )}
                                                         </ul>
 
@@ -1557,12 +1573,12 @@ function ProfileContent() {
                                                                 isCurrentPlan
                                                                     ? "profile-btn-secondary"
                                                                     : plan.popular
-                                                                    ? "profile-btn-primary"
-                                                                    : "profile-btn-secondary"
+                                                                      ? "profile-btn-primary"
+                                                                      : "profile-btn-secondary"
                                                             } profile-plan-item-btn`}
                                                             onClick={() =>
                                                                 handleSubscribe(
-                                                                    plan
+                                                                    plan,
                                                                 )
                                                             }
                                                             disabled={
@@ -1580,7 +1596,11 @@ function ProfileContent() {
                                                             ) : isCurrentPlan ? (
                                                                 "현재 플랜"
                                                             ) : (
-                                                                <span dangerouslySetInnerHTML={{ __html: ctaText }} />
+                                                                <span
+                                                                    dangerouslySetInnerHTML={{
+                                                                        __html: ctaText,
+                                                                    }}
+                                                                />
                                                             )}
                                                         </button>
                                                     </div>

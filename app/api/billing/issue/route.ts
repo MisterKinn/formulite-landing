@@ -7,13 +7,19 @@ import getFirebaseAdmin from "@/lib/firebaseAdmin";
  */
 export async function POST(request: NextRequest) {
     try {
-        const { authKey, customerKey, userId: passedUserId, amount, orderName, billingCycle } =
-            await request.json();
+        const {
+            authKey,
+            customerKey,
+            userId: passedUserId,
+            amount,
+            orderName,
+            billingCycle,
+        } = await request.json();
 
         if (!authKey || !customerKey) {
             return NextResponse.json(
                 { success: false, error: "authKey와 customerKey가 필요합니다" },
-                { status: 400 }
+                { status: 400 },
             );
         }
 
@@ -30,7 +36,7 @@ export async function POST(request: NextRequest) {
                     "Content-Type": "application/json",
                 },
                 body: JSON.stringify({ customerKey }),
-            }
+            },
         );
 
         const result = await response.json();
@@ -44,7 +50,7 @@ export async function POST(request: NextRequest) {
                         result.message ||
                         `토스페이먼츠 API 오류 (${response.status})`,
                 },
-                { status: response.status }
+                { status: response.status },
             );
         }
 
@@ -53,12 +59,13 @@ export async function POST(request: NextRequest) {
         if (!billingKey) {
             return NextResponse.json(
                 { success: false, error: "빌링키를 받지 못했습니다" },
-                { status: 500 }
+                { status: 500 },
             );
         }
 
         // Use passed userId or extract from customerKey as fallback
-        const userId = passedUserId || extractUserIdFromCustomerKey(customerKey);
+        const userId =
+            passedUserId || extractUserIdFromCustomerKey(customerKey);
 
         if (!userId) {
             return NextResponse.json(
@@ -66,7 +73,7 @@ export async function POST(request: NextRequest) {
                     success: false,
                     error: "userId가 필요합니다",
                 },
-                { status: 400 }
+                { status: 400 },
             );
         }
 
@@ -89,7 +96,7 @@ export async function POST(request: NextRequest) {
         let firstPaymentResult = null;
         if (amount && amount > 0) {
             const orderId = `first_${userId}_${Date.now()}`;
-            
+
             try {
                 const paymentResponse = await fetch(
                     "https://api.tosspayments.com/v1/billing/" + billingKey,
@@ -105,7 +112,7 @@ export async function POST(request: NextRequest) {
                             orderId,
                             orderName: orderName || "Nova AI 구독",
                         }),
-                    }
+                    },
                 );
 
                 const paymentResult = await paymentResponse.json();
@@ -115,10 +122,12 @@ export async function POST(request: NextRequest) {
                     return NextResponse.json(
                         {
                             success: false,
-                            error: paymentResult.message || "첫 결제에 실패했습니다",
+                            error:
+                                paymentResult.message ||
+                                "첫 결제에 실패했습니다",
                             billingKeyIssued: true, // 빌링키는 발급됨
                         },
-                        { status: 400 }
+                        { status: 400 },
                     );
                 }
 
@@ -128,10 +137,12 @@ export async function POST(request: NextRequest) {
                     amount: paymentResult.totalAmount || 0,
                     approvedAt: paymentResult.approvedAt || null,
                     method: paymentResult.method || null,
-                    card: paymentResult.card ? {
-                        company: paymentResult.card.company || null,
-                        number: paymentResult.card.number || null,
-                    } : null,
+                    card: paymentResult.card
+                        ? {
+                              company: paymentResult.card.company || null,
+                              number: paymentResult.card.number || null,
+                          }
+                        : null,
                 };
             } catch (paymentError) {
                 console.error("❌ 결제 요청 중 오류:", paymentError);
@@ -141,7 +152,7 @@ export async function POST(request: NextRequest) {
                         error: "결제 처리 중 오류가 발생했습니다",
                         billingKeyIssued: true,
                     },
-                    { status: 500 }
+                    { status: 500 },
                 );
             }
         }
@@ -180,7 +191,7 @@ export async function POST(request: NextRequest) {
                 error: error?.message || "내부 서버 오류가 발생했습니다",
                 details: error?.stack || "Unknown error",
             },
-            { status: 500 }
+            { status: 500 },
         );
     }
 }
@@ -214,16 +225,16 @@ function extractUserIdFromCustomerKey(customerKey: string): string | null {
  */
 async function saveBillingKeyToFirestore(
     userId: string,
-    subscriptionData: any
+    subscriptionData: any,
 ) {
     try {
         const admin = getFirebaseAdmin();
         const db = admin.firestore();
-        
+
         // Firestore document ID에 사용할 수 없는 문자 처리
         // userId가 naver:xxx 형식일 수 있음
         const safeUserId = userId;
-        
+
         const userRef = db.collection("users").doc(safeUserId);
 
         // 기존 사용자 데이터 조회
@@ -241,9 +252,11 @@ async function saveBillingKeyToFirestore(
                 },
                 updatedAt: new Date().toISOString(),
             },
-            { merge: true }
+            { merge: true },
         );
     } catch (error: any) {
-        throw new Error(`데이터베이스 저장에 실패했습니다: ${error?.message || 'Unknown error'}`);
+        throw new Error(
+            `데이터베이스 저장에 실패했습니다: ${error?.message || "Unknown error"}`,
+        );
     }
 }

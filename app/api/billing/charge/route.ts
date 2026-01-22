@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
                     success: false,
                     error: "billingKey, customerKey, amount, orderName이 필요합니다",
                 },
-                { status: 400 }
+                { status: 400 },
             );
         }
 
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
                 method: "POST",
                 headers: {
                     Authorization: `Basic ${Buffer.from(
-                        process.env.TOSS_SECRET_KEY + ":"
+                        process.env.TOSS_SECRET_KEY + ":",
                     ).toString("base64")}`,
                     "Content-Type": "application/json",
                 },
@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
                     orderId,
                     orderName,
                 }),
-            }
+            },
         );
 
         const result = await response.json();
@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
                     error:
                         result.message || `결제 API 오류 (${response.status})`,
                 },
-                { status: response.status }
+                { status: response.status },
             );
         }
 
@@ -93,7 +93,7 @@ export async function POST(request: NextRequest) {
                 details:
                     error instanceof Error ? error.message : "Unknown error",
             },
-            { status: 500 }
+            { status: 500 },
         );
     }
 }
@@ -118,7 +118,7 @@ export async function PUT(request: NextRequest) {
                     success: false,
                     error: "userId, amount, orderName이 필요합니다",
                 },
-                { status: 400 }
+                { status: 400 },
             );
         }
 
@@ -130,7 +130,7 @@ export async function PUT(request: NextRequest) {
         if (snapshot.empty) {
             return NextResponse.json(
                 { success: false, error: "사용자를 찾을 수 없습니다" },
-                { status: 404 }
+                { status: 404 },
             );
         }
 
@@ -141,14 +141,14 @@ export async function PUT(request: NextRequest) {
         if (!subscription || !subscription.billingKey) {
             return NextResponse.json(
                 { success: false, error: "등록된 빌링키가 없습니다" },
-                { status: 400 }
+                { status: 400 },
             );
         }
 
         if (subscription.status !== "active") {
             return NextResponse.json(
                 { success: false, error: "활성 상태가 아닌 구독입니다" },
-                { status: 400 }
+                { status: 400 },
             );
         }
 
@@ -163,7 +163,7 @@ export async function PUT(request: NextRequest) {
                 method: "POST",
                 headers: {
                     Authorization: `Basic ${Buffer.from(
-                        process.env.TOSS_SECRET_KEY + ":"
+                        process.env.TOSS_SECRET_KEY + ":",
                     ).toString("base64")}`,
                     "Content-Type": "application/json",
                 },
@@ -174,7 +174,7 @@ export async function PUT(request: NextRequest) {
                     orderId,
                     orderName,
                 }),
-            }
+            },
         );
 
         const result = await response.json();
@@ -182,7 +182,7 @@ export async function PUT(request: NextRequest) {
         if (response.ok && result.status === "DONE") {
             // 결제 성공: 다음 결제일 업데이트
             const nextBillingDate = getNextBillingDate(
-                subscription.billingCycle || "monthly"
+                subscription.billingCycle || "monthly",
             );
 
             await saveSubscription(userId, {
@@ -228,7 +228,7 @@ export async function PUT(request: NextRequest) {
                     failureCount,
                     suspended: newStatus === "suspended",
                 },
-                { status: 402 } // Payment Required
+                { status: 402 }, // Payment Required
             );
         }
     } catch (error) {
@@ -241,7 +241,7 @@ export async function PUT(request: NextRequest) {
                 details:
                     error instanceof Error ? error.message : "Unknown error",
             },
-            { status: 500 }
+            { status: 500 },
         );
     }
 }

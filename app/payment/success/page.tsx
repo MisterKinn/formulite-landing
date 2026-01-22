@@ -58,7 +58,7 @@ function Success({
     const orderId = result?.data?.orderId ?? "-";
     const method = result?.data?.method ?? "-";
     const amount = Number(
-        result?.data?.totalAmount ?? result?.data?.amount ?? 0
+        result?.data?.totalAmount ?? result?.data?.amount ?? 0,
     );
 
     return (
@@ -142,7 +142,7 @@ function PaymentSuccessContent() {
 
     const { loading: authLoading, user, updateSubscription } = useAuth();
     const [resultSubscription, setResultSubscription] = useState<any | null>(
-        null
+        null,
     );
 
     useEffect(() => {
@@ -206,7 +206,7 @@ function PaymentSuccessContent() {
                             data: confirmData.data,
                         });
                         setError(
-                            "⚠️ 카드 직접 결제만 구독이 가능합니다. 결제는 완료되었으나 자동결제는 등록되지 않았습니다."
+                            "⚠️ 카드 직접 결제만 구독이 가능합니다. 결제는 완료되었으나 자동결제는 등록되지 않았습니다.",
                         );
                         return;
                     }
@@ -226,7 +226,7 @@ function PaymentSuccessContent() {
                                 orderName,
                                 billingCycle,
                             }),
-                        }
+                        },
                     );
 
                     const billingData = await billingRes.json();
@@ -327,14 +327,14 @@ function PaymentSuccessContent() {
 
                         // 안전하게 값들 추출
                         const total = Number(
-                            toss?.totalAmount ?? toss?.amount ?? 0
+                            toss?.totalAmount ?? toss?.amount ?? 0,
                         );
                         const plan =
                             total >= 19900
                                 ? "pro"
                                 : total >= 9900
-                                ? "plus"
-                                : null;
+                                  ? "plus"
+                                  : null;
                         const customerKey = toss?.customerKey || null;
 
                         let targetUserId = user?.uid;
@@ -363,7 +363,7 @@ function PaymentSuccessContent() {
                             } catch (err) {
                                 console.error(
                                     "Failed to update subscription via auth context:",
-                                    err
+                                    err,
                                 );
                             }
                         } else if (targetUserId && plan) {
@@ -375,7 +375,7 @@ function PaymentSuccessContent() {
                                     "";
                                 if (!adminSecret)
                                     throw new Error(
-                                        "No admin secret available"
+                                        "No admin secret available",
                                     );
 
                                 await fetch("/api/admin/set-subscription", {
@@ -402,14 +402,14 @@ function PaymentSuccessContent() {
                             } catch (err) {
                                 console.error(
                                     "Failed to request server subscription:",
-                                    err
+                                    err,
                                 );
                             }
                         }
                     } catch (err) {
                         console.error(
                             "Failed to save subscription on success page:",
-                            err
+                            err,
                         );
                     }
                 })();

@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
         if (!paymentKey || !orderId || !amount) {
             return NextResponse.json(
                 { error: "필수 파라미터가 누락되었습니다" },
-                { status: 400 }
+                { status: 400 },
             );
         }
 
@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
         if (!amountValidation.valid) {
             return NextResponse.json(
                 { error: amountValidation.error },
-                { status: 400 }
+                { status: 400 },
             );
         }
 
@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
             console.error("TOSS_SECRET_KEY is not set");
             return NextResponse.json(
                 { error: "Server configuration error" },
-                { status: 500 }
+                { status: 500 },
             );
         }
 
@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
                     orderId,
                     amount,
                 }),
-            }
+            },
         );
 
         const data = await response.json();
@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
                     error: paymentError.userMessage,
                     code: paymentError.code,
                 },
-                { status: response.status }
+                { status: response.status },
             );
         }
 
@@ -117,9 +117,8 @@ export async function POST(request: NextRequest) {
                         plan = "basic";
                     }
                     if (plan) {
-                        const { saveSubscription } = await import(
-                            "@/lib/subscription"
-                        );
+                        const { saveSubscription } =
+                            await import("@/lib/subscription");
                         await saveSubscription(userId, {
                             plan: plan as any,
                             amount: totalAmount,
@@ -151,12 +150,12 @@ export async function POST(request: NextRequest) {
                 message: errorMessage,
                 userMessage: "결제 처리 중 오류가 발생했습니다",
             },
-            { context: "payment_confirmation_catch" }
+            { context: "payment_confirmation_catch" },
         );
 
         return NextResponse.json(
             { error: "결제 처리 중 오류가 발생했습니다" },
-            { status: 500 }
+            { status: 500 },
         );
     }
 }

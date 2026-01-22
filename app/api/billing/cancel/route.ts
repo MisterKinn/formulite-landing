@@ -4,7 +4,7 @@ import getFirebaseAdmin from "@/lib/firebaseAdmin";
 /**
  * 구독 취소 API
  * POST /api/billing/cancel
- * 
+ *
  * TossPayments에서 빌링키를 삭제하고 Firestore에서 구독 상태를 업데이트합니다.
  */
 export async function POST(request: NextRequest) {
@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
         if (!userId) {
             return NextResponse.json(
                 { success: false, error: "userId가 필요합니다" },
-                { status: 400 }
+                { status: 400 },
             );
         }
 
@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
         if (!userDoc.exists) {
             return NextResponse.json(
                 { success: false, error: "사용자를 찾을 수 없습니다" },
-                { status: 404 }
+                { status: 404 },
             );
         }
 
@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
         if (!subscription?.billingKey) {
             return NextResponse.json(
                 { success: false, error: "등록된 빌링키가 없습니다" },
-                { status: 400 }
+                { status: 400 },
             );
         }
 
@@ -59,13 +59,16 @@ export async function POST(request: NextRequest) {
                 body: JSON.stringify({
                     customerKey,
                 }),
-            }
+            },
         );
 
         // TossPayments returns 200 on success, but we should handle errors gracefully
         if (!response.ok && response.status !== 404) {
             const errorData = await response.json().catch(() => ({}));
-            console.error("TossPayments billing key deletion failed:", errorData);
+            console.error(
+                "TossPayments billing key deletion failed:",
+                errorData,
+            );
             // Continue anyway - we still want to update our database
         }
 
@@ -79,7 +82,8 @@ export async function POST(request: NextRequest) {
 
         return NextResponse.json({
             success: true,
-            message: "구독이 취소되었습니다. 다음 결제일까지 서비스를 이용할 수 있습니다.",
+            message:
+                "구독이 취소되었습니다. 다음 결제일까지 서비스를 이용할 수 있습니다.",
         });
     } catch (error: any) {
         console.error("Subscription cancellation error:", error);
@@ -88,7 +92,7 @@ export async function POST(request: NextRequest) {
                 success: false,
                 error: error?.message || "구독 취소 중 오류가 발생했습니다",
             },
-            { status: 500 }
+            { status: 500 },
         );
     }
 }

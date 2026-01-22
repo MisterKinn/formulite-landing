@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
             ) {
                 return NextResponse.json(
                     { error: "Unauthorized" },
-                    { status: 401 }
+                    { status: 401 },
                 );
             }
         }
@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
                 message:
                     error instanceof Error ? error.message : "Unknown error",
             },
-            { status: 500 }
+            { status: 500 },
         );
     }
 }
@@ -92,7 +92,7 @@ export async function GET(request: NextRequest) {
     } catch (error) {
         return NextResponse.json(
             { error: "Service unavailable" },
-            { status: 503 }
+            { status: 503 },
         );
     }
 }

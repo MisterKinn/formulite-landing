@@ -7,7 +7,7 @@ import { billUserImmediately } from "@/lib/scheduledBilling";
  */
 export async function POST(
     request: NextRequest,
-    { params }: { params: Promise<{ userId: string }> }
+    { params }: { params: Promise<{ userId: string }> },
 ) {
     try {
         // 간단한 관리자 인증 (프로덕션에서는 더 강력한 인증 필요)
@@ -22,7 +22,7 @@ export async function POST(
             ) {
                 return NextResponse.json(
                     { error: "Admin access required" },
-                    { status: 401 }
+                    { status: 401 },
                 );
             }
         }
@@ -32,7 +32,7 @@ export async function POST(
         if (!userId) {
             return NextResponse.json(
                 { error: "User ID is required" },
-                { status: 400 }
+                { status: 400 },
             );
         }
 
@@ -55,7 +55,7 @@ export async function POST(
                     message: "Billing failed",
                     error: result.error,
                 },
-                { status: 422 }
+                { status: 422 },
             );
         }
     } catch (error) {
@@ -68,7 +68,7 @@ export async function POST(
                 message:
                     error instanceof Error ? error.message : "Unknown error",
             },
-            { status: 500 }
+            { status: 500 },
         );
     }
 }
