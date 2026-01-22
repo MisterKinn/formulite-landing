@@ -80,15 +80,17 @@ export async function POST(request: NextRequest) {
             pro: "프로",
         };
 
-        // If downgrading to free OR changing to a different paid plan, delete the billing key
-        const shouldDeleteBillingKey = 
-            currentSubscription?.billingKey && 
-            (plan === "free" || newAmount !== currentSubscription?.amount);
+        // Only delete billing key when downgrading to FREE plan
+        // For paid plan changes, just update the amount (per TossPayments guide)
+        const shouldDeleteBillingKey =
+            plan === "free" && currentSubscription?.billingKey;
 
-        if (shouldDeleteBillingKey && currentSubscription?.billingKey) {
+        if (shouldDeleteBillingKey) {
             try {
                 const secretKey = process.env.TOSS_SECRET_KEY!;
-                const encodedKey = Buffer.from(secretKey + ":").toString("base64");
+                const encodedKey = Buffer.from(secretKey + ":").toString(
+                    "base64",
+                );
 
                 await fetch(
                     `https://api.tosspayments.com/v1/billing/authorizations/${currentSubscription.billingKey}`,
@@ -101,15 +103,19 @@ export async function POST(request: NextRequest) {
                         body: JSON.stringify({
                             customerKey: currentSubscription.customerKey,
                         }),
-                    }
+                    },
                 );
             } catch (err) {
-                console.error("Failed to delete billing key from TossPayments:", err);
+                console.error(
+                    "Failed to delete billing key from TossPayments:",
+                    err,
+                );
                 // Continue anyway - we still want to update our database
             }
         }
 
-        // Update subscription - for downgrades, update the plan and amount
+        // Update subscription - just update amount and orderName for plan changes
+        // The scheduled billing will use the new amount automatically
         const updatedSubscription = {
             ...currentSubscription,
             plan: plan,
@@ -119,7 +125,7 @@ export async function POST(request: NextRequest) {
             startDate:
                 currentSubscription?.startDate || new Date().toISOString(),
             updatedAt: new Date().toISOString(),
-            // Clear billing info when changing plans (user needs to re-register card for new amount)
+            // Only clear billing info for free plan
             ...(shouldDeleteBillingKey && {
                 billingKey: null,
                 customerKey: null,

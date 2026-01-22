@@ -1,5 +1,60 @@
 import { NextRequest, NextResponse } from "next/server";
 import { processScheduledBilling } from "@/lib/scheduledBilling";
+import { Resend } from "resend";
+
+// Initialize Resend for email notifications
+const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
+
+/**
+ * Send billing report email to admin
+ */
+async function sendBillingReport(summary: {
+    timestamp: string;
+    totalProcessed: number;
+    successful: number;
+    failed: number;
+    totalAmount: number;
+    failedUsers?: { userId: string; error: string }[];
+}) {
+    if (!resend || !process.env.EMAIL_FROM) return;
+
+    const hasFailures = summary.failed > 0;
+    const subject = hasFailures
+        ? `⚠️ [Nova AI] 빌링 오류 발생 - ${summary.failed}건 실패`
+        : `✅ [Nova AI] 빌링 완료 - ${summary.successful}건 성공`;
+
+    const failedList = summary.failedUsers
+        ?.map((f) => `• ${f.userId}: ${f.error}`)
+        .join("\n") || "없음";
+
+    const html = `
+        <h2>Nova AI 자동 결제 리포트</h2>
+        <p><strong>시간:</strong> ${summary.timestamp}</p>
+        <hr/>
+        <h3>요약</h3>
+        <ul>
+            <li>총 처리: ${summary.totalProcessed}건</li>
+            <li>성공: ${summary.successful}건</li>
+            <li>실패: ${summary.failed}건</li>
+            <li>총 결제금액: ${summary.totalAmount.toLocaleString()}원</li>
+        </ul>
+        ${hasFailures ? `
+            <h3 style="color: red;">실패 내역</h3>
+            <pre>${failedList}</pre>
+        ` : ""}
+    `;
+
+    try {
+        await resend.emails.send({
+            from: process.env.EMAIL_FROM,
+            to: "kinn@kinn.kr",
+            subject,
+            html,
+        });
+    } catch (err) {
+        console.error("Failed to send billing report email:", err);
+    }
+}
 
 /**
  * 월간/연간 구독 자동 결제 API 엔드포인트
@@ -36,6 +91,10 @@ export async function POST(request: NextRequest) {
 
         const results = await processScheduledBilling();
 
+        const failedUsers = results
+            .filter((r) => !r.success)
+            .map((r) => ({ userId: r.userId, error: r.error || "Unknown error" }));
+
         const summary = {
             timestamp: new Date().toISOString(),
             totalProcessed: results.length,
@@ -44,7 +103,13 @@ export async function POST(request: NextRequest) {
             totalAmount: results
                 .filter((r) => r.success && r.amount)
                 .reduce((sum, r) => sum + (r.amount || 0), 0),
+            failedUsers,
         };
+
+        // Send email report (always for failures, optionally for success)
+        if (summary.totalProcessed > 0) {
+            await sendBillingReport(summary);
+        }
 
         return NextResponse.json({
             success: true,
@@ -59,6 +124,27 @@ export async function POST(request: NextRequest) {
         });
     } catch (error) {
         console.error("❌ Scheduled billing API error:", error);
+
+        // Send critical error notification
+        if (resend && process.env.EMAIL_FROM) {
+            try {
+                await resend.emails.send({
+                    from: process.env.EMAIL_FROM,
+                    to: "kinn@kinn.kr",
+                    subject: "🚨 [Nova AI] 빌링 크론 작업 실패!",
+                    html: `
+                        <h2 style="color: red;">빌링 크론 작업이 실패했습니다!</h2>
+                        <p><strong>시간:</strong> ${new Date().toISOString()}</p>
+                        <p><strong>오류:</strong></p>
+                        <pre>${error instanceof Error ? error.message : "Unknown error"}</pre>
+                        <pre>${error instanceof Error ? error.stack : ""}</pre>
+                        <p>즉시 확인이 필요합니다.</p>
+                    `,
+                });
+            } catch (emailErr) {
+                console.error("Failed to send error notification:", emailErr);
+            }
+        }
 
         return NextResponse.json(
             {
