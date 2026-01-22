@@ -687,21 +687,31 @@ function ProfileContent() {
         }
 
         try {
-            const { saveSubscription } = await import("@/lib/subscription");
-            await saveSubscription(authUser.uid, {
-                ...subscription,
-                status: "cancelled",
+            // Call API to cancel billing key with TossPayments and update Firestore
+            const response = await fetch("/api/billing/cancel", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ userId: authUser.uid }),
             });
+
+            const result = await response.json();
+
+            if (!response.ok || !result.success) {
+                throw new Error(result.error || "구독 취소에 실패했습니다");
+            }
 
             setSubscription({
                 ...subscription,
                 status: "cancelled",
+                billingKey: null,
+                isRecurring: false,
             });
 
             setStatus("구독이 취소되었습니다.");
-        } catch (error) {
+            setRefreshKey((k) => k + 1); // Refresh data
+        } catch (error: any) {
             console.error("Failed to cancel subscription:", error);
-            setError("구독 취소에 실패했습니다. 다시 시도해주세요.");
+            setError(error?.message || "구독 취소에 실패했습니다. 다시 시도해주세요.");
         }
     };
 
