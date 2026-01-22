@@ -260,7 +260,7 @@ function PaymentSuccessContent() {
                         body: JSON.stringify({
                             authKey,
                             customerKey,
-                            userId: authUser.uid, // Pass actual Firebase userId
+                            userId: user?.uid, // Pass actual Firebase userId
                             amount: Number(amount),
                             orderName,
                             billingCycle,
