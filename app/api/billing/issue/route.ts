@@ -152,14 +152,14 @@ export async function POST(request: NextRequest) {
                 console.log("   - 결제금액:", paymentResult.totalAmount);
                 
                 firstPaymentResult = {
-                    paymentKey: paymentResult.paymentKey,
-                    orderId: paymentResult.orderId,
-                    amount: paymentResult.totalAmount,
-                    approvedAt: paymentResult.approvedAt,
-                    method: paymentResult.method,
+                    paymentKey: paymentResult.paymentKey || null,
+                    orderId: paymentResult.orderId || null,
+                    amount: paymentResult.totalAmount || 0,
+                    approvedAt: paymentResult.approvedAt || null,
+                    method: paymentResult.method || null,
                     card: paymentResult.card ? {
-                        company: paymentResult.card.company,
-                        number: paymentResult.card.number,
+                        company: paymentResult.card.company || null,
+                        number: paymentResult.card.number || null,
                     } : null,
                 };
             } catch (paymentError) {
