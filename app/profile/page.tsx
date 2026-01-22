@@ -280,6 +280,9 @@ function ProfileContent() {
         plan: string;
     } | null>(null);
 
+    // Refresh key for forcing data reload
+    const [refreshKey, setRefreshKey] = useState(0);
+
     // Load subscription data
     useEffect(() => {
         async function loadSubscription() {
@@ -297,9 +300,19 @@ function ProfileContent() {
         }
 
         loadSubscription();
-    }, [authUser]);
+    }, [authUser, refreshKey]);
 
-    // Load AI usage data
+    // Refresh data when page gains focus (e.g., returning from payment)
+    useEffect(() => {
+        const handleFocus = () => {
+            setRefreshKey((k) => k + 1);
+        };
+
+        window.addEventListener("focus", handleFocus);
+        return () => window.removeEventListener("focus", handleFocus);
+    }, []);
+
+    // Load AI usage data - reload when subscription changes
     useEffect(() => {
         async function loadAiUsage() {
             if (!authUser) return;
@@ -322,7 +335,7 @@ function ProfileContent() {
         }
 
         loadAiUsage();
-    }, [authUser]);
+    }, [authUser, subscription?.plan, refreshKey]);
 
     // Check for tab query parameter and sessionStorage
     useEffect(() => {
