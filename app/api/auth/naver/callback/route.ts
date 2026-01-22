@@ -101,14 +101,17 @@ export async function GET(req: Request) {
     // Exchange code for access token as per Naver Node.js example:
     // https://nid.naver.com/oauth2.0/token?grant_type=authorization_code&client_id=...&client_secret=...&redirect_uri=...&code=...&state=...
     const tokenUrl = `https://nid.naver.com/oauth2.0/token?grant_type=authorization_code&client_id=${encodeURIComponent(
-        clientId || ""
+        clientId || "",
     )}&client_secret=${encodeURIComponent(
-        clientSecret || ""
+        clientSecret || "",
     )}&redirect_uri=${encodeURIComponent(
-        redirectUri
+        redirectUri,
     )}&code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`;
 
-    console.info("[/api/auth/naver/callback] tokenUrl:", tokenUrl.replace(clientSecret || "", "***"));
+    console.info(
+        "[/api/auth/naver/callback] tokenUrl:",
+        tokenUrl.replace(clientSecret || "", "***"),
+    );
 
     const tokenResp = await fetch(tokenUrl, {
         method: "GET",

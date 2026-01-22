@@ -60,7 +60,9 @@
     font-weight: 500;
     padding: 0.5rem 0.75rem;
     border-radius: 6px;
-    transition: background 0.15s ease, color 0.15s ease;
+    transition:
+        background 0.15s ease,
+        color 0.15s ease;
 }
 
 .profile-back-btn:hover {
@@ -86,7 +88,10 @@
     font-size: 0.9375rem;
     font-weight: 500;
     cursor: pointer;
-    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+    transition:
+        background 0.15s ease,
+        color 0.15s ease,
+        border-color 0.15s ease;
     text-align: left;
     width: 100%;
 }
@@ -515,7 +520,10 @@
     font-size: 0.875rem;
     font-weight: 600;
     cursor: pointer;
-    transition: background 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+    transition:
+        background 0.15s ease,
+        color 0.15s ease,
+        opacity 0.15s ease;
 }
 
 .danger-btn:hover:not(:disabled) {
@@ -637,7 +645,9 @@
     border-radius: 8px;
     border: none;
     cursor: pointer;
-    transition: opacity 0.15s ease, background 0.15s ease;
+    transition:
+        opacity 0.15s ease,
+        background 0.15s ease;
     text-decoration: none;
 }
 

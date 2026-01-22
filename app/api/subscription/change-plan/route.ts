@@ -27,20 +27,20 @@ export async function POST(request: NextRequest) {
         if (!authHeader || !authHeader.startsWith("Bearer ")) {
             return NextResponse.json(
                 { error: "Unauthorized - No token provided" },
-                { status: 401 }
+                { status: 401 },
             );
         }
 
         const token = authHeader.split("Bearer ")[1];
         let decodedToken;
-        
+
         try {
             decodedToken = await admin.auth().verifyIdToken(token);
         } catch (err) {
             console.error("Token verification failed:", err);
             return NextResponse.json(
                 { error: "Unauthorized - Invalid token" },
-                { status: 401 }
+                { status: 401 },
             );
         }
 
@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
         if (!plan || !validPlans.includes(plan)) {
             return NextResponse.json(
                 { error: "Invalid plan" },
-                { status: 400 }
+                { status: 400 },
             );
         }
 
@@ -68,7 +68,8 @@ export async function POST(request: NextRequest) {
             ...currentSubscription,
             plan: plan,
             status: "active",
-            startDate: currentSubscription?.startDate || new Date().toISOString(),
+            startDate:
+                currentSubscription?.startDate || new Date().toISOString(),
             // Clear billing info for free plan
             ...(plan === "free" && {
                 billingKey: undefined,
@@ -83,20 +84,17 @@ export async function POST(request: NextRequest) {
         Object.keys(updatedSubscription).forEach(
             (key) =>
                 updatedSubscription[key] === undefined &&
-                delete updatedSubscription[key]
+                delete updatedSubscription[key],
         );
 
-        await db
-            .collection("users")
-            .doc(userId)
-            .set(
-                {
-                    subscription: updatedSubscription,
-                    plan: plan, // Also update root-level plan field
-                    updatedAt: new Date().toISOString(),
-                },
-                { merge: true }
-            );
+        await db.collection("users").doc(userId).set(
+            {
+                subscription: updatedSubscription,
+                plan: plan, // Also update root-level plan field
+                updatedAt: new Date().toISOString(),
+            },
+            { merge: true },
+        );
 
         return NextResponse.json({
             success: true,
@@ -108,7 +106,7 @@ export async function POST(request: NextRequest) {
         console.error("/api/subscription/change-plan error:", err);
         return NextResponse.json(
             { error: "Internal server error" },
-            { status: 500 }
+            { status: 500 },
         );
     }
 }

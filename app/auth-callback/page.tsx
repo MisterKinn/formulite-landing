@@ -103,7 +103,7 @@ function AuthCallbackContent({
                 JSON.stringify({
                     ...info,
                     timestamp: new Date().toISOString(),
-                })
+                }),
             );
 
             // If session ID is provided, store user info server-side for desktop app
@@ -125,12 +125,12 @@ function AuthCallbackContent({
                         if (!response.ok) {
                             console.error(
                                 "Failed to complete session:",
-                                response.status
+                                response.status,
                             );
                             return response.json().then((data) => {
                                 console.error("Error details:", data);
                                 throw new Error(
-                                    data.error || "Failed to complete session"
+                                    data.error || "Failed to complete session",
                                 );
                             });
                         }
@@ -204,8 +204,18 @@ function AuthCallbackContent({
                     // Desktop app session - show simple success message
                     <div className="space-y-8">
                         <div className="inline-flex items-center justify-center w-24 h-24 rounded-full bg-white/10 backdrop-blur-sm">
-                            <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            <svg
+                                className="w-12 h-12 text-white"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                            >
+                                <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M5 13l4 4L19 7"
+                                />
                             </svg>
                         </div>
                         <div className="space-y-4">

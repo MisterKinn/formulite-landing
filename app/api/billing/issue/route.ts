@@ -103,19 +103,92 @@ export async function POST(request: NextRequest) {
             }
         }
 
+        // ═══════════════════════════════════════
+        // 💰 첫 결제 실행 (빌링키로 즉시 결제)
+        // ═══════════════════════════════════════
+        let firstPaymentResult = null;
+        if (amount && amount > 0) {
+            console.log("💰 [서버] 첫 결제 실행 중...");
+            console.log("   - 금액:", amount);
+            console.log("   - 주문명:", orderName);
+
+            const orderId = `first_${userId}_${Date.now()}`;
+            
+            try {
+                const paymentResponse = await fetch(
+                    "https://api.tosspayments.com/v1/billing/" + billingKey,
+                    {
+                        method: "POST",
+                        headers: {
+                            Authorization: `Basic ${encodedKey}`,
+                            "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify({
+                            customerKey,
+                            amount,
+                            orderId,
+                            orderName: orderName || "Nova AI 구독",
+                        }),
+                    }
+                );
+
+                const paymentResult = await paymentResponse.json();
+
+                if (!paymentResponse.ok) {
+                    console.error("❌ 첫 결제 실패:", paymentResult);
+                    return NextResponse.json(
+                        {
+                            success: false,
+                            error: paymentResult.message || "첫 결제에 실패했습니다",
+                            billingKeyIssued: true, // 빌링키는 발급됨
+                        },
+                        { status: 400 }
+                    );
+                }
+
+                console.log("✅ [서버] 첫 결제 성공!");
+                console.log("   - paymentKey:", paymentResult.paymentKey);
+                console.log("   - approvedAt:", paymentResult.approvedAt);
+                console.log("   - 결제금액:", paymentResult.totalAmount);
+                
+                firstPaymentResult = {
+                    paymentKey: paymentResult.paymentKey,
+                    orderId: paymentResult.orderId,
+                    amount: paymentResult.totalAmount,
+                    approvedAt: paymentResult.approvedAt,
+                    method: paymentResult.method,
+                    card: paymentResult.card ? {
+                        company: paymentResult.card.company,
+                        number: paymentResult.card.number,
+                    } : null,
+                };
+            } catch (paymentError) {
+                console.error("❌ 결제 요청 중 오류:", paymentError);
+                return NextResponse.json(
+                    {
+                        success: false,
+                        error: "결제 처리 중 오류가 발생했습니다",
+                        billingKeyIssued: true,
+                    },
+                    { status: 500 }
+                );
+            }
+        }
+
         const subscriptionData = {
             billingKey,
             customerKey,
             plan,
-            status: amount ? "active" : "billing_registered", // 구독 정보가 있으면 바로 활성화
+            status: firstPaymentResult ? "active" : "billing_registered",
             registeredAt: new Date().toISOString(),
-            isRecurring: !!amount, // 금액이 있으면 구독 활성화
+            isRecurring: !!amount,
             amount: amount || 0,
             orderName: orderName || "Nova AI 구독",
             billingCycle: billingCycle || "monthly",
-            nextBillingDate: amount
-                ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() // 30일 후
+            nextBillingDate: firstPaymentResult
+                ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
                 : null,
+            lastPayment: firstPaymentResult || null,
         };
 
         await saveBillingKeyToFirestore(userId, subscriptionData);
@@ -125,14 +198,18 @@ export async function POST(request: NextRequest) {
         console.log("   - status:", subscriptionData.status);
         console.log("   - amount:", subscriptionData.amount);
         console.log("   - nextBillingDate:", subscriptionData.nextBillingDate);
+        if (firstPaymentResult) {
+            console.log("   - 첫 결제 paymentKey:", firstPaymentResult.paymentKey);
+        }
         console.log("═══════════════════════════════════════");
 
         return NextResponse.json({
             success: true,
-            billingKey: billingKey, // 첫 결제를 위해 전체 반환
+            billingKey: billingKey,
             subscription: subscriptionData,
-            message: amount
-                ? "구독이 성공적으로 시작되었습니다"
+            payment: firstPaymentResult,
+            message: firstPaymentResult
+                ? "결제가 완료되고 구독이 시작되었습니다"
                 : "카드가 성공적으로 등록되었습니다",
         });
     } catch (error) {

@@ -36,7 +36,7 @@ export async function GET(req: Request) {
     // Build authorize URL exactly as per Naver docs:
     // https://nid.naver.com/oauth2.0/authorize?client_id={CLIENT_ID}&response_type=code&redirect_uri={CALLBACK_URL_ENCODED}&state={STATE}
     const authorizeUrl = `https://nid.naver.com/oauth2.0/authorize?client_id=${encodeURIComponent(clientId)}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}`;
-    
+
     console.info("[/api/auth/naver/start] authorizeUrl:", authorizeUrl);
 
     const res = NextResponse.redirect(authorizeUrl);
