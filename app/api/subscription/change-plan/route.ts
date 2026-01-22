@@ -63,20 +63,68 @@ export async function POST(request: NextRequest) {
             ? userDoc.data()?.subscription
             : null;
 
-        // Update subscription - for downgrades, keep the subscription structure but change the plan
+        // Determine the correct amount for the new plan
+        const planAmounts: Record<string, number> = {
+            free: 0,
+            basic: 9900,
+            plus: 19900,
+            pro: 29900,
+        };
+        const newAmount = planAmounts[plan] || 0;
+
+        // Plan display names for orderName
+        const planNames: Record<string, string> = {
+            free: "무료",
+            basic: "베이직",
+            plus: "플러스",
+            pro: "프로",
+        };
+
+        // If downgrading to free OR changing to a different paid plan, delete the billing key
+        const shouldDeleteBillingKey = 
+            currentSubscription?.billingKey && 
+            (plan === "free" || newAmount !== currentSubscription?.amount);
+
+        if (shouldDeleteBillingKey && currentSubscription?.billingKey) {
+            try {
+                const secretKey = process.env.TOSS_SECRET_KEY!;
+                const encodedKey = Buffer.from(secretKey + ":").toString("base64");
+
+                await fetch(
+                    `https://api.tosspayments.com/v1/billing/authorizations/${currentSubscription.billingKey}`,
+                    {
+                        method: "DELETE",
+                        headers: {
+                            Authorization: `Basic ${encodedKey}`,
+                            "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify({
+                            customerKey: currentSubscription.customerKey,
+                        }),
+                    }
+                );
+            } catch (err) {
+                console.error("Failed to delete billing key from TossPayments:", err);
+                // Continue anyway - we still want to update our database
+            }
+        }
+
+        // Update subscription - for downgrades, update the plan and amount
         const updatedSubscription = {
             ...currentSubscription,
             plan: plan,
-            status: "active",
+            amount: newAmount,
+            orderName: `Nova AI ${planNames[plan]} 요금제`,
+            status: plan === "free" ? "cancelled" : "active",
             startDate:
                 currentSubscription?.startDate || new Date().toISOString(),
-            // Clear billing info for free plan
-            ...(plan === "free" && {
-                billingKey: undefined,
-                customerKey: undefined,
+            updatedAt: new Date().toISOString(),
+            // Clear billing info when changing plans (user needs to re-register card for new amount)
+            ...(shouldDeleteBillingKey && {
+                billingKey: null,
+                customerKey: null,
                 isRecurring: false,
-                nextBillingDate: undefined,
-                amount: 0,
+                nextBillingDate: null,
             }),
         };
 
