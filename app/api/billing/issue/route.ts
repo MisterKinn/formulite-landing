@@ -212,15 +212,17 @@ export async function POST(request: NextRequest) {
                 ? "결제가 완료되고 구독이 시작되었습니다"
                 : "카드가 성공적으로 등록되었습니다",
         });
-    } catch (error) {
-        console.error("빌링키 발급 API 오류:", error);
+    } catch (error: any) {
+        console.error("❌ 빌링키 발급 API 오류:", error);
+        console.error("   - Error name:", error?.name);
+        console.error("   - Error message:", error?.message);
+        console.error("   - Error stack:", error?.stack);
 
         return NextResponse.json(
             {
                 success: false,
-                error: "내부 서버 오류가 발생했습니다",
-                details:
-                    error instanceof Error ? error.message : "Unknown error",
+                error: error?.message || "내부 서버 오류가 발생했습니다",
+                details: error?.stack || "Unknown error",
             },
             { status: 500 }
         );
@@ -260,15 +262,28 @@ async function saveBillingKeyToFirestore(
     subscriptionData: any
 ) {
     try {
-        const admin = await getFirebaseAdmin();
+        console.log("📝 saveBillingKeyToFirestore 시작");
+        console.log("   - userId:", userId);
+        console.log("   - subscriptionData:", JSON.stringify(subscriptionData, null, 2));
+        
+        const admin = getFirebaseAdmin();
         const db = admin.firestore();
-        const userRef = db.collection("users").doc(userId);
+        
+        // Firestore document ID에 사용할 수 없는 문자 처리
+        // userId가 naver:xxx 형식일 수 있음
+        const safeUserId = userId;
+        console.log("   - safeUserId:", safeUserId);
+        
+        const userRef = db.collection("users").doc(safeUserId);
 
         // 기존 사용자 데이터 조회
+        console.log("   - 기존 데이터 조회 중...");
         const userDoc = await userRef.get();
         const existingData = userDoc.exists ? userDoc.data() || {} : {};
+        console.log("   - 기존 데이터 존재:", userDoc.exists);
 
         // subscription 정보 업데이트
+        console.log("   - Firestore 저장 중...");
         await userRef.set(
             {
                 ...existingData,
@@ -282,9 +297,12 @@ async function saveBillingKeyToFirestore(
             { merge: true }
         );
 
-        console.log("Firestore 저장 성공:", userId);
-    } catch (error) {
-        console.error("Firestore 저장 실패:", error);
-        throw new Error("데이터베이스 저장에 실패했습니다");
+        console.log("✅ Firestore 저장 성공:", safeUserId);
+    } catch (error: any) {
+        console.error("❌ Firestore 저장 실패:", error);
+        console.error("   - Error name:", error?.name);
+        console.error("   - Error message:", error?.message);
+        console.error("   - Error stack:", error?.stack);
+        throw new Error(`데이터베이스 저장에 실패했습니다: ${error?.message || 'Unknown error'}`);
     }
 }
