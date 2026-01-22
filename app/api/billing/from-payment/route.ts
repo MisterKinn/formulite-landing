@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
         const subscriptionData = {
             billingKey,
             customerKey,
-            plan: amount ? (amount >= 29900 ? "pro" : "plus") : "free",
+            plan: amount ? (amount >= 29900 ? "pro" : amount >= 19900 ? "plus" : "basic") : "free",
             status: "active",
             registeredAt: new Date().toISOString(),
             isRecurring: true,

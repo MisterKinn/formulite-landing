@@ -108,12 +108,14 @@ export async function POST(request: NextRequest) {
                 const userId = (customerKey || "").split("_")[1] || null;
                 if (userId) {
                     // map amount to plan
-                    const plan =
-                        totalAmount >= 19900
-                            ? "pro"
-                            : totalAmount >= 9900
-                            ? "plus"
-                            : null;
+                    let plan: "basic" | "plus" | "pro" | null = null;
+                    if (totalAmount >= 29900) {
+                        plan = "pro";
+                    } else if (totalAmount >= 19900) {
+                        plan = "plus";
+                    } else if (totalAmount >= 9900) {
+                        plan = "basic";
+                    }
                     if (plan) {
                         const { saveSubscription } = await import(
                             "@/lib/subscription"
