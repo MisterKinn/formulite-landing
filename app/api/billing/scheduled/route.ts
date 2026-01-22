@@ -34,8 +34,6 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        console.log("🚀 Starting scheduled billing via API...");
-
         const results = await processScheduledBilling();
 
         const summary = {
@@ -47,8 +45,6 @@ export async function POST(request: NextRequest) {
                 .filter((r) => r.success && r.amount)
                 .reduce((sum, r) => sum + (r.amount || 0), 0),
         };
-
-        console.log("📊 Billing summary:", summary);
 
         return NextResponse.json({
             success: true,

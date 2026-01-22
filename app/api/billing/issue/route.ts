@@ -17,13 +17,6 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        console.log("═══════════════════════════════════════");
-        console.log("🔑 [서버] 빌링키 발급 프로세스");
-        console.log("═══════════════════════════════════════");
-        console.log("📥 요청:");
-        console.log("   - authKey:", authKey.substring(0, 20) + "...");
-        console.log("   - customerKey:", customerKey);
-
         const secretKey = process.env.TOSS_SECRET_KEY!;
         const encodedKey = Buffer.from(secretKey + ":").toString("base64");
 
@@ -57,10 +50,6 @@ export async function POST(request: NextRequest) {
 
         const { billingKey } = result;
 
-        console.log("✅ [서버] 빌링키 발급 성공!");
-        console.log("   - billingKey:", billingKey.substring(0, 30) + "...");
-        console.log("───────────────────────────────────────");
-
         if (!billingKey) {
             return NextResponse.json(
                 { success: false, error: "빌링키를 받지 못했습니다" },
@@ -68,15 +57,8 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        console.log("🔑 빌링키 발급 성공!");
-        console.log("   - 빌링키:", billingKey);
-        console.log("   - customerKey:", customerKey);
-
         // Use passed userId or extract from customerKey as fallback
         const userId = passedUserId || extractUserIdFromCustomerKey(customerKey);
-
-        console.log("💾 Firestore 저장 중...");
-        console.log("   - userId:", userId);
 
         if (!userId) {
             return NextResponse.json(
@@ -87,8 +69,6 @@ export async function POST(request: NextRequest) {
                 { status: 400 }
             );
         }
-
-        console.log("   - userId:", userId);
 
         // 구독 정보가 있으면 활성 구독으로 설정
         // Determine plan based on amount
@@ -108,10 +88,6 @@ export async function POST(request: NextRequest) {
         // ═══════════════════════════════════════
         let firstPaymentResult = null;
         if (amount && amount > 0) {
-            console.log("💰 [서버] 첫 결제 실행 중...");
-            console.log("   - 금액:", amount);
-            console.log("   - 주문명:", orderName);
-
             const orderId = `first_${userId}_${Date.now()}`;
             
             try {
@@ -146,11 +122,6 @@ export async function POST(request: NextRequest) {
                     );
                 }
 
-                console.log("✅ [서버] 첫 결제 성공!");
-                console.log("   - paymentKey:", paymentResult.paymentKey);
-                console.log("   - approvedAt:", paymentResult.approvedAt);
-                console.log("   - 결제금액:", paymentResult.totalAmount);
-                
                 firstPaymentResult = {
                     paymentKey: paymentResult.paymentKey || null,
                     orderId: paymentResult.orderId || null,
@@ -193,16 +164,6 @@ export async function POST(request: NextRequest) {
 
         await saveBillingKeyToFirestore(userId, subscriptionData);
 
-        console.log("✅ [서버] Firestore 저장 완료!");
-        console.log("   - plan:", subscriptionData.plan);
-        console.log("   - status:", subscriptionData.status);
-        console.log("   - amount:", subscriptionData.amount);
-        console.log("   - nextBillingDate:", subscriptionData.nextBillingDate);
-        if (firstPaymentResult) {
-            console.log("   - 첫 결제 paymentKey:", firstPaymentResult.paymentKey);
-        }
-        console.log("═══════════════════════════════════════");
-
         return NextResponse.json({
             success: true,
             billingKey: billingKey,
@@ -213,11 +174,6 @@ export async function POST(request: NextRequest) {
                 : "카드가 성공적으로 등록되었습니다",
         });
     } catch (error: any) {
-        console.error("❌ 빌링키 발급 API 오류:", error);
-        console.error("   - Error name:", error?.name);
-        console.error("   - Error message:", error?.message);
-        console.error("   - Error stack:", error?.stack);
-
         return NextResponse.json(
             {
                 success: false,
@@ -249,7 +205,6 @@ function extractUserIdFromCustomerKey(customerKey: string): string | null {
 
         return null;
     } catch (error) {
-        console.error("customerKey 파싱 오류:", error);
         return null;
     }
 }
@@ -262,28 +217,20 @@ async function saveBillingKeyToFirestore(
     subscriptionData: any
 ) {
     try {
-        console.log("📝 saveBillingKeyToFirestore 시작");
-        console.log("   - userId:", userId);
-        console.log("   - subscriptionData:", JSON.stringify(subscriptionData, null, 2));
-        
         const admin = getFirebaseAdmin();
         const db = admin.firestore();
         
         // Firestore document ID에 사용할 수 없는 문자 처리
         // userId가 naver:xxx 형식일 수 있음
         const safeUserId = userId;
-        console.log("   - safeUserId:", safeUserId);
         
         const userRef = db.collection("users").doc(safeUserId);
 
         // 기존 사용자 데이터 조회
-        console.log("   - 기존 데이터 조회 중...");
         const userDoc = await userRef.get();
         const existingData = userDoc.exists ? userDoc.data() || {} : {};
-        console.log("   - 기존 데이터 존재:", userDoc.exists);
 
         // subscription 정보 업데이트
-        console.log("   - Firestore 저장 중...");
         await userRef.set(
             {
                 ...existingData,
@@ -296,13 +243,7 @@ async function saveBillingKeyToFirestore(
             },
             { merge: true }
         );
-
-        console.log("✅ Firestore 저장 성공:", safeUserId);
     } catch (error: any) {
-        console.error("❌ Firestore 저장 실패:", error);
-        console.error("   - Error name:", error?.name);
-        console.error("   - Error message:", error?.message);
-        console.error("   - Error stack:", error?.stack);
         throw new Error(`데이터베이스 저장에 실패했습니다: ${error?.message || 'Unknown error'}`);
     }
 }

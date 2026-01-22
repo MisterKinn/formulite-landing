@@ -34,9 +34,6 @@ export default function PaymentClient() {
 
                 setCurrentCustomerKey(customerKey);
 
-                console.log("📦 TossPayments SDK 초기화 (API 개별 연동)");
-                console.log("🔑 CustomerKey:", customerKey);
-
                 const tossPayments = await loadTossPayments(
                     process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY!
                 );
@@ -46,8 +43,6 @@ export default function PaymentClient() {
                 });
 
                 paymentRef.current = payment;
-
-                console.log("✅ TossPayments 초기화 완료");
                 setReady(true);
             } catch (e: any) {
                 setError(e.message || "결제 초기화 실패");
@@ -73,8 +68,6 @@ export default function PaymentClient() {
             }
 
             if (recurring) {
-                console.log("📞 payment.requestBillingAuth() 호출");
-
                 await paymentRef.current.requestBillingAuth({
                     method: "CARD",
                     successUrl: `${
@@ -86,11 +79,7 @@ export default function PaymentClient() {
                     customerEmail: user.email,
                     customerName: user.displayName || "고객",
                 });
-
-                console.log("✅ 카드 등록 요청 완료");
             } else {
-                console.log("📞 payment.requestPayment() 호출");
-
                 await paymentRef.current.requestPayment({
                     method: "CARD",
                     amount: {
@@ -103,8 +92,6 @@ export default function PaymentClient() {
                     customerEmail: user.email || "test@example.com",
                     customerName: user.displayName || "고객",
                 });
-
-                console.log("✅ 결제 요청 완료");
             }
         } catch (e: any) {
             setError(e.message || "결제 요청 실패");

@@ -126,9 +126,6 @@ export async function POST(request: NextRequest) {
                             customerKey,
                             isRecurring: false, // confirmed as one-time via payment.confirm
                         });
-                        console.log(
-                            `(confirm) Updated plan for user ${userId} -> ${plan}`
-                        );
                     }
                 }
             }

@@ -38,12 +38,6 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        console.log("🔑 빌링키로 즉시 결제 요청:");
-        console.log("   - 빌링키:", billingKey);
-        console.log("   - customerKey:", customerKey);
-        console.log("   - 금액:", amount);
-        console.log("   - 상품명:", orderName);
-
         // 토스페이먼츠 자동 결제 API 호출
         const orderId = `first_${Date.now()}_${Math.random()
             .toString(36)
@@ -82,10 +76,6 @@ export async function POST(request: NextRequest) {
                 { status: response.status }
             );
         }
-
-        console.log("✅ 결제 성공!");
-        console.log("   - 주문번호:", orderId);
-        console.log("   - 결제금액:", result.totalAmount);
 
         return NextResponse.json({
             success: true,
@@ -132,8 +122,6 @@ export async function PUT(request: NextRequest) {
             );
         }
 
-        console.log("자동 결제 요청:", { userId, amount, orderName });
-
         // Firestore에서 사용자 구독 정보 조회
         const userRef = collection(db, "users");
         const q = query(userRef, where("__name__", "==", userId));
@@ -156,11 +144,6 @@ export async function PUT(request: NextRequest) {
                 { status: 400 }
             );
         }
-
-        console.log("🔑 자동 결제 시작!");
-        console.log("   - 빌링키:", subscription.billingKey);
-        console.log("   - 사용자:", userId);
-        console.log("   - 금액:", amount);
 
         if (subscription.status !== "active") {
             return NextResponse.json(
@@ -210,8 +193,6 @@ export async function PUT(request: NextRequest) {
                 failureCount: 0, // 성공 시 실패 카운트 리셋
             });
 
-            console.log("자동 결제 성공:", { userId, orderId, amount });
-
             return NextResponse.json({
                 success: true,
                 orderId,
@@ -230,9 +211,6 @@ export async function PUT(request: NextRequest) {
             // 3번 연속 실패 시 구독 일시정지
             if (failureCount >= 3) {
                 newStatus = "suspended";
-                console.log(
-                    `구독 일시정지: userId=${userId}, 실패횟수=${failureCount}`
-                );
             }
 
             await saveSubscription(userId, {

@@ -36,8 +36,6 @@ export async function POST(
             );
         }
 
-        console.log(`🔧 Admin triggered immediate billing for user: ${userId}`);
-
         const result = await billUserImmediately(userId);
 
         if (result.success) {

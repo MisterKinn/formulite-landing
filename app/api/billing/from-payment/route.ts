@@ -18,15 +18,6 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        console.log("═══════════════════════════════════════");
-        console.log("🔑 [서버] 결제로부터 빌링키 발급");
-        console.log("═══════════════════════════════════════");
-        console.log("📥 요청 정보:");
-        console.log("   - paymentKey:", paymentKey.substring(0, 20) + "...");
-        console.log("   - customerKey:", customerKey);
-        console.log("   - amount:", amount);
-        console.log("");
-
         // 토스페이먼츠 빌링키 발급 API 호출
         const response = await fetch(
             `https://api.tosspayments.com/v1/payments/${paymentKey}/billing-key`,
@@ -61,10 +52,6 @@ export async function POST(request: NextRequest) {
 
         const { billingKey } = result;
 
-        console.log("✅ 빌링키 발급 성공!");
-        console.log("   - billingKey:", billingKey.substring(0, 30) + "...");
-        console.log("═══════════════════════════════════════");
-
         // Firestore 저장 로직은 /api/billing/issue에서 재사용
         const userId = customerKey.replace(/^(customer_|user_)/, "");
 
@@ -95,11 +82,6 @@ export async function POST(request: NextRequest) {
             subscriptionData,
             { merge: true }
         );
-
-        console.log("✅ Firestore 저장 완료!");
-        console.log("   - userId:", userId);
-        console.log("   - plan:", subscriptionData.plan);
-        console.log("═══════════════════════════════════════");
 
         return NextResponse.json({
             success: true,
