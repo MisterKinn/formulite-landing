@@ -4,21 +4,12 @@
  * Vercel Cron Jobs, AWS Lambda, 또는 Google Cloud Functions으로 실행 가능합니다.
  */
 
-import {
-    getFirestore,
-    collection,
-    query,
-    where,
-    getDocs,
-    doc,
-    updateDoc,
-    setDoc,
-} from "firebase/firestore";
-import { app } from "../firebaseConfig";
-import { saveSubscription, getNextBillingDate } from "./subscription";
+import getFirebaseAdmin from "./firebaseAdmin";
+import { getNextBillingDate } from "./subscription";
 import { sendPaymentReceipt, sendPaymentFailureNotification } from "./email";
 
-const db = getFirestore(app);
+// Use Admin SDK for server-side operations
+const getAdminDb = () => getFirebaseAdmin().firestore();
 
 interface BillingResult {
     userId: string;
@@ -50,8 +41,9 @@ async function chargeBillingKey(
             .toString(36)
             .substr(2, 9)}`;
 
+        // TossPayments billing API: billingKey goes in the PATH, not the body
         const response = await fetch(
-            "https://api.tosspayments.com/v1/billing/pay",
+            `https://api.tosspayments.com/v1/billing/${billingKey}`,
             {
                 method: "POST",
                 headers: {
@@ -61,7 +53,6 @@ async function chargeBillingKey(
                     "Content-Type": "application/json",
                 },
                 body: JSON.stringify({
-                    billingKey,
                     customerKey,
                     amount,
                     orderId,
@@ -109,26 +100,33 @@ export async function processScheduledBilling(): Promise<BillingResult[]> {
     console.log("🔄 Starting scheduled billing process...");
 
     try {
-        const today = new Date();
-        const todayStr = today.toISOString().split("T")[0]; // YYYY-MM-DD
+        const db = getAdminDb();
+        const now = new Date();
+        const nowStr = now.toISOString(); // Full ISO timestamp for test billing
 
-        // 활성 구독 중 결제일이 지난 것들을 조회
-        const usersRef = collection(db, "users");
-        const q = query(
-            usersRef,
-            where("subscription.status", "==", "active"),
-            where("subscription.isRecurring", "==", true),
-            where("subscription.nextBillingDate", "<=", todayStr),
-        );
+        // 활성 구독만 조회 (Admin SDK 사용)
+        const snapshot = await db
+            .collection("users")
+            .where("subscription.status", "==", "active")
+            .get();
 
-        const snapshot = await getDocs(q);
         const results: BillingResult[] = [];
 
+        // 필터링: isRecurring=true 이고 nextBillingDate <= now인 것만 처리
+        const eligibleDocs = snapshot.docs.filter((doc) => {
+            const sub = doc.data().subscription;
+            return (
+                sub?.isRecurring === true &&
+                sub?.nextBillingDate &&
+                sub.nextBillingDate <= nowStr
+            );
+        });
+
         console.log(
-            `📋 Found ${snapshot.docs.length} subscriptions to process`,
+            `📋 Found ${eligibleDocs.length} subscriptions to process (out of ${snapshot.docs.length} active)`,
         );
 
-        for (const userDoc of snapshot.docs) {
+        for (const userDoc of eligibleDocs) {
             const userId = userDoc.id;
             const userData = userDoc.data();
             const subscription = userData.subscription;
@@ -157,42 +155,45 @@ export async function processScheduledBilling(): Promise<BillingResult[]> {
             );
 
             // 토스페이먼츠 자동 결제 실행
+            const cycleLabel =
+                subscription.billingCycle === "yearly"
+                    ? "연간"
+                    : subscription.billingCycle === "test"
+                      ? "테스트 (1분)"
+                      : "월간";
+
             const billingResult = await chargeBillingKey(
                 subscription.billingKey,
                 subscription.customerKey,
                 subscription.amount,
-                `Nova AI ${subscription.plan} 요금제 (${
-                    subscription.billingCycle === "yearly" ? "연간" : "월간"
-                } 구독)`,
+                `Nova AI ${subscription.plan} 요금제 (${cycleLabel} 구독)`,
             );
 
             if (billingResult.success) {
-                // 결제 성공: 다음 결제일 업데이트
+                // 결제 성공: 다음 결제일 업데이트 (Admin SDK 사용)
                 const nextBillingDate = getNextBillingDate(
                     subscription.billingCycle || "monthly",
                 );
 
-                await saveSubscription(userId, {
-                    ...subscription,
-                    nextBillingDate,
-                    lastPaymentDate: new Date().toISOString(),
-                    lastOrderId: billingResult.orderId,
+                // Update subscription using Admin SDK
+                await db.collection("users").doc(userId).update({
+                    "subscription.nextBillingDate": nextBillingDate,
+                    "subscription.lastPaymentDate": new Date().toISOString(),
+                    "subscription.lastOrderId": billingResult.orderId,
+                    "subscription.failureCount": 0,
+                    "subscription.lastFailureReason": null,
+                    updatedAt: new Date().toISOString(),
                 });
 
-                // Save payment to history
-                const orderName = `Nova AI ${subscription.plan} 요금제 (${
-                    subscription.billingCycle === "yearly" ? "연간" : "월간"
-                } 구독)`;
+                // Save payment to history using Admin SDK
+                const orderName = `Nova AI ${subscription.plan} 요금제 (${cycleLabel} 구독)`;
 
-                await setDoc(
-                    doc(
-                        db,
-                        "users",
-                        userId,
-                        "payments",
-                        billingResult.paymentKey!,
-                    ),
-                    {
+                await db
+                    .collection("users")
+                    .doc(userId)
+                    .collection("payments")
+                    .doc(billingResult.paymentKey!)
+                    .set({
                         paymentKey: billingResult.paymentKey,
                         orderId: billingResult.orderId,
                         amount: subscription.amount,
@@ -202,8 +203,7 @@ export async function processScheduledBilling(): Promise<BillingResult[]> {
                         approvedAt: billingResult.approvedAt,
                         card: billingResult.card || null,
                         createdAt: new Date().toISOString(),
-                    },
-                );
+                    });
 
                 console.log(
                     `✅ Billing successful for user ${userId}, next billing: ${nextBillingDate}`,
@@ -244,16 +244,26 @@ export async function processScheduledBilling(): Promise<BillingResult[]> {
                 let nextRetryDate: string | null = null;
 
                 // Retry schedule: 1st fail -> retry in 2 days, 2nd fail -> retry in 3 days, 3rd fail -> suspend
+                // For test billing cycle, retry in 1 minute instead
                 if (failureCount < 3) {
-                    // Schedule next retry
-                    const retryDays = failureCount === 1 ? 2 : 3; // 2 days after 1st fail, 3 days after 2nd
-                    const retryDate = new Date();
-                    retryDate.setDate(retryDate.getDate() + retryDays);
-                    nextRetryDate = retryDate.toISOString().split("T")[0];
-
-                    console.log(
-                        `🔄 Scheduling retry for user ${userId} in ${retryDays} days (attempt ${failureCount + 1}/3)`,
-                    );
+                    if (subscription.billingCycle === "test") {
+                        // For test, retry in 1 minute
+                        nextRetryDate = new Date(
+                            Date.now() + 60 * 1000,
+                        ).toISOString();
+                        console.log(
+                            `🔄 Scheduling retry for user ${userId} in 1 minute (test mode, attempt ${failureCount + 1}/3)`,
+                        );
+                    } else {
+                        // Schedule next retry
+                        const retryDays = failureCount === 1 ? 2 : 3; // 2 days after 1st fail, 3 days after 2nd
+                        const retryDate = new Date();
+                        retryDate.setDate(retryDate.getDate() + retryDays);
+                        nextRetryDate = retryDate.toISOString().split("T")[0];
+                        console.log(
+                            `🔄 Scheduling retry for user ${userId} in ${retryDays} days (attempt ${failureCount + 1}/3)`,
+                        );
+                    }
                 } else {
                     // 3번 연속 실패 시 구독 일시정지
                     newStatus = "suspended";
@@ -262,15 +272,21 @@ export async function processScheduledBilling(): Promise<BillingResult[]> {
                     );
                 }
 
-                await saveSubscription(userId, {
-                    ...subscription,
-                    failureCount,
-                    status: newStatus,
-                    lastFailureDate: new Date().toISOString(),
-                    lastFailureReason: billingResult.error,
-                    // Update next billing date to retry date if still retrying
-                    ...(nextRetryDate && { nextBillingDate: nextRetryDate }),
-                });
+                // Update using Admin SDK
+                await db
+                    .collection("users")
+                    .doc(userId)
+                    .update({
+                        "subscription.failureCount": failureCount,
+                        "subscription.status": newStatus,
+                        "subscription.lastFailureDate":
+                            new Date().toISOString(),
+                        "subscription.lastFailureReason": billingResult.error,
+                        ...(nextRetryDate && {
+                            "subscription.nextBillingDate": nextRetryDate,
+                        }),
+                        updatedAt: new Date().toISOString(),
+                    });
 
                 results.push({
                     userId,
@@ -322,16 +338,14 @@ export async function billUserImmediately(
     userId: string,
 ): Promise<BillingResult> {
     try {
-        const userRef = doc(db, "users", userId);
-        const userDoc = await (
-            await import("firebase/firestore")
-        ).getDoc(userRef);
+        const db = getFirebaseAdmin().firestore();
+        const userDoc = await db.collection("users").doc(userId).get();
 
-        if (!userDoc.exists()) {
+        if (!userDoc.exists) {
             return { userId, success: false, error: "User not found" };
         }
 
-        const subscription = userDoc.data().subscription;
+        const subscription = userDoc.data()?.subscription;
 
         if (!subscription?.billingKey) {
             return { userId, success: false, error: "No billing key found" };
@@ -361,11 +375,13 @@ export async function billUserImmediately(
                 subscription.billingCycle || "monthly",
             );
 
-            await saveSubscription(userId, {
-                ...subscription,
-                nextBillingDate,
-                lastPaymentDate: new Date().toISOString(),
-                lastOrderId: billingResult.orderId,
+            await db.collection("users").doc(userId).update({
+                subscription: {
+                    ...subscription,
+                    nextBillingDate,
+                    lastPaymentDate: new Date().toISOString(),
+                    lastOrderId: billingResult.orderId,
+                },
             });
         }
 

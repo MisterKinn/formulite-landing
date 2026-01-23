@@ -97,17 +97,14 @@ async function getEmailAssetsAsync(): Promise<{
         "https://www.nova-ai.work"
     ).replace(/\/$/, "");
 
-    // Pre-fetch logo to cache it
-    await getLogoAttachment();
-    
-    // Use CID reference - this will be replaced by the actual embedded image
-    const logoUrl = "cid:nova-logo";
-    console.log("[email] Using CID logo reference");
+    // Use direct URL - CID embedding was causing issues with some email clients
+    const logoUrl = process.env.EMAIL_LOGO_URL || NOVA_LOGO_URL;
+    console.log("[email] Using direct logo URL:", logoUrl);
     
     return { baseUrl, logoUrl };
 }
 
-// Sync version for backwards compatibility (uses CID reference)
+// Sync version for backwards compatibility (uses direct URL)
 function getEmailAssets() {
     const baseUrl = (
         process.env.NEXT_PUBLIC_BASE_URL ||
@@ -116,8 +113,8 @@ function getEmailAssets() {
         "https://www.nova-ai.work"
     ).replace(/\/$/, "");
 
-    // Use CID reference for consistency
-    const logoUrl = "cid:nova-logo";
+    // Use direct URL
+    const logoUrl = process.env.EMAIL_LOGO_URL || NOVA_LOGO_URL;
 
     return { baseUrl, logoUrl };
 }
@@ -184,18 +181,23 @@ Nova AI 팀`;
     <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#f9fafb;">
     <tr>
         <td align="center" style="padding:40px 16px;">
-        <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px; background:#ffffff; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+        <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.08); overflow:hidden;">
             
-            <!-- Logo -->
+            <!-- Logo (dark header) -->
             <tr>
-            <td style="padding:32px 32px 24px;">
-                <img src="${logoUrl}" alt="Nova AI" height="48" style="display:block; width:auto; height:48px;" />
+            <td style="padding:24px 32px; background:#111827; border-radius:8px 8px 0 0;">
+                <img src="${logoUrl}" alt="Nova AI" height="40" style="display:block; width:auto; height:40px;" />
             </td>
             </tr>
 
+            <!-- Content area -->
+            <tr>
+            <td style="background:#ffffff;">
+            <table width="100%" cellpadding="0" cellspacing="0">
+
             <!-- Success Icon -->
             <tr>
-            <td style="padding:0 32px 16px;">
+            <td style="padding:24px 32px 16px;">
                 <div style="width:56px; height:56px; background:#dcfce7; border-radius:50%; display:flex; align-items:center; justify-content:center;">
                     <span style="font-size:28px;">✓</span>
                 </div>
@@ -364,18 +366,23 @@ Nova AI 팀`;
     <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#f9fafb;">
     <tr>
         <td align="center" style="padding:40px 16px;">
-        <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px; background:#ffffff; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+        <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.08); overflow:hidden;">
             
-            <!-- Logo -->
+            <!-- Logo (dark header) -->
             <tr>
-            <td style="padding:32px 32px 24px;">
-                <img src="${logoUrl}" alt="Nova AI" height="48" style="display:block; width:auto; height:48px;" />
+            <td style="padding:24px 32px; background:#111827; border-radius:8px 8px 0 0;">
+                <img src="${logoUrl}" alt="Nova AI" height="40" style="display:block; width:auto; height:40px;" />
             </td>
             </tr>
 
+            <!-- Content area -->
+            <tr>
+            <td style="background:#ffffff;">
+            <table width="100%" cellpadding="0" cellspacing="0">
+
             <!-- Error Icon -->
             <tr>
-            <td style="padding:0 32px 16px;">
+            <td style="padding:24px 32px 16px;">
                 <div style="width:56px; height:56px; background:#fee2e2; border-radius:50%; display:flex; align-items:center; justify-content:center;">
                     <span style="font-size:28px;">${data.isSuspended ? "⚠️" : "✕"}</span>
                 </div>
@@ -536,18 +543,23 @@ Nova AI 팀`;
     <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#f9fafb;">
     <tr>
         <td align="center" style="padding:40px 16px;">
-        <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px; background:#ffffff; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+        <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.08); overflow:hidden;">
             
-            <!-- Logo -->
+            <!-- Logo (dark header) -->
             <tr>
-            <td style="padding:32px 32px 24px;">
-                <img src="${logoUrl}" alt="Nova AI" height="48" style="display:block; width:auto; height:48px;" />
+            <td style="padding:24px 32px; background:#111827; border-radius:8px 8px 0 0;">
+                <img src="${logoUrl}" alt="Nova AI" height="40" style="display:block; width:auto; height:40px;" />
             </td>
             </tr>
 
+            <!-- Content area -->
+            <tr>
+            <td style="background:#ffffff;">
+            <table width="100%" cellpadding="0" cellspacing="0">
+
             <!-- Calendar Icon -->
             <tr>
-            <td style="padding:0 32px 16px;">
+            <td style="padding:24px 32px 16px;">
                 <div style="width:56px; height:56px; background:#dbeafe; border-radius:50%; display:flex; align-items:center; justify-content:center;">
                     <span style="font-size:28px;">📅</span>
                 </div>
@@ -704,18 +716,23 @@ Nova AI 팀`;
     <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#f9fafb;">
     <tr>
         <td align="center" style="padding:40px 16px;">
-        <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px; background:#ffffff; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+        <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.08); overflow:hidden;">
             
-            <!-- Logo -->
+            <!-- Logo (dark header) -->
             <tr>
-            <td style="padding:32px 32px 24px;">
-                <img src="${logoUrl}" alt="Nova AI" height="48" style="display:block; width:auto; height:48px;" />
+            <td style="padding:24px 32px; background:#111827; border-radius:8px 8px 0 0;">
+                <img src="${logoUrl}" alt="Nova AI" height="40" style="display:block; width:auto; height:40px;" />
             </td>
             </tr>
 
+            <!-- Content area -->
+            <tr>
+            <td style="background:#ffffff;">
+            <table width="100%" cellpadding="0" cellspacing="0">
+
             <!-- Icon -->
             <tr>
-            <td style="padding:0 32px 16px;">
+            <td style="padding:24px 32px 16px;">
                 <div style="width:56px; height:56px; background:#f3f4f6; border-radius:50%; display:flex; align-items:center; justify-content:center;">
                     <span style="font-size:28px;">👋</span>
                 </div>
@@ -876,18 +893,23 @@ Nova AI 팀`;
     <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#f9fafb;">
     <tr>
         <td align="center" style="padding:40px 16px;">
-        <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px; background:#ffffff; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+        <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.08); overflow:hidden;">
             
-            <!-- Logo -->
+            <!-- Logo (dark header) -->
             <tr>
-            <td style="padding:32px 32px 24px;">
-                <img src="${logoUrl}" alt="Nova AI" height="48" style="display:block; width:auto; height:48px;" />
+            <td style="padding:24px 32px; background:#111827; border-radius:8px 8px 0 0;">
+                <img src="${logoUrl}" alt="Nova AI" height="40" style="display:block; width:auto; height:40px;" />
             </td>
             </tr>
 
+            <!-- Content area -->
+            <tr>
+            <td style="background:#ffffff;">
+            <table width="100%" cellpadding="0" cellspacing="0">
+
             <!-- Icon -->
             <tr>
-            <td style="padding:0 32px 16px;">
+            <td style="padding:24px 32px 16px;">
                 <div style="width:56px; height:56px; background:${isUpgrade ? "#dcfce7" : "#dbeafe"}; border-radius:50%; display:flex; align-items:center; justify-content:center;">
                     <span style="font-size:28px;">${isUpgrade ? "🚀" : "📦"}</span>
                 </div>
@@ -1055,7 +1077,7 @@ async function sendEmail({
     }
 }
 
-// Send via Resend (recommended) with CID attachment for logo
+// Send via Resend (recommended)
 async function sendViaResend(
     to: string,
     subject: string,
@@ -1074,23 +1096,6 @@ async function sendViaResend(
 
     if (html) {
         payload.html = html;
-        
-        // Add logo as inline attachment with CID if HTML contains cid:nova-logo
-        if (html.includes("cid:nova-logo")) {
-            const logoAttachment = await getLogoAttachment();
-            if (logoAttachment) {
-                payload.attachments = [
-                    {
-                        filename: logoAttachment.filename,
-                        content: logoAttachment.content,
-                        content_type: logoAttachment.contentType,
-                        content_id: "nova-logo",
-                        disposition: "inline",
-                    },
-                ];
-                console.log("[email] Added logo as CID attachment");
-            }
-        }
     }
 
     const response = await fetch("https://api.resend.com/emails", {
@@ -1166,23 +1171,28 @@ Nova AI 팀`.trim();
                                 <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#f9fafb;">
                                 <tr>
                                     <td align="center" style="padding:40px 16px;">
-                                    <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px; background:#ffffff; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+                                    <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.08); overflow:hidden;">
                                         
-                                        <!-- Logo -->
+                                        <!-- Logo (dark header) -->
                                         <tr>
-                                        <td style="padding:32px 32px 24px;">
+                                        <td style="padding:24px 32px; background:#111827; border-radius:8px 8px 0 0;">
                                             <img
                                             src="${logoUrl}"
                                             alt="Nova AI"
-                                            height="48"
-                                            style="display:block; width:auto; height:48px;"
+                                            height="40"
+                                            style="display:block; width:auto; height:40px;"
                                             />
                                         </td>
                                         </tr>
 
+                                        <!-- Content area -->
+                                        <tr>
+                                        <td style="background:#ffffff;">
+                                        <table width="100%" cellpadding="0" cellspacing="0">
+
                                         <!-- Title -->
                                         <tr>
-                                        <td style="padding:0 32px 16px;">
+                                        <td style="padding:24px 32px 16px;">
                                             <h1 style="margin:0; font-size:24px; font-weight:700; color:#111827; line-height:1.3;">
                                             비밀번호 재설정
                                             </h1>
@@ -1236,6 +1246,10 @@ Nova AI 팀`.trim();
                                                 ${resetLink}
                                             </a>
                                             </p>
+                                        </td>
+                                        </tr>
+
+                                        </table>
                                         </td>
                                         </tr>
 

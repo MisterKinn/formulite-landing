@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getFirestore, doc, setDoc } from "firebase/firestore";
 import { app } from "../../../../firebaseConfig";
+import { getNextBillingDate } from "@/lib/subscription";
 
 /**
  * 결제 완료 후 빌링키 발급
@@ -61,19 +62,27 @@ export async function POST(request: NextRequest) {
         // Firestore 저장
         const userId = customerKey.replace(/^(customer_|user_)/, "");
 
+        // Handle test billing cycle (100 won / 1 minute)
+        const cycle = billingCycle || "monthly";
+        const plan = cycle === "test" 
+            ? "test" 
+            : amount >= 29900 
+                ? "pro" 
+                : amount >= 19900 
+                    ? "plus" 
+                    : "basic";
+
         const subscriptionData = {
             billingKey,
             customerKey,
-            plan: amount >= 29900 ? "pro" : amount >= 19900 ? "plus" : "basic",
+            plan,
             status: "active",
             registeredAt: new Date().toISOString(),
             isRecurring: true,
             amount: amount || 0,
             orderName: orderName || "Nova AI 구독",
-            billingCycle: billingCycle || "monthly",
-            nextBillingDate: new Date(
-                Date.now() + 30 * 24 * 60 * 60 * 1000,
-            ).toISOString(),
+            billingCycle: cycle,
+            nextBillingDate: getNextBillingDate(cycle),
         };
 
         const db = getFirestore(app);

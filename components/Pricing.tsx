@@ -30,6 +30,19 @@ interface PricingPlan {
 
 const plans: PricingPlan[] = [
     {
+        name: "테스트",
+        subDescription: "빌링 테스트용 (1분마다 100원 결제)",
+        price: "100",
+        period: "/분",
+        features: [
+            "빌링 테스트 전용",
+            "1분마다 자동 결제",
+            "100원씩 결제",
+            "언제든 취소 가능",
+        ],
+        cta: "테스트 시작",
+    },
+    {
         name: "무료",
         subDescription: "제한적인 AI 생성과 기본 기능을 제공합니다.",
         price: "0",
@@ -93,7 +106,12 @@ export default function Pricing() {
     const router = useRouter();
 
     const handlePlanClick = (planName: string, price: string) => {
-        if (planName === "무료") {
+        if (planName === "테스트") {
+            // 테스트 플랜 (1분마다 100원)
+            router.push(
+                "/payment?amount=100&orderName=테스트 요금제 (1분마다 100원)&recurring=true&billingCycle=test"
+            );
+        } else if (planName === "무료") {
             // 무료 플랜은 로그인 페이지로 이동
             router.push("/login");
         } else if (planName === "베이직 요금제") {

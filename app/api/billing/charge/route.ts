@@ -43,8 +43,9 @@ export async function POST(request: NextRequest) {
             .toString(36)
             .substr(2, 9)}`;
 
+        // TossPayments billing API: billingKey goes in the PATH
         const response = await fetch(
-            "https://api.tosspayments.com/v1/billing/pay",
+            `https://api.tosspayments.com/v1/billing/${billingKey}`,
             {
                 method: "POST",
                 headers: {
@@ -54,7 +55,6 @@ export async function POST(request: NextRequest) {
                     "Content-Type": "application/json",
                 },
                 body: JSON.stringify({
-                    billingKey,
                     customerKey,
                     amount,
                     orderId,
@@ -157,8 +157,9 @@ export async function PUT(request: NextRequest) {
             .toString(36)
             .substr(2, 9)}`;
 
+        // TossPayments billing API: billingKey goes in the PATH
         const response = await fetch(
-            "https://api.tosspayments.com/v1/billing/pay",
+            `https://api.tosspayments.com/v1/billing/${subscription.billingKey}`,
             {
                 method: "POST",
                 headers: {
@@ -168,7 +169,6 @@ export async function PUT(request: NextRequest) {
                     "Content-Type": "application/json",
                 },
                 body: JSON.stringify({
-                    billingKey: subscription.billingKey,
                     customerKey: subscription.customerKey,
                     amount,
                     orderId,

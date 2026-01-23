@@ -16,27 +16,30 @@ import Image from "next/image";
 export default function DownloadContent() {
     const [hoveredPlatform, setHoveredPlatform] = useState<string | null>(null);
 
+    // GitHub Releases - Update version tag (v1.0.0) when releasing new versions
+    const GITHUB_RELEASE_BASE = "https://github.com/MisterKinn/formulite-landing/releases/download/v1.0.0";
+
     const platforms = [
         {
             name: "Windows",
             img: "/windows.png",
-            link: "/downloads/novaai-win.exe",
+            link: `${GITHUB_RELEASE_BASE}/Nova-AI-Setup.exe`,
             desc: "Windows 10 이상",
-            size: "125 MB",
+            size: "260 MB",
         },
         {
             name: "Mac",
             img: "/apple.png",
-            link: "/downloads/novaai-mac.dmg",
+            link: `${GITHUB_RELEASE_BASE}/Nova-AI.dmg`,
             desc: "macOS 11 이상",
-            size: "142 MB",
+            size: "260 MB",
         },
         {
             name: "Linux",
             img: "/linux.png",
-            link: "/downloads/novaai-linux.AppImage",
+            link: `${GITHUB_RELEASE_BASE}/Nova-AI.AppImage`,
             desc: "Ubuntu 20.04+",
-            size: "138 MB",
+            size: "260 MB",
         },
     ];
 

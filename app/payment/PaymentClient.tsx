@@ -13,7 +13,7 @@ export default function PaymentClient() {
     const orderName = searchParams.get("orderName") || "Nova AI Pro";
     const recurring = searchParams.get("recurring") === "true";
     const billingCycle =
-        (searchParams.get("billingCycle") as "monthly" | "yearly") || "monthly";
+        (searchParams.get("billingCycle") as "monthly" | "yearly" | "test") || "monthly";
 
     const paymentRef = useRef<any>(null);
 
@@ -74,7 +74,7 @@ export default function PaymentClient() {
                         window.location.origin
                     }/payment/success?recurring=true&amount=${amount}&orderName=${encodeURIComponent(
                         orderName,
-                    )}&billingCycle=monthly`,
+                    )}&billingCycle=${billingCycle}`,
                     failUrl: `${window.location.origin}/payment/fail`,
                     customerEmail: user.email,
                     customerName: user.displayName || "고객",

@@ -10,13 +10,13 @@ import { app } from "../firebaseConfig";
 const db = getFirestore(app);
 
 export interface SubscriptionData {
-    plan: "free" | "basic" | "plus" | "pro";
+    plan: "free" | "basic" | "plus" | "pro" | "test";
     billingKey?: string;
     customerKey?: string;
     /** true for recurring subscriptions */
     isRecurring?: boolean;
-    /** 'monthly' or 'yearly' when recurring */
-    billingCycle?: "monthly" | "yearly";
+    /** 'monthly', 'yearly', or 'test' (1 minute) when recurring */
+    billingCycle?: "monthly" | "yearly" | "test";
     /** productId refers to the product catalog item we store */
     productId?: string;
     /** subscriptionId is our server-side id for the subscription contract */
@@ -146,12 +146,15 @@ export async function updateUserPlan(
     }
 }
 
-// Calculate next billing date (30 days for monthly, 365 days for yearly)
+// Calculate next billing date (30 days for monthly, 365 days for yearly, 1 minute for test)
 export function getNextBillingDate(
-    billingCycle: "monthly" | "yearly" = "monthly"
+    billingCycle: "monthly" | "yearly" | "test" = "monthly"
 ): string {
     const date = new Date();
-    if (billingCycle === "monthly") {
+    if (billingCycle === "test") {
+        // Test billing: 1 minute interval
+        date.setTime(date.getTime() + 60 * 1000);
+    } else if (billingCycle === "monthly") {
         date.setDate(date.getDate() + 30);
     } else {
         date.setDate(date.getDate() + 365);

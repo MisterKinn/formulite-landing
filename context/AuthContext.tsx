@@ -214,6 +214,63 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return () => unsubscribe();
     }, []);
 
+    // Auto-billing check for test subscriptions (runs every 15 seconds)
+    // This ensures test plans (100원/1분) are charged automatically
+    useEffect(() => {
+        if (!user) return;
+
+        let intervalId: NodeJS.Timeout | null = null;
+
+        const checkAndProcessBilling = async () => {
+            try {
+                // First check if this user has a test subscription
+                const db = getFirestore(app);
+                const userDoc = await getDoc(doc(db, "users", user.uid));
+                
+                if (!userDoc.exists()) return;
+                
+                const subscription = userDoc.data()?.subscription;
+                
+                // Only trigger billing for test subscriptions that are due
+                if (
+                    subscription?.billingCycle === "test" &&
+                    subscription?.status === "active" &&
+                    subscription?.isRecurring &&
+                    subscription?.nextBillingDate
+                ) {
+                    const nextBilling = new Date(subscription.nextBillingDate);
+                    const now = new Date();
+                    
+                    if (nextBilling <= now) {
+                        console.log("🔄 [AutoBilling] Test subscription due, triggering billing...");
+                        
+                        // Trigger the scheduled billing endpoint
+                        const res = await fetch("/api/billing/scheduled", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                        });
+                        
+                        const data = await res.json();
+                        if (data.success && data.summary?.successful > 0) {
+                            console.log("✅ [AutoBilling] Payment processed successfully");
+                        }
+                    }
+                }
+            } catch (err) {
+                // Silent fail - this is background billing check
+                console.warn("[AutoBilling] Check failed:", err);
+            }
+        };
+
+        // Run immediately and then every 15 seconds
+        checkAndProcessBilling();
+        intervalId = setInterval(checkAndProcessBilling, 15000);
+
+        return () => {
+            if (intervalId) clearInterval(intervalId);
+        };
+    }, [user]);
+
     // Auth methods
     const loginWithEmail = async (email: string, password: string) => {
         const auth = getAuth(app);

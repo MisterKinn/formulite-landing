@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import getFirebaseAdmin from "@/lib/firebaseAdmin";
 import { savePaymentRecord } from "@/lib/paymentHistory";
+import { getNextBillingDate } from "@/lib/subscription";
 import {
     sendPaymentReceipt,
     sendPaymentFailureNotification,
@@ -83,9 +84,11 @@ export async function POST(request: NextRequest) {
         }
 
         // 구독 정보가 있으면 활성 구독으로 설정
-        // Determine plan based on amount
-        let plan: "free" | "basic" | "plus" | "pro" = "free";
-        if (amount) {
+        // Determine plan based on amount and billing cycle
+        let plan: "free" | "basic" | "plus" | "pro" | "test" = "free";
+        if (billingCycle === "test") {
+            plan = "test";
+        } else if (amount) {
             if (amount >= 29900) {
                 plan = "pro";
             } else if (amount >= 19900) {
@@ -211,7 +214,7 @@ export async function POST(request: NextRequest) {
             orderName: orderName || "Nova AI 구독",
             billingCycle: billingCycle || "monthly",
             nextBillingDate: firstPaymentResult
-                ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+                ? getNextBillingDate(billingCycle || "monthly")
                 : null,
             lastPayment: firstPaymentResult || null,
         };
