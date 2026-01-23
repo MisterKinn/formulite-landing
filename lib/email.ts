@@ -41,7 +41,50 @@ interface SubscriptionChangeData {
 // Nova AI logo for email templates
 const NOVA_LOGO_URL = "https://www.nova-ai.work/nova-logo.png";
 
-// Helper function to get base URL and logo
+// Cached base64 logo for embedding in emails
+let cachedLogoDataUri: string | null = null;
+
+// Helper function to get base URL and logo (with optional base64 embedding)
+async function getEmailAssetsAsync(): Promise<{
+    baseUrl: string;
+    logoUrl: string;
+}> {
+    const baseUrl = (
+        process.env.NEXT_PUBLIC_BASE_URL ||
+        process.env.NEXT_PUBLIC_APP_URL ||
+        process.env.BASE_URL ||
+        "https://www.nova-ai.work"
+    ).replace(/\/$/, "");
+
+    // Use cached data URI if available
+    if (cachedLogoDataUri) {
+        return { baseUrl, logoUrl: cachedLogoDataUri };
+    }
+
+    const logoUrl = process.env.EMAIL_LOGO_URL || NOVA_LOGO_URL;
+
+    // Try to embed the logo as base64 for better email client compatibility
+    try {
+        const response = await fetch(logoUrl);
+        if (response.ok) {
+            const arrayBuffer = await response.arrayBuffer();
+            const base64 = Buffer.from(arrayBuffer).toString("base64");
+            const contentType =
+                response.headers.get("content-type") || "image/png";
+            cachedLogoDataUri = `data:${contentType};base64,${base64}`;
+            console.log(
+                "[email] Logo embedded as base64 data URI for better compatibility",
+            );
+            return { baseUrl, logoUrl: cachedLogoDataUri };
+        }
+    } catch (err) {
+        console.warn("[email] Could not embed logo, using URL:", err);
+    }
+
+    return { baseUrl, logoUrl };
+}
+
+// Sync version for backwards compatibility
 function getEmailAssets() {
     const baseUrl = (
         process.env.NEXT_PUBLIC_BASE_URL ||
@@ -50,7 +93,8 @@ function getEmailAssets() {
         "https://www.nova-ai.work"
     ).replace(/\/$/, "");
 
-    const logoUrl = process.env.EMAIL_LOGO_URL || NOVA_LOGO_URL;
+    const logoUrl =
+        cachedLogoDataUri || process.env.EMAIL_LOGO_URL || NOVA_LOGO_URL;
 
     return { baseUrl, logoUrl };
 }
@@ -84,7 +128,7 @@ export async function sendPaymentReceipt(
             `📧 Sending payment receipt to: ${userEmail} for user: ${userId}`,
         );
 
-        const { logoUrl } = getEmailAssets();
+        const { logoUrl } = await getEmailAssetsAsync();
         const planName = getPlanDisplayName(data.plan || "");
         const formattedDate = new Date(data.approvedAt).toLocaleString(
             "ko-KR",
@@ -251,7 +295,7 @@ export async function sendPaymentFailureNotification(
             `📧 Sending payment failure notification to: ${userEmail} for user: ${userId}`,
         );
 
-        const { logoUrl } = getEmailAssets();
+        const { logoUrl } = await getEmailAssetsAsync();
         const planName = getPlanDisplayName(data.plan || "");
         const failReason = data.failReason || data.reason || "알 수 없는 오류";
 
@@ -440,7 +484,7 @@ export async function sendRenewalReminder(
             return;
         }
 
-        const { logoUrl } = getEmailAssets();
+        const { logoUrl } = await getEmailAssetsAsync();
         const planName = getPlanDisplayName(plan || "");
         const formattedDate = new Date(nextBillingDate).toLocaleDateString(
             "ko-KR",
@@ -600,7 +644,7 @@ export async function sendSubscriptionCancelledEmail(
             `📧 Sending subscription cancelled email to: ${userEmail} for user: ${userId}`,
         );
 
-        const { logoUrl } = getEmailAssets();
+        const { logoUrl } = await getEmailAssetsAsync();
         const planName = getPlanDisplayName(data.plan);
         const cancelledDate = new Date(data.cancelledAt).toLocaleDateString(
             "ko-KR",
@@ -774,7 +818,7 @@ export async function sendSubscriptionChangedEmail(
             return;
         }
 
-        const { logoUrl } = getEmailAssets();
+        const { logoUrl } = await getEmailAssetsAsync();
         const oldPlanName = getPlanDisplayName(data.oldPlan);
         const newPlanName = getPlanDisplayName(data.newPlan);
         const effectiveDate = new Date(data.effectiveAt).toLocaleDateString(
@@ -1074,7 +1118,7 @@ ${resetLink}
 감사합니다.
 Nova AI 팀`.trim();
 
-        const { logoUrl } = getEmailAssets();
+        const { logoUrl } = await getEmailAssetsAsync();
 
         const html = `<!doctype html>
                         <html lang="ko">
@@ -1195,7 +1239,7 @@ export async function sendPasswordChangedNotification(to: string) {
         const text =
             `안녕하세요,\n\n고객님의 계정 비밀번호가 성공적으로 변경되었습니다. 만약 본인이 변경하지 않으셨다면 즉시 고객센터로 연락하거나 비밀번호 재설정을 요청하세요.\n\n감사합니다.\nNova AI 팀`.trim();
 
-        const { logoUrl } = getEmailAssets();
+        const { logoUrl } = await getEmailAssetsAsync();
 
         const html = `<!doctype html>
 <html lang="ko">
