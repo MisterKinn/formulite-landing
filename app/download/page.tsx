@@ -17,29 +17,23 @@ export default function DownloadContent() {
     const [hoveredPlatform, setHoveredPlatform] = useState<string | null>(null);
 
     // GitHub Releases - Update version tag (v1.0.0) when releasing new versions
-    const GITHUB_RELEASE_BASE = "https://github.com/MisterKinn/formulite-landing/releases/download/v1.0.0";
+    const GITHUB_RELEASE_BASE =
+        "https://github.com/MisterKinn/formulite-landing/releases/download/v1.0.0";
 
     const platforms = [
         {
             name: "Windows",
             img: "/windows.png",
-            link: `${GITHUB_RELEASE_BASE}/Nova-AI-Setup.exe`,
+            link: `${GITHUB_RELEASE_BASE}/Nova.AI.Setup.exe`,
             desc: "Windows 10 이상",
-            size: "260 MB",
+            size: "104 MB",
         },
         {
             name: "Mac",
             img: "/apple.png",
-            link: `${GITHUB_RELEASE_BASE}/Nova-AI.dmg`,
+            link: `${GITHUB_RELEASE_BASE}/Nova.AI.dmg`,
             desc: "macOS 11 이상",
-            size: "260 MB",
-        },
-        {
-            name: "Linux",
-            img: "/linux.png",
-            link: `${GITHUB_RELEASE_BASE}/Nova-AI.AppImage`,
-            desc: "Ubuntu 20.04+",
-            size: "260 MB",
+            size: "253 MB",
         },
     ];
 

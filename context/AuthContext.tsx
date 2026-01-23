@@ -39,7 +39,7 @@ interface AuthContextType {
     signupWithEmail: (
         email: string,
         password: string,
-        displayName?: string
+        displayName?: string,
     ) => Promise<User>;
     loginWithGoogle: () => Promise<User>;
     loginWithNaver: () => Promise<User>;
@@ -47,7 +47,7 @@ interface AuthContextType {
     requestPasswordReset: (email: string) => Promise<void>;
     updateAvatar: (dataUrl: string | null) => Promise<void>;
     updateSubscription: (
-        data: import("@/lib/subscription").SubscriptionData
+        data: import("@/lib/subscription").SubscriptionData,
     ) => Promise<void>;
     logout: () => Promise<void>;
     isAuthenticated: boolean;
@@ -177,7 +177,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                                 aiCallUsage: 0,
                                 createdAt: Date.now(),
                             },
-                            { merge: true }
+                            { merge: true },
                         );
                         setAvatar(avatarFromAuth);
                         return;
@@ -206,7 +206,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     // If anything goes wrong, do not clobber a previously-set avatar (best-effort).
                     console.warn(
                         "[AuthContext] Failed to load or init user doc (non-fatal)",
-                        err
+                        err,
                     );
                 }
             })();
@@ -226,11 +226,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 // First check if this user has a test subscription
                 const db = getFirestore(app);
                 const userDoc = await getDoc(doc(db, "users", user.uid));
-                
+
                 if (!userDoc.exists()) return;
-                
+
                 const subscription = userDoc.data()?.subscription;
-                
+
                 // Only trigger billing for test subscriptions that are due
                 if (
                     subscription?.billingCycle === "test" &&
@@ -240,19 +240,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 ) {
                     const nextBilling = new Date(subscription.nextBillingDate);
                     const now = new Date();
-                    
+
                     if (nextBilling <= now) {
-                        console.log("🔄 [AutoBilling] Test subscription due, triggering billing...");
-                        
+                        console.log(
+                            "🔄 [AutoBilling] Test subscription due, triggering billing...",
+                        );
+
                         // Trigger the scheduled billing endpoint
                         const res = await fetch("/api/billing/scheduled", {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
                         });
-                        
+
                         const data = await res.json();
                         if (data.success && data.summary?.successful > 0) {
-                            console.log("✅ [AutoBilling] Payment processed successfully");
+                            console.log(
+                                "✅ [AutoBilling] Payment processed successfully",
+                            );
                         }
                     }
                 }
@@ -278,7 +282,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const cred = await signInWithEmailAndPassword(
                 auth,
                 email,
-                password
+                password,
             );
             setUser(cred.user);
 
@@ -297,7 +301,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                             email: cred.user.email || null,
                             createdAt: Date.now(),
                         },
-                        { merge: true }
+                        { merge: true },
                     );
                     setAvatar(avatarFromAuth);
                 } else {
@@ -306,7 +310,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             } catch (err) {
                 console.warn(
                     "[AuthContext] Failed to ensure user doc after email login",
-                    err
+                    err,
                 );
             }
 
@@ -323,7 +327,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             } catch (logErr) {
                 console.error(
                     "[AuthContext] loginWithEmail error (unable to serialize)",
-                    err
+                    err,
                 );
             }
             throw err;
@@ -335,13 +339,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const signupWithEmail = async (
         email: string,
         password: string,
-        displayName?: string
+        displayName?: string,
     ) => {
         const auth = getAuth(app);
         const cred = await createUserWithEmailAndPassword(
             auth,
             email,
-            password
+            password,
         );
         if (displayName) {
             await updateProfile(cred.user, { displayName });
@@ -354,7 +358,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             await setDoc(
                 docRef,
                 { avatar: null, createdAt: Date.now() },
-                { merge: true }
+                { merge: true },
             );
             setAvatar(null);
         } catch (err) {
@@ -367,13 +371,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const openPopupForProvider = (
         url: string,
         provider: string,
-        timeout = 120000
+        timeout = 120000,
     ) =>
         new Promise<any>((resolve, reject) => {
             const w = window.open(
                 url,
                 `${provider}-auth`,
-                "width=500,height=700"
+                "width=500,height=700",
             );
             if (!w) {
                 reject(new Error("Popup blocked"));
@@ -403,19 +407,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                             ) {
                                 console.warn(
                                     "[AuthContext] Ignoring message from origin",
-                                    e.origin
+                                    e.origin,
                                 );
                                 return;
                             }
                             console.warn(
                                 "[AuthContext] Accepting message from different origin (dev):",
-                                e.origin
+                                e.origin,
                             );
                         } catch (err) {
                             console.warn(
                                 "[AuthContext] Failed to parse message origin",
                                 e.origin,
-                                err
+                                err,
                             );
                             return;
                         }
@@ -425,7 +429,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     console.debug(
                         "[AuthContext] received oauth message",
                         e.origin,
-                        data
+                        data,
                     );
 
                     // Standard flow: { type: 'oauth', provider, customToken, profile? }
@@ -489,7 +493,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                                 code: data.code,
                                 state: data.state,
                                 returnTo: data.returnTo,
-                            })
+                            }),
                         );
                         return;
                     }
@@ -529,24 +533,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 String(code).includes("popup-blocked") ||
                 String(code).includes("popup-closed-by-user") ||
                 String(code).includes(
-                    "auth/operation-not-supported-in-this-environment"
+                    "auth/operation-not-supported-in-this-environment",
                 )
             ) {
                 try {
                     console.info(
-                        "[AuthContext] Falling back to signInWithRedirect for Google sign-in"
+                        "[AuthContext] Falling back to signInWithRedirect for Google sign-in",
                     );
                     // initiates redirect; app will reload and onAuthStateChanged will pick up the logged-in user
                     await import("firebase/auth").then(
                         ({ signInWithRedirect }) =>
-                            signInWithRedirect(auth, provider)
+                            signInWithRedirect(auth, provider),
                     );
                     // return a promise that never resolves here because redirect will navigate away
                     return new Promise(() => {});
                 } catch (redirectErr) {
                     console.error(
                         "[AuthContext] signInWithRedirect failed",
-                        redirectErr
+                        redirectErr,
                     );
                     throw redirectErr;
                 }
@@ -569,7 +573,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 } catch (err) {
                     console.warn(
                         "[AuthContext] updateProfile failed (google)",
-                        err
+                        err,
                     );
                 }
             }
@@ -579,7 +583,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 } catch (err) {
                     console.warn(
                         "[AuthContext] updateEmail failed (google)",
-                        err
+                        err,
                     );
                 }
             }
@@ -591,7 +595,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } catch (err) {
             console.warn(
                 "[AuthContext] Failed to update auth profile after Google login",
-                err
+                err,
             );
         }
 
@@ -609,19 +613,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                         email: cred.user.email || null,
                         createdAt: Date.now(),
                     },
-                    { merge: true }
+                    { merge: true },
                 );
                 setAvatar(cred.user.photoURL || null);
             } else {
                 setAvatar(
-                    (snap.data() as any).avatar ?? cred.user.photoURL ?? null
+                    (snap.data() as any).avatar ?? cred.user.photoURL ?? null,
                 );
             }
         } catch (err) {
             // failed to init user doc after Google login
             console.error(
                 "[AuthContext] init user doc after Google login failed",
-                err
+                err,
             );
         }
         return cred.user;
@@ -655,7 +659,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } catch (e) {}
 
         const url = `/api/auth/naver/start?return_to=${encodeURIComponent(
-            window.location.origin
+            window.location.origin,
         )}&state=${encodeURIComponent(state)}`;
         const result = await openPopupForProvider(url, "naver");
 
@@ -663,7 +667,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (typeof result === "string" && result.startsWith("DEV:")) {
             if (process.env.NEXT_PUBLIC_DEV_AUTH_BYPASS !== "true") {
                 throw new Error(
-                    "Dev auth bypass is not enabled on this client"
+                    "Dev auth bypass is not enabled on this client",
                 );
             }
             const profileJson = JSON.parse(result.slice(4));
@@ -709,7 +713,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             } catch (err) {
                 console.error(
                     "[AuthContext] Failed to update auth profile after Naver login",
-                    err
+                    err,
                 );
             }
             setUser(cred.user);
@@ -724,13 +728,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                         email: profile?.email || null,
                         createdAt: Date.now(),
                     },
-                    { merge: true }
+                    { merge: true },
                 );
                 setAvatar(profile?.profile_image || null);
             } catch (err) {
                 console.error(
                     "[AuthContext] Failed to init user doc after Naver login",
-                    err
+                    err,
                 );
             }
             try {
@@ -776,7 +780,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     } catch (err) {
                         console.warn(
                             "[AuthContext] updateProfile failed (exchange)",
-                            err
+                            err,
                         );
                     }
                 }
@@ -786,7 +790,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     } catch (err) {
                         console.warn(
                             "[AuthContext] updateEmail failed (exchange)",
-                            err
+                            err,
                         );
                     }
                 }
@@ -795,13 +799,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 } catch (err) {
                     console.warn(
                         "[AuthContext] user.reload failed (exchange)",
-                        err
+                        err,
                     );
                 }
             } catch (err) {
                 console.error(
                     "[AuthContext] Failed to update auth profile after Naver login (exchange)",
-                    err
+                    err,
                 );
             }
             setUser(cred.user);
@@ -816,13 +820,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                         email: profile?.email || null,
                         createdAt: Date.now(),
                     },
-                    { merge: true }
+                    { merge: true },
                 );
                 setAvatar(profile?.profile_image || null);
             } catch (err) {
                 console.error(
                     "[AuthContext] Failed to init user doc after Naver login (exchange)",
-                    err
+                    err,
                 );
             }
             try {
@@ -847,7 +851,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 } catch (err) {
                     console.warn(
                         "[AuthContext] updateProfile failed (fallback)",
-                        err
+                        err,
                     );
                 }
             }
@@ -857,7 +861,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 } catch (err) {
                     console.warn(
                         "[AuthContext] updateEmail failed (fallback)",
-                        err
+                        err,
                     );
                 }
             }
@@ -866,13 +870,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             } catch (err) {
                 console.warn(
                     "[AuthContext] user.reload failed (fallback)",
-                    err
+                    err,
                 );
             }
         } catch (err) {
             console.warn(
                 "[AuthContext] Failed to update auth profile after fallback sign-in",
-                err
+                err,
             );
         }
 
@@ -892,7 +896,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                         email: cred.user.email || null,
                         createdAt: Date.now(),
                     },
-                    { merge: true }
+                    { merge: true },
                 );
                 setAvatar(avatar);
             } else {
@@ -907,7 +911,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } catch (err) {
             console.error(
                 "[AuthContext] Failed to init user doc after fallback sign-in",
-                err
+                err,
             );
         }
 
@@ -926,7 +930,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } catch (e) {}
 
         const url = `/api/auth/kakao/start?return_to=${encodeURIComponent(
-            window.location.origin
+            window.location.origin,
         )}&state=${encodeURIComponent(state)}`;
         const result = await openPopupForProvider(url, "kakao");
 
@@ -934,7 +938,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (typeof result === "string" && result.startsWith("DEV:")) {
             if (process.env.NEXT_PUBLIC_DEV_AUTH_BYPASS !== "true") {
                 throw new Error(
-                    "Dev auth bypass is not enabled on this client"
+                    "Dev auth bypass is not enabled on this client",
                 );
             }
             const profileJson = JSON.parse(result.slice(4));
@@ -1025,7 +1029,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     } catch (err) {
                         console.warn(
                             "[AuthContext] updateProfile failed (kakao)",
-                            err
+                            err,
                         );
                     }
                 }
@@ -1035,7 +1039,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     } catch (err) {
                         console.warn(
                             "[AuthContext] updateEmail failed (kakao)",
-                            err
+                            err,
                         );
                     }
                 }
@@ -1044,7 +1048,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 } catch (err) {
                     console.warn(
                         "[AuthContext] user.reload failed (kakao)",
-                        err
+                        err,
                     );
                 }
 
@@ -1060,7 +1064,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                             email: kakaoEmail,
                             createdAt: Date.now(),
                         },
-                        { merge: true }
+                        { merge: true },
                     );
                     setAvatar(kakaoAvatar);
                 } else {
@@ -1069,7 +1073,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                         await setDoc(
                             docRef,
                             { avatar: null, createdAt: Date.now() },
-                            { merge: true }
+                            { merge: true },
                         );
                         setAvatar(null);
                     } else {
@@ -1080,7 +1084,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } catch (err) {
             console.error(
                 "[AuthContext] Failed to init user doc after Kakao login",
-                err
+                err,
             );
         }
 
@@ -1128,13 +1132,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                         await sendPasswordResetEmail(auth, email);
                         console.warn(
                             "[AuthContext] server misconfigured; used client fallback sendPasswordResetEmail",
-                            { email }
+                            { email },
                         );
                         return; // success via fallback
                     } catch (fallbackErr) {
                         console.error(
                             "[AuthContext] fallback sendPasswordResetEmail failed",
-                            fallbackErr
+                            fallbackErr,
                         );
                         throw new Error("server_misconfigured");
                     }
@@ -1228,7 +1232,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             try {
                 await withTimeout(
                     setDoc(docRef, { avatar: dataUrl }, { merge: true }),
-                    15000
+                    15000,
                 );
                 const took = Date.now() - start;
             } catch (tErr) {
@@ -1244,7 +1248,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             } catch (authErr) {
                 console.warn(
                     "[AuthContext] updateProfile(photoURL) failed",
-                    authErr
+                    authErr,
                 );
             }
         } catch (err) {
@@ -1257,7 +1261,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 const docRef = doc(db, "users", uid);
                 await withTimeout(
                     setDoc(docRef, { avatar: dataUrl }, { merge: true }),
-                    15000
+                    15000,
                 );
                 // retry succeeded
                 setAvatar(dataUrl);
@@ -1287,7 +1291,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     const updateSubscription = async (
-        data: import("@/lib/subscription").SubscriptionData
+        data: import("@/lib/subscription").SubscriptionData,
     ) => {
         const auth = getAuth(app);
         if (!auth.currentUser) throw new Error("No authenticated user");
@@ -1330,18 +1334,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     setDoc(
                         docRef,
                         { subscription: sanitized },
-                        { merge: true }
+                        { merge: true },
                     ),
-                    15000
+                    15000,
                 );
                 const took = Date.now() - start;
                 console.log(
-                    `[AuthContext] subscription saved for ${uid} (${took}ms)`
+                    `[AuthContext] subscription saved for ${uid} (${took}ms)`,
                 );
             } catch (tErr) {
                 console.error(
                     "[AuthContext] setDoc subscription timed out or failed",
-                    tErr
+                    tErr,
                 );
                 throw tErr;
             }
@@ -1355,18 +1359,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     setDoc(
                         docRef,
                         { subscription: sanitized },
-                        { merge: true }
+                        { merge: true },
                     ),
-                    15000
+                    15000,
                 );
                 console.log(
-                    `[AuthContext] subscription saved for ${uid} after retry`
+                    `[AuthContext] subscription saved for ${uid} after retry`,
                 );
                 return;
             } catch (retryErr) {
                 console.error(
                     "[AuthContext] Retry failed for subscription",
-                    retryErr
+                    retryErr,
                 );
             }
 

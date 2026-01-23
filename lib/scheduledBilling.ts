@@ -159,14 +159,16 @@ export async function processScheduledBilling(): Promise<BillingResult[]> {
                 subscription.billingCycle === "yearly"
                     ? "연간"
                     : subscription.billingCycle === "test"
-                      ? "테스트 (1분)"
+                      ? "1분마다 100원"
                       : "월간";
 
             const billingResult = await chargeBillingKey(
                 subscription.billingKey,
                 subscription.customerKey,
                 subscription.amount,
-                `Nova AI ${subscription.plan} 요금제 (${cycleLabel} 구독)`,
+                subscription.billingCycle === "test"
+                    ? "테스트 요금제 (1분마다 100원)"
+                    : `Nova AI ${subscription.plan} 요금제 (${cycleLabel} 구독)`,
             );
 
             if (billingResult.success) {
@@ -375,14 +377,17 @@ export async function billUserImmediately(
                 subscription.billingCycle || "monthly",
             );
 
-            await db.collection("users").doc(userId).update({
-                subscription: {
-                    ...subscription,
-                    nextBillingDate,
-                    lastPaymentDate: new Date().toISOString(),
-                    lastOrderId: billingResult.orderId,
-                },
-            });
+            await db
+                .collection("users")
+                .doc(userId)
+                .update({
+                    subscription: {
+                        ...subscription,
+                        nextBillingDate,
+                        lastPaymentDate: new Date().toISOString(),
+                        lastOrderId: billingResult.orderId,
+                    },
+                });
         }
 
         return {
