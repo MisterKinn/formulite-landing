@@ -41,7 +41,51 @@ interface SubscriptionChangeData {
 // Nova AI logo for email templates - using www subdomain (no redirect)
 const NOVA_LOGO_URL = "https://www.nova-ai.work/nova-logo.png";
 
-// Helper function to get base URL and logo
+// Cached logo data for CID embedding
+let cachedLogoBase64: string | null = null;
+let cachedLogoContentType: string = "image/png";
+
+// Fetch and cache logo for CID embedding
+async function getLogoAttachment(): Promise<{
+    content: string;
+    filename: string;
+    contentType: string;
+} | null> {
+    if (cachedLogoBase64) {
+        return {
+            content: cachedLogoBase64,
+            filename: "nova-logo.png",
+            contentType: cachedLogoContentType,
+        };
+    }
+
+    const logoUrl = process.env.EMAIL_LOGO_URL || NOVA_LOGO_URL;
+    
+    try {
+        console.log("[email] Fetching logo for CID embedding from:", logoUrl);
+        const response = await fetch(logoUrl, {
+            headers: { Accept: "image/*" },
+        });
+        
+        if (response.ok) {
+            const arrayBuffer = await response.arrayBuffer();
+            cachedLogoBase64 = Buffer.from(arrayBuffer).toString("base64");
+            cachedLogoContentType = response.headers.get("content-type") || "image/png";
+            console.log("[email] Logo cached for CID embedding, size:", cachedLogoBase64.length, "bytes");
+            return {
+                content: cachedLogoBase64,
+                filename: "nova-logo.png",
+                contentType: cachedLogoContentType,
+            };
+        }
+    } catch (err) {
+        console.warn("[email] Failed to fetch logo for CID embedding:", err);
+    }
+    
+    return null;
+}
+
+// Helper function to get base URL and logo (uses CID reference for email)
 async function getEmailAssetsAsync(): Promise<{
     baseUrl: string;
     logoUrl: string;
@@ -53,15 +97,17 @@ async function getEmailAssetsAsync(): Promise<{
         "https://www.nova-ai.work"
     ).replace(/\/$/, "");
 
-    // Use direct URL - most email clients prefer external URLs over base64 data URIs
-    // Gmail, Outlook, and others often block data URIs for security but allow external images
-    const logoUrl = process.env.EMAIL_LOGO_URL || NOVA_LOGO_URL;
-    console.log("[email] Using logo URL:", logoUrl);
+    // Pre-fetch logo to cache it
+    await getLogoAttachment();
+    
+    // Use CID reference - this will be replaced by the actual embedded image
+    const logoUrl = "cid:nova-logo";
+    console.log("[email] Using CID logo reference");
     
     return { baseUrl, logoUrl };
 }
 
-// Sync version for backwards compatibility
+// Sync version for backwards compatibility (uses CID reference)
 function getEmailAssets() {
     const baseUrl = (
         process.env.NEXT_PUBLIC_BASE_URL ||
@@ -70,8 +116,8 @@ function getEmailAssets() {
         "https://www.nova-ai.work"
     ).replace(/\/$/, "");
 
-    const logoUrl =
-        cachedLogoDataUri || process.env.EMAIL_LOGO_URL || NOVA_LOGO_URL;
+    // Use CID reference for consistency
+    const logoUrl = "cid:nova-logo";
 
     return { baseUrl, logoUrl };
 }
@@ -1009,7 +1055,7 @@ async function sendEmail({
     }
 }
 
-// Send via Resend (recommended)
+// Send via Resend (recommended) with CID attachment for logo
 async function sendViaResend(
     to: string,
     subject: string,
@@ -1028,6 +1074,23 @@ async function sendViaResend(
 
     if (html) {
         payload.html = html;
+        
+        // Add logo as inline attachment with CID if HTML contains cid:nova-logo
+        if (html.includes("cid:nova-logo")) {
+            const logoAttachment = await getLogoAttachment();
+            if (logoAttachment) {
+                payload.attachments = [
+                    {
+                        filename: logoAttachment.filename,
+                        content: logoAttachment.content,
+                        content_type: logoAttachment.contentType,
+                        content_id: "nova-logo",
+                        disposition: "inline",
+                    },
+                ];
+                console.log("[email] Added logo as CID attachment");
+            }
+        }
     }
 
     const response = await fetch("https://api.resend.com/emails", {
