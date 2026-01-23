@@ -19,8 +19,9 @@
     --radius: 0.5rem;
 
     /* Font family */
-    --font-sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont,
-        "Segoe UI", sans-serif;
+    --font-sans:
+        "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI",
+        sans-serif;
 
     /* Consistent horizontal padding */
     --padding-x: 210px;
@@ -395,7 +396,9 @@ nextjs-portal {
     padding: 0.5rem 0.75rem;
     border-radius: 0.5rem;
     cursor: pointer;
-    transition: background 0.15s ease, border-color 0.15s ease;
+    transition:
+        background 0.15s ease,
+        border-color 0.15s ease;
 }
 
 .nav-profile-trigger:hover {
@@ -773,6 +776,13 @@ nextjs-portal {
     text-decoration: none;
 }
 
+.cta-buttons {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
 .secondary-button {
     background: var(--card);
     color: var(--muted-foreground);
@@ -781,7 +791,10 @@ nextjs-portal {
     padding: 0.875rem 2rem;
     font-size: 1rem;
     font-weight: 500;
-    transition: background 0.2s, color 0.2s, border-color 0.2s;
+    transition:
+        background 0.2s,
+        color 0.2s,
+        border-color 0.2s;
     cursor: pointer;
 }
 
@@ -805,7 +818,8 @@ nextjs-portal {
     border: none;
     cursor: pointer;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-    transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1),
+    transition:
+        transform 0.25s cubic-bezier(0.22, 1, 0.36, 1),
         box-shadow 0.25s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -1087,7 +1101,9 @@ nextjs-portal {
     align-items: flex-start;
     text-align: left;
     border: 1px solid var(--border);
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    transition:
+        transform 0.2s ease,
+        box-shadow 0.2s ease;
 }
 
 .feature-card:hover {
@@ -1107,13 +1123,17 @@ nextjs-portal {
     margin-bottom: 1.25rem;
     position: relative;
     background: transparent;
-    box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.1),
+    box-shadow:
+        0 0 0 6px rgba(255, 255, 255, 0.1),
         0 0 20px rgba(255, 255, 255, 0.1);
-    transition: box-shadow 0.3s ease, transform 0.3s ease;
+    transition:
+        box-shadow 0.3s ease,
+        transform 0.3s ease;
 }
 
 .feature-item:hover .feature-icon-circle {
-    box-shadow: 0 0 0 8px rgba(255, 255, 255, 0.15),
+    box-shadow:
+        0 0 0 8px rgba(255, 255, 255, 0.15),
         0 0 30px rgba(255, 255, 255, 0.2);
     transform: scale(1.05);
 }
@@ -1548,7 +1568,9 @@ nextjs-portal {
 .faq-toggle {
     font-size: 1.5rem;
     color: var(--muted-foreground);
-    transition: transform 0.3s ease, color 0.3s ease;
+    transition:
+        transform 0.3s ease,
+        color 0.3s ease;
     flex-shrink: 0;
     font-weight: 300;
 }
@@ -1854,7 +1876,8 @@ nextjs-portal {
     background: var(--card);
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-top: 2px solid transparent;
-    background-image: linear-gradient(var(--card), var(--card)),
+    background-image:
+        linear-gradient(var(--card), var(--card)),
         linear-gradient(
             90deg,
             transparent 0%,

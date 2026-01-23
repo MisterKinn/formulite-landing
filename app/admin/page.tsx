@@ -88,6 +88,49 @@ export default function AdminPage() {
 
     // Delete state
     const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
+    const [deletingPaymentKey, setDeletingPaymentKey] = useState<string | null>(null);
+
+    // Handle payment deletion
+    const handleDeletePayment = async (paymentKey: string, userId: string, orderName: string) => {
+        if (
+            !confirm(
+                `정말로 이 결제 내역을 삭제하시겠습니까?\n\n주문명: ${orderName}\n결제키: ${paymentKey}`,
+            )
+        ) {
+            return;
+        }
+
+        setDeletingPaymentKey(paymentKey);
+        try {
+            const token = await authUser?.getIdToken();
+            const response = await fetch(
+                `/api/admin/payments/${paymentKey}?userId=${userId}`,
+                {
+                    method: "DELETE",
+                    headers: { Authorization: `Bearer ${token}` },
+                }
+            );
+
+            if (!response.ok) {
+                const data = await response.json();
+                throw new Error(data.error || "삭제 실패");
+            }
+
+            // Remove payment from local state
+            setPayments(payments.filter((p) => p.paymentKey !== paymentKey));
+            setPaymentsTotal((prev) => prev - 1);
+            alert("결제 내역이 삭제되었습니다.");
+        } catch (error) {
+            console.error("Delete payment error:", error);
+            alert(
+                error instanceof Error
+                    ? error.message
+                    : "결제 내역 삭제에 실패했습니다.",
+            );
+        } finally {
+            setDeletingPaymentKey(null);
+        }
+    };
 
     // Handle user deletion
     const handleDeleteUser = async (userId: string, email: string) => {
@@ -655,6 +698,7 @@ export default function AdminPage() {
                                             <th>결제수단</th>
                                             <th>상태</th>
                                             <th>결제키</th>
+                                            <th>삭제</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -714,6 +758,27 @@ export default function AdminPage() {
                                                         20,
                                                     )}
                                                     ...
+                                                </td>
+                                                <td>
+                                                    <button
+                                                        onClick={() =>
+                                                            handleDeletePayment(
+                                                                payment.paymentKey,
+                                                                payment.userId,
+                                                                payment.orderName,
+                                                            )
+                                                        }
+                                                        disabled={
+                                                            deletingPaymentKey ===
+                                                            payment.paymentKey
+                                                        }
+                                                        className="admin-delete-btn"
+                                                    >
+                                                        {deletingPaymentKey ===
+                                                        payment.paymentKey
+                                                            ? "삭제 중..."
+                                                            : "삭제"}
+                                                    </button>
                                                 </td>
                                             </tr>
                                         ))}
