@@ -1,11 +1,53 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { getAuth, onAuthStateChanged, User } from "firebase/auth";
 import { app } from "@/firebaseConfig";
 
+function LoadingSpinner() {
+    return (
+        <div
+            style={{
+                display: "flex",
+                justifyContent: "center",
+                alignItems: "center",
+                height: "100vh",
+                background: "#f9fafb",
+            }}
+        >
+            <div style={{ textAlign: "center" }}>
+                <div
+                    style={{
+                        width: "40px",
+                        height: "40px",
+                        border: "3px solid #e5e7eb",
+                        borderTopColor: "#2563eb",
+                        borderRadius: "50%",
+                        animation: "spin 1s linear infinite",
+                        margin: "0 auto 1rem",
+                    }}
+                />
+                <p style={{ color: "#6b7280" }}>로딩 중...</p>
+                <style>{`
+                    @keyframes spin {
+                        to { transform: rotate(360deg); }
+                    }
+                `}</style>
+            </div>
+        </div>
+    );
+}
+
 export default function UpdateCardCallbackPage() {
+    return (
+        <Suspense fallback={<LoadingSpinner />}>
+            <UpdateCardCallbackContent />
+        </Suspense>
+    );
+}
+
+function UpdateCardCallbackContent() {
     const searchParams = useSearchParams();
     const router = useRouter();
     const [status, setStatus] = useState<"processing" | "success" | "error">(

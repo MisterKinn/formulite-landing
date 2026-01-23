@@ -1,21 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import admin from "firebase-admin";
+import getFirebaseAdmin from "@/lib/firebaseAdmin";
+import { FieldValue } from "firebase-admin/firestore";
 
-// Initialize Firebase Admin SDK
-if (!admin.apps.length) {
-    if (process.env.FIREBASE_ADMIN_CREDENTIALS) {
-        try {
-            const creds = JSON.parse(process.env.FIREBASE_ADMIN_CREDENTIALS);
-            admin.initializeApp({ credential: admin.credential.cert(creds) });
-        } catch (err) {
-            console.error("Failed to parse FIREBASE_ADMIN_CREDENTIALS", err);
-            admin.initializeApp();
-        }
-    } else {
-        admin.initializeApp();
-    }
-}
-
+// Get Firebase Admin instance (uses centralized initialization)
+const admin = getFirebaseAdmin();
 const adminDb = admin.firestore();
 
 /**
@@ -218,7 +206,7 @@ async function handleBillingDeleted(data: any) {
 
         if (userData?.subscription?.billingKey === billingKey) {
             await adminDb.collection("users").doc(userId).update({
-                "subscription.billingKey": admin.firestore.FieldValue.delete(),
+                "subscription.billingKey": FieldValue.delete(),
                 "subscription.isRecurring": false,
                 "subscription.status": "cancelled",
                 "subscription.cancelledAt": new Date().toISOString(),
