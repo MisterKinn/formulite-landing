@@ -38,6 +38,9 @@ interface SubscriptionChangeData {
     effectiveAt: string;
 }
 
+// Nova AI logo hosted on imgbb for email templates
+const NOVA_LOGO_URL = "https://i.ibb.co/M5SHYWy2/nova-logo.png";
+
 // Helper function to get base URL and logo
 function getEmailAssets() {
     const baseUrl = (
@@ -47,7 +50,7 @@ function getEmailAssets() {
         "https://www.nova-ai.work"
     ).replace(/\/$/, "");
 
-    let logoUrl = process.env.EMAIL_LOGO_URL || `${baseUrl}/nova-logo.png`;
+    const logoUrl = process.env.EMAIL_LOGO_URL || NOVA_LOGO_URL;
 
     return { baseUrl, logoUrl };
 }
@@ -1065,14 +1068,7 @@ ${resetLink}
 감사합니다.
 Nova AI 팀`.trim();
 
-        const baseUrl = (
-            process.env.NEXT_PUBLIC_BASE_URL ||
-            process.env.NEXT_PUBLIC_APP_URL ||
-            process.env.BASE_URL ||
-            "http://localhost:3000"
-        ).replace(/\/$/, "");
-
-        let logoUrl = process.env.EMAIL_LOGO_URL || `${baseUrl}/nova-logo.svg`;
+        const { logoUrl } = getEmailAssets();
 
         const html = `<!doctype html>
                         <html lang="ko">
@@ -1193,85 +1189,7 @@ export async function sendPasswordChangedNotification(to: string) {
         const text =
             `안녕하세요,\n\n고객님의 계정 비밀번호가 성공적으로 변경되었습니다. 만약 본인이 변경하지 않으셨다면 즉시 고객센터로 연락하거나 비밀번호 재설정을 요청하세요.\n\n감사합니다.\nNova AI 팀`.trim();
 
-        const baseUrl = (
-            process.env.NEXT_PUBLIC_BASE_URL ||
-            process.env.NEXT_PUBLIC_APP_URL ||
-            process.env.BASE_URL ||
-            "http://localhost:3000"
-        ).replace(/\/$/, "");
-
-        let logoUrl = process.env.EMAIL_LOGO_URL || `${baseUrl}/nova-logo.png`;
-
-        // If the logo will be a localhost URL (dev), and there is no explicit EMAIL_LOGO_URL,
-        // embed a small inline SVG as data URI so recipients see a logo instead of a broken image.
-        const isLocalHostLogo =
-            /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//i.test(logoUrl);
-        if (isLocalHostLogo && !process.env.EMAIL_LOGO_URL) {
-            try {
-                const svg = `<?xml version="1.0" encoding="UTF-8"?><svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' viewBox='0 0 48 48' role='img' aria-label='Nova AI'><rect rx='8' width='48' height='48' fill='#7c3aed'/><text x='50%' y='52%' font-size='22' fill='#ffffff' font-family='-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif' text-anchor='middle' dominant-baseline='middle'>N</text></svg>`;
-                const b64 = Buffer.from(svg).toString("base64");
-                logoUrl = `data:image/svg+xml;base64,${b64}`;
-                console.info(
-                    "[email] using inline SVG logo for emails (dev mode)",
-                );
-            } catch (e) {
-                console.warn(
-                    "[email] failed to create inline SVG logo fallback",
-                    e,
-                );
-            }
-        }
-
-        // Optionally embed remote logo as data URI to avoid external image blocking in email clients.
-        // But if the user explicitly sets EMAIL_LOGO_URL, prefer using that URL directly
-        // (do not embed) so recipients fetch the image from the CDN.
-        const embedAllowed =
-            process.env.EMAIL_EMBED_LOGO !== "false" &&
-            !process.env.EMAIL_LOGO_URL;
-        if (embedAllowed && logoUrl && !logoUrl.startsWith("data:")) {
-            try {
-                const resp = await fetch(logoUrl);
-                if (resp.ok) {
-                    const contentType =
-                        resp.headers.get("content-type") || "image/png";
-                    const contentLength = Number(
-                        resp.headers.get("content-length") || "0",
-                    );
-                    const MAX_EMBED_BYTES = 100 * 1024; // 100KB
-
-                    if (!contentLength || contentLength <= MAX_EMBED_BYTES) {
-                        const arrayBuffer = await resp.arrayBuffer();
-                        const buf = Buffer.from(arrayBuffer);
-                        if (buf.length <= MAX_EMBED_BYTES) {
-                            logoUrl = `data:${contentType};base64,${buf.toString(
-                                "base64",
-                            )}`;
-                            console.info(
-                                "[email] embedded remote logo as data URI",
-                            );
-                        } else {
-                            console.info(
-                                "[email] remote logo too large to embed, skipping",
-                            );
-                        }
-                    } else {
-                        console.info(
-                            "[email] remote logo content-length exceeds embed threshold, skipping",
-                        );
-                    }
-                } else {
-                    console.warn(
-                        "[email] failed to fetch logo for embedding",
-                        resp.status,
-                    );
-                }
-            } catch (e) {
-                console.warn(
-                    "[email] error when trying to fetch and embed logo",
-                    e,
-                );
-            }
-        }
+        const { logoUrl } = getEmailAssets();
 
         const html = `<!doctype html>
 <html lang="ko">
