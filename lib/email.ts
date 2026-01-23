@@ -39,7 +39,7 @@ interface SubscriptionChangeData {
 }
 
 // Nova AI logo for email templates
-const NOVA_LOGO_URL = "https://www.nova-ai.work/nova-logo.png";
+const NOVA_LOGO_URL = "https://nova-ai.work/nova-logo.png";
 
 // Cached base64 logo for embedding in emails
 let cachedLogoDataUri: string | null = null;
