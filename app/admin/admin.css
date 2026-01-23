@@ -405,3 +405,26 @@
         min-width: auto;
     }
 }
+
+/* Delete button - matches subscription cancel button style */
+.admin-delete-btn {
+    padding: 8px 14px;
+    border-radius: 8px;
+    border: 2px solid #b91c1c;
+    color: #b91c1c;
+    background: transparent;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.admin-delete-btn:hover:not(:disabled) {
+    background: #b91c1c;
+    color: #fff;
+}
+
+.admin-delete-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}

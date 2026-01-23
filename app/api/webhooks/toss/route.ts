@@ -1,321 +1,290 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-    saveSubscription,
-    getSubscription,
-    getNextBillingDate,
-    createProductIfNotExists,
-    createSubscriptionEntry,
-} from "@/lib/subscription";
-import {
-    sendPaymentReceipt,
-    sendPaymentFailureNotification,
-} from "@/lib/email";
-import { doc, getFirestore, setDoc } from "firebase/firestore";
-import { app } from "@/firebaseConfig";
+import admin from "firebase-admin";
 
-// Toss Payments Webhook Handler
+// Initialize Firebase Admin SDK
+if (!admin.apps.length) {
+    if (process.env.FIREBASE_ADMIN_CREDENTIALS) {
+        try {
+            const creds = JSON.parse(process.env.FIREBASE_ADMIN_CREDENTIALS);
+            admin.initializeApp({ credential: admin.credential.cert(creds) });
+        } catch (err) {
+            console.error("Failed to parse FIREBASE_ADMIN_CREDENTIALS", err);
+            admin.initializeApp();
+        }
+    } else {
+        admin.initializeApp();
+    }
+}
+
+const adminDb = admin.firestore();
+
+/**
+ * TossPayments Webhook Handler
+ * 
+ * 지원하는 이벤트 타입:
+ * - PAYMENT_STATUS_CHANGED: 결제 상태 변경 (DONE, CANCELED, PARTIAL_CANCELED, ABORTED, EXPIRED)
+ * - CANCEL_STATUS_CHANGED: 결제 취소 상태 (IN_PROGRESS -> DONE, ABORTED)
+ * - BILLING_DELETED: 빌링키 삭제
+ * - DEPOSIT_CALLBACK: 가상계좌 입금/입금취소
+ * 
+ * 웹훅 등록: https://developers.tosspayments.com 개발자센터 > 웹훅 메뉴
+ * 웹훅 URL: https://yourdomain.com/api/webhooks/toss
+ */
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
-        const { eventType, data } = body;
+        const { eventType } = body;
 
-        console.log("📬 Webhook received:", eventType, data);
+        // 웹훅 이벤트 로깅 (디버깅/감사용)
+        await logWebhookEvent(eventType, body);
 
-        // Verify webhook authenticity (optional but recommended)
-        const signature = request.headers.get("toss-signature");
-        if (!verifyWebhookSignature(signature, body)) {
-            return NextResponse.json(
-                { error: "Invalid signature" },
-                { status: 401 }
-            );
-        }
-
+        // 이벤트 타입별 처리
         switch (eventType) {
-            case "PAYMENT_COMPLETED":
-                await handlePaymentCompleted(data);
+            case "PAYMENT_STATUS_CHANGED":
+                await handlePaymentStatusChanged(body.data);
                 break;
 
-            case "PAYMENT_FAILED":
-                await handlePaymentFailed(data);
+            case "CANCEL_STATUS_CHANGED":
+                await handleCancelStatusChanged(body.data);
                 break;
 
-            case "PAYMENT_CANCELLED":
-                await handlePaymentCancelled(data);
+            case "BILLING_DELETED":
+                await handleBillingDeleted(body.data);
                 break;
 
-            case "BILLING_KEY_ISSUED":
-                await handleBillingKeyIssued(data);
-                break;
-
-            case "BILLING_PAYMENT_COMPLETED":
-                await handleBillingPaymentCompleted(data);
-                break;
-
-            case "BILLING_PAYMENT_FAILED":
-                await handleBillingPaymentFailed(data);
+            case "DEPOSIT_CALLBACK":
+                await handleDepositCallback(body.data);
                 break;
 
             default:
-                console.log("Unknown event type:", eventType);
+                console.log("Unknown webhook event type:", eventType);
         }
 
+        // TossPayments는 10초 이내 200 응답을 기대
         return NextResponse.json({ success: true });
     } catch (error) {
-        console.error("Webhook error:", error);
-        return NextResponse.json(
-            { error: "Internal server error" },
-            { status: 500 }
-        );
+        console.error("Webhook processing error:", error);
+        return NextResponse.json({ success: false, error: "Processing failed" });
     }
 }
 
-// Verify webhook signature
-function verifyWebhookSignature(signature: string | null, body: any): boolean {
-    // TODO: Implement signature verification with Toss secret
-    // For now, always return true in development
-    if (process.env.NODE_ENV === "development") {
-        return true;
+async function logWebhookEvent(eventType: string, body: any) {
+    try {
+        const webhookLogRef = adminDb.collection("webhookLogs").doc();
+        await webhookLogRef.set({
+            eventType,
+            body,
+            receivedAt: new Date().toISOString(),
+            processed: false,
+        });
+    } catch (err) {
+        console.error("Failed to log webhook event:", err);
     }
-
-    // In production, verify the signature
-    return !!signature;
 }
 
-// Handle successful one-time payment
-async function handlePaymentCompleted(data: any) {
-    console.log("✅ Payment completed:", data);
+async function handlePaymentStatusChanged(data: any) {
+    const { paymentKey, orderId, status, customerKey } = data;
 
-    // Extract user info from customerKey or metadata
-    const userId = extractUserId(data.customerKey);
+    console.log("PAYMENT_STATUS_CHANGED:", status, { paymentKey, orderId });
 
-    if (userId) {
-        // Send receipt email
-        await sendPaymentReceipt(userId, {
-            orderId: data.orderId,
-            amount: data.totalAmount,
-            method: data.method,
-            approvedAt: data.approvedAt,
+    const userId = extractUserId(customerKey);
+    if (!userId) {
+        console.log("No userId found from customerKey:", customerKey);
+        return;
+    }
+
+    switch (status) {
+        case "DONE":
+            await handlePaymentDone(userId, data);
+            break;
+
+        case "CANCELED":
+        case "PARTIAL_CANCELED":
+            await handlePaymentCanceled(userId, data);
+            break;
+
+        case "ABORTED":
+            console.log("Payment aborted for user", userId, ":", orderId);
+            break;
+
+        case "EXPIRED":
+            console.log("Payment expired for user", userId, ":", orderId);
+            break;
+
+        default:
+            console.log("Unhandled payment status:", status);
+    }
+}
+
+async function handlePaymentDone(userId: string, data: any) {
+    const { paymentKey, orderId, totalAmount, method, approvedAt, card, orderName } = data;
+
+    console.log("Payment completed for user", userId, ":", totalAmount);
+
+    try {
+        await adminDb.collection("users").doc(userId).collection("payments").doc(paymentKey).set({
+            paymentKey,
+            orderId,
+            orderName: orderName || "",
+            amount: totalAmount,
+            method: method || "카드",
+            status: "DONE",
+            approvedAt,
+            card: card ? {
+                company: card.company || null,
+                number: card.number || null,
+            } : null,
+            createdAt: new Date().toISOString(),
         });
 
-        // Map amount to a plan (adjust prices as needed)
-        const plan = amountToPlan(Number(data.totalAmount ?? data.amount ?? 0));
-        const planPrice = Number(data.totalAmount ?? data.amount ?? 0);
-        if (plan) {
-            // Create a product id and subscription id for one-time purchase
-            const productId = `product_${plan}`;
-            const subscriptionId = `sub_${Date.now()}`;
+        const userDoc = await adminDb.collection("users").doc(userId).get();
+        const userData = userDoc.data();
+        
+        if (userData?.subscription?.isRecurring) {
+            const billingCycle = userData.subscription.billingCycle || "monthly";
+            const nextBillingDate = getNextBillingDate(billingCycle);
 
-            try {
-                await createProductIfNotExists(productId, {
-                    plan,
-                    price: planPrice,
-                });
-
-                // Save subscription info to Firestore (one-time purchase -> isRecurring: false)
-                await createSubscriptionEntry(userId, {
-                    plan,
-                    productId,
-                    subscriptionId,
-                    amount: planPrice,
-                    startDate: new Date().toISOString(),
-                    status: "active",
-                    customerKey: data.customerKey,
-                    isRecurring: false,
-                });
-
-                console.log(`Updated plan for user ${userId} -> ${plan}`);
-            } catch (err) {
-                console.error(
-                    "Failed to save subscription after payment:",
-                    err
-                );
-            }
+            await adminDb.collection("users").doc(userId).update({
+                "subscription.status": "active",
+                "subscription.nextBillingDate": nextBillingDate,
+                "subscription.lastPaymentDate": new Date().toISOString(),
+                "subscription.lastOrderId": orderId,
+                "subscription.failureCount": 0,
+            });
         }
+
+        await updateWebhookLog(paymentKey, true);
+
+    } catch (err) {
+        console.error("Error handling payment done:", err);
     }
 }
 
-function amountToPlan(amount: number): "plus" | "pro" | null {
-    if (!isFinite(amount) || amount <= 0) return null;
-    // Example mapping - adjust to match your product prices
-    if (amount >= 19900) return "pro";
-    if (amount >= 9900) return "plus";
+async function handlePaymentCanceled(userId: string, data: any) {
+    const { paymentKey, orderId, cancels } = data;
+    
+    console.log("Payment canceled for user", userId, ":", orderId);
+
+    try {
+        const paymentRef = adminDb.collection("users").doc(userId).collection("payments").doc(paymentKey);
+        const paymentDoc = await paymentRef.get();
+        
+        if (paymentDoc.exists) {
+            await paymentRef.update({
+                status: "CANCELED",
+                cancels: cancels || [],
+                canceledAt: new Date().toISOString(),
+            });
+        }
+
+        const userDoc = await adminDb.collection("users").doc(userId).get();
+        const userData = userDoc.data();
+        
+        if (userData?.subscription?.lastOrderId === orderId) {
+            await adminDb.collection("users").doc(userId).update({
+                "subscription.status": "cancelled",
+                "subscription.cancelledAt": new Date().toISOString(),
+            });
+        }
+
+    } catch (err) {
+        console.error("Error handling payment canceled:", err);
+    }
+}
+
+async function handleCancelStatusChanged(data: any) {
+    const { paymentKey, orderId, cancelStatus } = data;
+
+    console.log("CANCEL_STATUS_CHANGED:", cancelStatus, { paymentKey, orderId });
+
+    if (cancelStatus === "DONE") {
+        console.log("Cancel completed successfully:", paymentKey);
+    } else if (cancelStatus === "ABORTED") {
+        console.log("Cancel failed:", paymentKey);
+    }
+}
+
+async function handleBillingDeleted(data: any) {
+    const { billingKey, customerKey } = data;
+
+    console.log("BILLING_DELETED:", { billingKey, customerKey });
+
+    const userId = extractUserId(customerKey);
+    if (!userId) return;
+
+    try {
+        const userDoc = await adminDb.collection("users").doc(userId).get();
+        const userData = userDoc.data();
+
+        if (userData?.subscription?.billingKey === billingKey) {
+            await adminDb.collection("users").doc(userId).update({
+                "subscription.billingKey": admin.firestore.FieldValue.delete(),
+                "subscription.isRecurring": false,
+                "subscription.status": "cancelled",
+                "subscription.cancelledAt": new Date().toISOString(),
+            });
+
+            console.log("Billing key removed for user", userId);
+        }
+    } catch (err) {
+        console.error("Error handling billing deleted:", err);
+    }
+}
+
+async function handleDepositCallback(data: any) {
+    const { orderId, status } = data;
+
+    console.log("DEPOSIT_CALLBACK:", status, { orderId });
+
+    if (status === "DONE") {
+        console.log("Virtual account deposit completed:", orderId);
+    } else if (status === "CANCELED") {
+        console.log("Virtual account deposit canceled:", orderId);
+    }
+}
+
+async function updateWebhookLog(paymentKey: string, processed: boolean) {
+    try {
+        const logsQuery = await adminDb.collection("webhookLogs")
+            .where("body.data.paymentKey", "==", paymentKey)
+            .orderBy("receivedAt", "desc")
+            .limit(1)
+            .get();
+
+        if (!logsQuery.empty) {
+            await logsQuery.docs[0].ref.update({
+                processed,
+                processedAt: new Date().toISOString(),
+            });
+        }
+    } catch (err) {
+        // Ignore log update failures
+    }
+}
+
+function extractUserId(customerKey: string | undefined): string | null {
+    if (!customerKey) return null;
+
+    if (customerKey.startsWith("customer_")) {
+        const parts = customerKey.split("_");
+        if (parts.length >= 2) {
+            return parts[1];
+        }
+    }
+
+    if (customerKey.length >= 20 && !customerKey.includes("@")) {
+        return customerKey;
+    }
+
     return null;
 }
 
-// Handle failed payment
-async function handlePaymentFailed(data: any) {
-    console.log("❌ Payment failed:", data);
-
-    const userId = extractUserId(data.customerKey);
-
-    if (userId) {
-        await sendPaymentFailureNotification(userId, {
-            orderId: data.orderId,
-            failReason: data.failReason,
-        });
+function getNextBillingDate(billingCycle: "monthly" | "yearly"): string {
+    const date = new Date();
+    if (billingCycle === "yearly") {
+        date.setFullYear(date.getFullYear() + 1);
+    } else {
+        date.setMonth(date.getMonth() + 1);
     }
-}
-
-// Handle cancelled payment
-async function handlePaymentCancelled(data: any) {
-    console.log("🚫 Payment cancelled:", data);
-
-    const userId = extractUserId(data.customerKey);
-
-    if (userId) {
-        // Update subscription status if needed
-        const subscription = await getSubscription(userId);
-        if (subscription) {
-            const updated = {
-                ...subscription,
-                status: "cancelled",
-                cancelledAt: new Date().toISOString(),
-            } as any;
-            await saveSubscription(userId, updated);
-
-            // If a subscriptionId exists, also mark it cancelled in a subscriptions collection (best-effort)
-            try {
-                if (subscription.subscriptionId) {
-                    const subRef = doc(
-                        getFirestore(app),
-                        "subscriptions",
-                        subscription.subscriptionId
-                    );
-                    await setDoc(
-                        subRef,
-                        {
-                            status: "cancelled",
-                            cancelledAt: new Date().toISOString(),
-                        },
-                        { merge: true }
-                    );
-                }
-            } catch (err) {
-                // ignore
-            }
-        }
-    }
-}
-
-// Handle billing key issued
-async function handleBillingKeyIssued(data: any) {
-    console.log("🔑 Billing key issued:", data);
-    const userId = extractUserId(data.customerKey);
-    if (userId) {
-        try {
-            console.log("🔑 BILLING_KEY_ISSUED 웹훅 수신:", {
-                billingKey: data.billingKey,
-                customerKey: data.customerKey,
-                userId: userId,
-            });
-
-            // Extract billingCycle from metadata or default to monthly
-            const billingCycle: "monthly" | "yearly" =
-                data.metadata?.billingCycle ||
-                (data.billingCycle as any) ||
-                "monthly";
-
-            // Map amount to plan if possible
-            const plan =
-                amountToPlan(Number(data.totalAmount ?? data.amount ?? 0)) ||
-                "plus";
-
-            // Generate productId and subscriptionId server-side
-            const productId = `product_${plan}`;
-            const subscriptionId = `sub_${Date.now()}`;
-
-            await createProductIfNotExists(productId, {
-                plan,
-                price: Number(data.totalAmount ?? data.amount ?? 0),
-            });
-
-            await createSubscriptionEntry(userId, {
-                plan: plan as any,
-                billingKey: data.billingKey,
-                customerKey: data.customerKey,
-                isRecurring: true,
-                billingCycle,
-                productId,
-                subscriptionId,
-                startDate: new Date().toISOString(),
-                nextBillingDate: getNextBillingDate(billingCycle),
-                status: "active",
-                amount: Number(data.totalAmount ?? data.amount ?? 0),
-            });
-
-            console.log(
-                `Saved billing key and subscription for user ${userId} -> ${subscriptionId}`
-            );
-        } catch (err) {
-            console.error("Failed to save billing key:", err);
-        }
-    }
-}
-
-// Handle successful recurring payment
-async function handleBillingPaymentCompleted(data: any) {
-    console.log("✅ Recurring payment completed:", data);
-
-    const userId = extractUserId(data.customerKey);
-
-    if (userId) {
-        await sendPaymentReceipt(userId, {
-            orderId: data.orderId,
-            amount: data.totalAmount,
-            method: "카드 (자동결제)",
-            approvedAt: data.approvedAt,
-        });
-
-        try {
-            const subscription = await getSubscription(userId);
-            if (subscription) {
-                const billingCycle = subscription.billingCycle || "monthly";
-                await saveSubscription(userId, {
-                    ...subscription,
-                    status: "active",
-                    nextBillingDate: getNextBillingDate(billingCycle),
-                });
-            }
-        } catch (err) {
-            console.error(
-                "Failed to update subscription after billing payment:",
-                err
-            );
-        }
-    }
-}
-
-// Handle failed recurring payment
-async function handleBillingPaymentFailed(data: any) {
-    console.log("❌ Recurring payment failed:", data);
-
-    const userId = extractUserId(data.customerKey);
-
-    if (userId) {
-        // Update subscription status
-        const subscription = await getSubscription(userId);
-        if (subscription) {
-            await saveSubscription(userId, {
-                ...subscription,
-                status: "expired",
-            });
-        }
-
-        await sendPaymentFailureNotification(userId, {
-            orderId: data.orderId,
-            failReason: data.failReason,
-            isRecurring: true,
-        });
-    }
-}
-
-// Extract user ID from customer key
-function extractUserId(customerKey: string): string | null {
-    // customerKey format: "customer_{email}_{timestamp}" or user ID
-    // Extract the actual user ID from your format
-    const parts = customerKey.split("_");
-    if (parts.length > 1) {
-        return parts[1]; // Adjust based on your format
-    }
-    return customerKey;
+    return date.toISOString().split("T")[0];
 }
