@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import getFirebaseAdmin from "@/lib/firebaseAdmin";
+import { sendSubscriptionCancelledEmail } from "@/lib/email";
 
 /**
  * 구독 취소 API
@@ -73,12 +74,22 @@ export async function POST(request: NextRequest) {
         }
 
         // Update Firestore - mark subscription as cancelled and remove billing key
+        const cancelledAt = new Date().toISOString();
         await userRef.update({
             "subscription.status": "cancelled",
             "subscription.billingKey": null,
-            "subscription.cancelledAt": new Date().toISOString(),
+            "subscription.cancelledAt": cancelledAt,
             "subscription.isRecurring": false,
         });
+
+        // Send cancellation email
+        sendSubscriptionCancelledEmail(userId, {
+            plan: subscription.plan || "unknown",
+            cancelledAt,
+            effectiveUntil: subscription.nextBillingDate || null,
+        }).catch((err) =>
+            console.error("Failed to send cancellation email:", err),
+        );
 
         return NextResponse.json({
             success: true,

@@ -16,6 +16,7 @@ import {
 } from "firebase/firestore";
 import { app } from "../firebaseConfig";
 import { saveSubscription, getNextBillingDate } from "./subscription";
+import { sendPaymentReceipt, sendPaymentFailureNotification } from "./email";
 
 const db = getFirestore(app);
 
@@ -215,8 +216,21 @@ export async function processScheduledBilling(): Promise<BillingResult[]> {
                     orderId: billingResult.orderId,
                 });
 
-                // TODO: 성공 알림 이메일 발송
-                // await sendPaymentReceipt(userId, { ... });
+                // 성공 알림 이메일 발송
+                sendPaymentReceipt(userId, {
+                    orderId: billingResult.orderId!,
+                    amount: subscription.amount,
+                    method: billingResult.method || "카드",
+                    approvedAt:
+                        billingResult.approvedAt || new Date().toISOString(),
+                    plan: subscription.plan,
+                    orderName,
+                }).catch((err) =>
+                    console.error(
+                        `Failed to send receipt email for user ${userId}:`,
+                        err,
+                    ),
+                );
             } else {
                 // 결제 실패: 재시도 로직
                 console.error(
@@ -264,8 +278,24 @@ export async function processScheduledBilling(): Promise<BillingResult[]> {
                     error: billingResult.error,
                 });
 
-                // TODO: 실패 알림 이메일 발송
-                // await sendPaymentFailureNotification(userId, { ... });
+                // 실패 알림 이메일 발송
+                sendPaymentFailureNotification(userId, {
+                    orderId: `RETRY-${userId.slice(-6)}-${Date.now()}`,
+                    amount: subscription.amount,
+                    reason:
+                        billingResult.error ||
+                        "결제 처리 중 오류가 발생했습니다.",
+                    plan: subscription.plan,
+                    isRecurring: true,
+                    failureCount,
+                    nextRetryDate: nextRetryDate || undefined,
+                    isSuspended: newStatus === "suspended",
+                }).catch((err) =>
+                    console.error(
+                        `Failed to send failure email for user ${userId}:`,
+                        err,
+                    ),
+                );
             }
 
             // API 호출 간 짧은 딜레이 (선택사항)

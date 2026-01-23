@@ -8,13 +8,13 @@ const adminDb = admin.firestore();
 
 /**
  * TossPayments Webhook Handler
- * 
+ *
  * 지원하는 이벤트 타입:
  * - PAYMENT_STATUS_CHANGED: 결제 상태 변경 (DONE, CANCELED, PARTIAL_CANCELED, ABORTED, EXPIRED)
  * - CANCEL_STATUS_CHANGED: 결제 취소 상태 (IN_PROGRESS -> DONE, ABORTED)
  * - BILLING_DELETED: 빌링키 삭제
  * - DEPOSIT_CALLBACK: 가상계좌 입금/입금취소
- * 
+ *
  * 웹훅 등록: https://developers.tosspayments.com 개발자센터 > 웹훅 메뉴
  * 웹훅 URL: https://yourdomain.com/api/webhooks/toss
  */
@@ -52,7 +52,10 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: true });
     } catch (error) {
         console.error("Webhook processing error:", error);
-        return NextResponse.json({ success: false, error: "Processing failed" });
+        return NextResponse.json({
+            success: false,
+            error: "Processing failed",
+        });
     }
 }
 
@@ -105,31 +108,47 @@ async function handlePaymentStatusChanged(data: any) {
 }
 
 async function handlePaymentDone(userId: string, data: any) {
-    const { paymentKey, orderId, totalAmount, method, approvedAt, card, orderName } = data;
+    const {
+        paymentKey,
+        orderId,
+        totalAmount,
+        method,
+        approvedAt,
+        card,
+        orderName,
+    } = data;
 
     console.log("Payment completed for user", userId, ":", totalAmount);
 
     try {
-        await adminDb.collection("users").doc(userId).collection("payments").doc(paymentKey).set({
-            paymentKey,
-            orderId,
-            orderName: orderName || "",
-            amount: totalAmount,
-            method: method || "카드",
-            status: "DONE",
-            approvedAt,
-            card: card ? {
-                company: card.company || null,
-                number: card.number || null,
-            } : null,
-            createdAt: new Date().toISOString(),
-        });
+        await adminDb
+            .collection("users")
+            .doc(userId)
+            .collection("payments")
+            .doc(paymentKey)
+            .set({
+                paymentKey,
+                orderId,
+                orderName: orderName || "",
+                amount: totalAmount,
+                method: method || "카드",
+                status: "DONE",
+                approvedAt,
+                card: card
+                    ? {
+                          company: card.company || null,
+                          number: card.number || null,
+                      }
+                    : null,
+                createdAt: new Date().toISOString(),
+            });
 
         const userDoc = await adminDb.collection("users").doc(userId).get();
         const userData = userDoc.data();
-        
+
         if (userData?.subscription?.isRecurring) {
-            const billingCycle = userData.subscription.billingCycle || "monthly";
+            const billingCycle =
+                userData.subscription.billingCycle || "monthly";
             const nextBillingDate = getNextBillingDate(billingCycle);
 
             await adminDb.collection("users").doc(userId).update({
@@ -142,7 +161,6 @@ async function handlePaymentDone(userId: string, data: any) {
         }
 
         await updateWebhookLog(paymentKey, true);
-
     } catch (err) {
         console.error("Error handling payment done:", err);
     }
@@ -150,13 +168,17 @@ async function handlePaymentDone(userId: string, data: any) {
 
 async function handlePaymentCanceled(userId: string, data: any) {
     const { paymentKey, orderId, cancels } = data;
-    
+
     console.log("Payment canceled for user", userId, ":", orderId);
 
     try {
-        const paymentRef = adminDb.collection("users").doc(userId).collection("payments").doc(paymentKey);
+        const paymentRef = adminDb
+            .collection("users")
+            .doc(userId)
+            .collection("payments")
+            .doc(paymentKey);
         const paymentDoc = await paymentRef.get();
-        
+
         if (paymentDoc.exists) {
             await paymentRef.update({
                 status: "CANCELED",
@@ -167,14 +189,13 @@ async function handlePaymentCanceled(userId: string, data: any) {
 
         const userDoc = await adminDb.collection("users").doc(userId).get();
         const userData = userDoc.data();
-        
+
         if (userData?.subscription?.lastOrderId === orderId) {
             await adminDb.collection("users").doc(userId).update({
                 "subscription.status": "cancelled",
                 "subscription.cancelledAt": new Date().toISOString(),
             });
         }
-
     } catch (err) {
         console.error("Error handling payment canceled:", err);
     }
@@ -183,7 +204,10 @@ async function handlePaymentCanceled(userId: string, data: any) {
 async function handleCancelStatusChanged(data: any) {
     const { paymentKey, orderId, cancelStatus } = data;
 
-    console.log("CANCEL_STATUS_CHANGED:", cancelStatus, { paymentKey, orderId });
+    console.log("CANCEL_STATUS_CHANGED:", cancelStatus, {
+        paymentKey,
+        orderId,
+    });
 
     if (cancelStatus === "DONE") {
         console.log("Cancel completed successfully:", paymentKey);
@@ -233,7 +257,8 @@ async function handleDepositCallback(data: any) {
 
 async function updateWebhookLog(paymentKey: string, processed: boolean) {
     try {
-        const logsQuery = await adminDb.collection("webhookLogs")
+        const logsQuery = await adminDb
+            .collection("webhookLogs")
             .where("body.data.paymentKey", "==", paymentKey)
             .orderBy("receivedAt", "desc")
             .limit(1)

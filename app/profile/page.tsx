@@ -1290,26 +1290,6 @@ function ProfileContent() {
                                             }}
                                         >
                                             {subscription &&
-                                                subscription.plan !== "free" &&
-                                                subscription.status !==
-                                                    "cancelled" && (
-                                                    <button
-                                                        onClick={() =>
-                                                            (window.location.href =
-                                                                "/update-card")
-                                                        }
-                                                        className="current-plan-cancel-btn"
-                                                        style={{
-                                                            background:
-                                                                "#f3f4f6",
-                                                            color: "#374151",
-                                                            border: "1px solid #d1d5db",
-                                                        }}
-                                                    >
-                                                        카드 변경
-                                                    </button>
-                                                )}
-                                            {subscription &&
                                                 subscription.plan !==
                                                     "free" && (
                                                     <button

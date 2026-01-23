@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import getFirebaseAdmin from "@/lib/firebaseAdmin";
 import { savePaymentRecord } from "@/lib/paymentHistory";
+import {
+    sendPaymentReceipt,
+    sendPaymentFailureNotification,
+} from "@/lib/email";
 
 /**
  * 빌링키 발급 API
@@ -157,6 +161,18 @@ export async function POST(request: NextRequest) {
                     approvedAt: firstPaymentResult.approvedAt,
                     card: firstPaymentResult.card,
                 });
+
+                // Send payment receipt email
+                sendPaymentReceipt(userId, {
+                    orderId: firstPaymentResult.orderId,
+                    amount: firstPaymentResult.amount,
+                    method: firstPaymentResult.method || "카드",
+                    approvedAt: firstPaymentResult.approvedAt,
+                    plan,
+                    orderName: orderName || "Nova AI 구독",
+                }).catch((err) =>
+                    console.error("Failed to send receipt email:", err),
+                );
             } catch (paymentError) {
                 console.error("❌ 결제 요청 중 오류:", paymentError);
                 return NextResponse.json(
