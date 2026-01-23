@@ -162,6 +162,16 @@ export async function POST(request: NextRequest) {
                     card: firstPaymentResult.card,
                 });
 
+                // Get user email for receipt
+                let userEmail: string | undefined;
+                try {
+                    const admin = getFirebaseAdmin();
+                    const userRecord = await admin.auth().getUser(userId);
+                    userEmail = userRecord.email || undefined;
+                } catch (emailErr) {
+                    console.warn("Could not get user email for receipt:", emailErr);
+                }
+
                 // Send payment receipt email
                 sendPaymentReceipt(userId, {
                     orderId: firstPaymentResult.orderId,
@@ -170,6 +180,7 @@ export async function POST(request: NextRequest) {
                     approvedAt: firstPaymentResult.approvedAt,
                     plan,
                     orderName: orderName || "Nova AI 구독",
+                    email: userEmail,
                 }).catch((err) =>
                     console.error("Failed to send receipt email:", err),
                 );

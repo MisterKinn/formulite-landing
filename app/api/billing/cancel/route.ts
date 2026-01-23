@@ -82,11 +82,21 @@ export async function POST(request: NextRequest) {
             "subscription.isRecurring": false,
         });
 
+        // Get user email for cancellation notification
+        let userEmail: string | undefined;
+        try {
+            const userRecord = await admin.auth().getUser(userId);
+            userEmail = userRecord.email || undefined;
+        } catch (emailErr) {
+            console.warn("Could not get user email for cancellation:", emailErr);
+        }
+
         // Send cancellation email
         sendSubscriptionCancelledEmail(userId, {
             plan: subscription.plan || "unknown",
             cancelledAt,
             effectiveUntil: subscription.nextBillingDate || null,
+            email: userEmail,
         }).catch((err) =>
             console.error("Failed to send cancellation email:", err),
         );

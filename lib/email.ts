@@ -8,6 +8,7 @@ interface PaymentReceiptData {
     approvedAt: string;
     plan?: string;
     orderName?: string;
+    email?: string; // Optional: pass email directly to avoid lookup issues
 }
 
 interface PaymentFailureData {
@@ -20,12 +21,14 @@ interface PaymentFailureData {
     failureCount?: number;
     nextRetryDate?: string;
     isSuspended?: boolean;
+    email?: string; // Optional: pass email directly
 }
 
 interface SubscriptionCancelData {
     plan: string;
     cancelledAt: string;
     effectiveUntil?: string;
+    email?: string; // Optional: pass email directly
 }
 
 interface SubscriptionChangeData {
@@ -66,12 +69,15 @@ export async function sendPaymentReceipt(
     data: PaymentReceiptData,
 ) {
     try {
-        const userEmail = await getUserEmail(userId);
+        // Use email from data if provided, otherwise look it up
+        const userEmail = data.email || (await getUserEmail(userId));
 
         if (!userEmail) {
             console.error("No email found for user:", userId);
             return;
         }
+
+        console.log(`📧 Sending payment receipt to: ${userEmail} for user: ${userId}`);
 
         const { logoUrl } = getEmailAssets();
         const planName = getPlanDisplayName(data.plan || "");
@@ -228,12 +234,15 @@ export async function sendPaymentFailureNotification(
     data: PaymentFailureData,
 ) {
     try {
-        const userEmail = await getUserEmail(userId);
+        // Use email from data if provided, otherwise look it up
+        const userEmail = data.email || (await getUserEmail(userId));
 
         if (!userEmail) {
             console.error("No email found for user:", userId);
             return;
         }
+
+        console.log(`📧 Sending payment failure notification to: ${userEmail} for user: ${userId}`);
 
         const { logoUrl } = getEmailAssets();
         const planName = getPlanDisplayName(data.plan || "");
@@ -572,12 +581,15 @@ export async function sendSubscriptionCancelledEmail(
     data: SubscriptionCancelData,
 ) {
     try {
-        const userEmail = await getUserEmail(userId);
+        // Use email from data if provided, otherwise look it up
+        const userEmail = data.email || (await getUserEmail(userId));
 
         if (!userEmail) {
             console.error("No email found for user:", userId);
             return;
         }
+
+        console.log(`📧 Sending subscription cancelled email to: ${userEmail} for user: ${userId}`);
 
         const { logoUrl } = getEmailAssets();
         const planName = getPlanDisplayName(data.plan);
