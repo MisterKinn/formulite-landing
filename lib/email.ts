@@ -38,8 +38,8 @@ interface SubscriptionChangeData {
     effectiveAt: string;
 }
 
-// Nova AI logo for email templates - using direct URL (email clients prefer external URLs over base64)
-const NOVA_LOGO_URL = "https://nova-ai.work/nova-logo.png";
+// Nova AI logo for email templates - using www subdomain (no redirect)
+const NOVA_LOGO_URL = "https://www.nova-ai.work/nova-logo.png";
 
 // Helper function to get base URL and logo
 async function getEmailAssetsAsync(): Promise<{
