@@ -169,7 +169,10 @@ export async function POST(request: NextRequest) {
                     const userRecord = await admin.auth().getUser(userId);
                     userEmail = userRecord.email || undefined;
                 } catch (emailErr) {
-                    console.warn("Could not get user email for receipt:", emailErr);
+                    console.warn(
+                        "Could not get user email for receipt:",
+                        emailErr,
+                    );
                 }
 
                 // Send payment receipt email

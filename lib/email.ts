@@ -38,8 +38,8 @@ interface SubscriptionChangeData {
     effectiveAt: string;
 }
 
-// Nova AI logo hosted on imgbb for email templates
-const NOVA_LOGO_URL = "https://i.ibb.co/M5SHYWy2/nova-logo.png";
+// Nova AI logo for email templates
+const NOVA_LOGO_URL = "https://www.nova-ai.work/nova-logo.png";
 
 // Helper function to get base URL and logo
 function getEmailAssets() {
@@ -80,7 +80,9 @@ export async function sendPaymentReceipt(
             return;
         }
 
-        console.log(`📧 Sending payment receipt to: ${userEmail} for user: ${userId}`);
+        console.log(
+            `📧 Sending payment receipt to: ${userEmail} for user: ${userId}`,
+        );
 
         const { logoUrl } = getEmailAssets();
         const planName = getPlanDisplayName(data.plan || "");
@@ -245,7 +247,9 @@ export async function sendPaymentFailureNotification(
             return;
         }
 
-        console.log(`📧 Sending payment failure notification to: ${userEmail} for user: ${userId}`);
+        console.log(
+            `📧 Sending payment failure notification to: ${userEmail} for user: ${userId}`,
+        );
 
         const { logoUrl } = getEmailAssets();
         const planName = getPlanDisplayName(data.plan || "");
@@ -592,7 +596,9 @@ export async function sendSubscriptionCancelledEmail(
             return;
         }
 
-        console.log(`📧 Sending subscription cancelled email to: ${userEmail} for user: ${userId}`);
+        console.log(
+            `📧 Sending subscription cancelled email to: ${userEmail} for user: ${userId}`,
+        );
 
         const { logoUrl } = getEmailAssets();
         const planName = getPlanDisplayName(data.plan);

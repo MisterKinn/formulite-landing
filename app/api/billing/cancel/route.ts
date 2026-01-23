@@ -88,7 +88,10 @@ export async function POST(request: NextRequest) {
             const userRecord = await admin.auth().getUser(userId);
             userEmail = userRecord.email || undefined;
         } catch (emailErr) {
-            console.warn("Could not get user email for cancellation:", emailErr);
+            console.warn(
+                "Could not get user email for cancellation:",
+                emailErr,
+            );
         }
 
         // Send cancellation email
