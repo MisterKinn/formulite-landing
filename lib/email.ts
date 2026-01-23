@@ -44,7 +44,7 @@ function getEmailAssets() {
         "https://www.nova-ai.work"
     ).replace(/\/$/, "");
 
-    let logoUrl = process.env.EMAIL_LOGO_URL || `${baseUrl}/nova-logo.svg`;
+    let logoUrl = process.env.EMAIL_LOGO_URL || `${baseUrl}/nova-logo.png`;
 
     return { baseUrl, logoUrl };
 }
@@ -1345,7 +1345,7 @@ export async function sendPasswordChangedNotification(to: string) {
 async function getUserEmail(userId: string): Promise<string | null> {
     try {
         const admin = getFirebaseAdmin();
-        
+
         // First try to get email from Firebase Auth
         try {
             const userRecord = await admin.auth().getUser(userId);
@@ -1353,7 +1353,10 @@ async function getUserEmail(userId: string): Promise<string | null> {
                 return userRecord.email;
             }
         } catch (authError) {
-            console.warn("Could not get user from Auth, trying Firestore:", authError);
+            console.warn(
+                "Could not get user from Auth, trying Firestore:",
+                authError,
+            );
         }
 
         // Fallback: get email from Firestore
