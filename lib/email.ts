@@ -38,16 +38,10 @@ interface SubscriptionChangeData {
     effectiveAt: string;
 }
 
-// Nova AI logo for email templates
+// Nova AI logo for email templates - using direct URL (email clients prefer external URLs over base64)
 const NOVA_LOGO_URL = "https://nova-ai.work/nova-logo.png";
 
-// Cached base64 logo for embedding in emails
-let cachedLogoDataUri: string | null = null;
-
-// Simple SVG fallback logo as data URI (used if fetch fails)
-const FALLBACK_LOGO_SVG = `data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNjAiIGhlaWdodD0iNDgiIHZpZXdCb3g9IjAgMCAxNjAgNDgiPjxyZWN0IHdpZHRoPSIxNjAiIGhlaWdodD0iNDgiIGZpbGw9IiMzYjgyZjYiIHJ4PSI4Ii8+PHRleHQgeD0iODAiIHk9IjMyIiBmb250LWZhbWlseT0iLWFwcGxlLXN5c3RlbSwgQmxpbmtNYWNTeXN0ZW1Gb250LCBzYW5zLXNlcmlmIiBmb250LXNpemU9IjI0IiBmb250LXdlaWdodD0iNzAwIiBmaWxsPSIjZmZmZmZmIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5Ob3ZhIEFJPC90ZXh0Pjwvc3ZnPg==`;
-
-// Helper function to get base URL and logo (with optional base64 embedding)
+// Helper function to get base URL and logo
 async function getEmailAssetsAsync(): Promise<{
     baseUrl: string;
     logoUrl: string;
@@ -59,48 +53,12 @@ async function getEmailAssetsAsync(): Promise<{
         "https://www.nova-ai.work"
     ).replace(/\/$/, "");
 
-    // Use cached data URI if available
-    if (cachedLogoDataUri) {
-        return { baseUrl, logoUrl: cachedLogoDataUri };
-    }
-
+    // Use direct URL - most email clients prefer external URLs over base64 data URIs
+    // Gmail, Outlook, and others often block data URIs for security but allow external images
     const logoUrl = process.env.EMAIL_LOGO_URL || NOVA_LOGO_URL;
-
-    // Try to embed the logo as base64 for better email client compatibility
-    try {
-        console.log("[email] Fetching logo from:", logoUrl);
-        const response = await fetch(logoUrl, {
-            headers: { Accept: "image/*" },
-            cache: "no-store",
-        });
-        console.log(
-            "[email] Logo fetch response:",
-            response.status,
-            response.statusText,
-        );
-
-        if (response.ok) {
-            const arrayBuffer = await response.arrayBuffer();
-            const base64 = Buffer.from(arrayBuffer).toString("base64");
-            const contentType =
-                response.headers.get("content-type") || "image/png";
-            cachedLogoDataUri = `data:${contentType};base64,${base64}`;
-            console.log(
-                "[email] Logo embedded as base64 data URI, size:",
-                base64.length,
-                "bytes",
-            );
-            return { baseUrl, logoUrl: cachedLogoDataUri };
-        } else {
-            console.warn("[email] Logo fetch failed, using fallback SVG");
-            cachedLogoDataUri = FALLBACK_LOGO_SVG;
-            return { baseUrl, logoUrl: cachedLogoDataUri };
-        }
-    } catch (err) {
-        console.warn("[email] Could not embed logo, using fallback SVG:", err);
-        cachedLogoDataUri = FALLBACK_LOGO_SVG;
-        return { baseUrl, logoUrl: cachedLogoDataUri };
-    }
+    console.log("[email] Using logo URL:", logoUrl);
+    
+    return { baseUrl, logoUrl };
 }
 
 // Sync version for backwards compatibility
