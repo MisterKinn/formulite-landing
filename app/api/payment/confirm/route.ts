@@ -30,7 +30,14 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        const secretKey = process.env.TOSS_SECRET_KEY;
+        // orderId 패턴으로 빌링 결제인지 단건 결제인지 구분
+        // billing_xxx → 빌링용 시크릿 키 사용
+        // order_xxx → 단건용 시크릿 키 사용
+        const isBillingPayment = orderId?.startsWith("billing");
+        const secretKey = isBillingPayment
+            ? (process.env.TOSS_BILLING_SECRET_KEY || process.env.TOSS_SECRET_KEY)
+            : process.env.TOSS_SECRET_KEY;
+            
         if (!secretKey) {
             console.error("TOSS_SECRET_KEY is not set");
             return NextResponse.json(
