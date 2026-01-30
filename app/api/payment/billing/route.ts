@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
         if (!authKey || !customerKey || !userId || !plan) {
             return NextResponse.json(
                 { error: "필수 정보가 누락되었습니다" },
-                { status: 400 }
+                { status: 400 },
             );
         }
 
@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
             if (!validation.valid) {
                 return NextResponse.json(
                     { error: validation.error },
-                    { status: 400 }
+                    { status: 400 },
                 );
             }
         }
@@ -49,11 +49,11 @@ export async function POST(request: NextRequest) {
                     message: "Failed to save subscription",
                     userMessage: "구독 정보 저장에 실패했습니다",
                 },
-                { userId, plan }
+                { userId, plan },
             );
             return NextResponse.json(
                 { error: "구독 정보 저장에 실패했습니다" },
-                { status: 500 }
+                { status: 500 },
             );
         }
 
@@ -70,11 +70,11 @@ export async function POST(request: NextRequest) {
                 message: errorMessage,
                 userMessage: "구독 처리 중 오류가 발생했습니다",
             },
-            { context: "billing_post" }
+            { context: "billing_post" },
         );
         return NextResponse.json(
             { error: "구독 처리 중 오류가 발생했습니다" },
-            { status: 500 }
+            { status: 500 },
         );
     }
 }
@@ -88,7 +88,7 @@ export async function PUT(request: NextRequest) {
         if (!billingKey || !customerKey || !amount) {
             return NextResponse.json(
                 { error: "필수 정보가 누락되었습니다" },
-                { status: 400 }
+                { status: 400 },
             );
         }
 
@@ -97,15 +97,17 @@ export async function PUT(request: NextRequest) {
         if (!validation.valid) {
             return NextResponse.json(
                 { error: validation.error },
-                { status: 400 }
+                { status: 400 },
             );
         }
 
-        const secretKey = process.env.TOSS_SECRET_KEY;
+        // 빌링 결제에는 빌링 전용 시크릿 키 사용
+        const secretKey =
+            process.env.TOSS_BILLING_SECRET_KEY || process.env.TOSS_SECRET_KEY;
         if (!secretKey) {
             return NextResponse.json(
                 { error: "Server configuration error" },
-                { status: 500 }
+                { status: 500 },
             );
         }
 
@@ -126,7 +128,7 @@ export async function PUT(request: NextRequest) {
                     orderId: orderId || `order_${Date.now()}`,
                     orderName: orderName || "Nova AI 월간 구독",
                 }),
-            }
+            },
         );
 
         const data = await response.json();
@@ -144,7 +146,7 @@ export async function PUT(request: NextRequest) {
                     error: paymentError.userMessage,
                     code: paymentError.code,
                 },
-                { status: response.status }
+                { status: response.status },
             );
         }
 
@@ -161,11 +163,11 @@ export async function PUT(request: NextRequest) {
                 message: errorMessage,
                 userMessage: "정기 결제 처리 중 오류가 발생했습니다",
             },
-            { context: "billing_put" }
+            { context: "billing_put" },
         );
         return NextResponse.json(
             { error: "정기 결제 처리 중 오류가 발생했습니다" },
-            { status: 500 }
+            { status: 500 },
         );
     }
 }

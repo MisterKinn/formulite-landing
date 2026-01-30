@@ -41,9 +41,9 @@ function CardRegistrationContent() {
                     });
                 }
 
-                // TossPayments 인스턴스 생성
+                // TossPayments 인스턴스 생성 (빌링용 클라이언트 키 사용)
                 const tp = (window as any).TossPayments(
-                    process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY!
+                    process.env.NEXT_PUBLIC_TOSS_BILLING_CLIENT_KEY!,
                 );
 
                 setTossPayments(tp);
@@ -90,12 +90,12 @@ function CardRegistrationContent() {
                 successUrl: `${
                     window.location.origin
                 }/card-registration/success?amount=${amount}&orderName=${encodeURIComponent(
-                    orderName
+                    orderName,
                 )}&billingCycle=${billingCycle}`,
                 failUrl: `${
                     window.location.origin
                 }/card-registration/fail?amount=${amount}&orderName=${encodeURIComponent(
-                    orderName
+                    orderName,
                 )}`,
             });
         } catch (err: any) {
@@ -183,8 +183,8 @@ function CardRegistrationContent() {
                     {loading
                         ? "처리 중..."
                         : ready
-                        ? "🔒 카드 등록하기"
-                        : "로딩 중..."}
+                          ? "🔒 카드 등록하기"
+                          : "로딩 중..."}
                 </button>
 
                 <div style={styles.testInfo}>

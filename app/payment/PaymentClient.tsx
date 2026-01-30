@@ -13,7 +13,8 @@ export default function PaymentClient() {
     const orderName = searchParams.get("orderName") || "Nova AI Pro";
     const recurring = searchParams.get("recurring") === "true";
     const billingCycle =
-        (searchParams.get("billingCycle") as "monthly" | "yearly" | "test") || "monthly";
+        (searchParams.get("billingCycle") as "monthly" | "yearly" | "test") ||
+        "monthly";
 
     const paymentRef = useRef<any>(null);
 
@@ -34,9 +35,12 @@ export default function PaymentClient() {
 
                 setCurrentCustomerKey(customerKey);
 
-                const tossPayments = await loadTossPayments(
-                    process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY!,
-                );
+                // 빌링(정기결제)인 경우 빌링용 클라이언트 키 사용, 아니면 일반 결제용 키 사용
+                const clientKey = recurring
+                    ? process.env.NEXT_PUBLIC_TOSS_BILLING_CLIENT_KEY!
+                    : process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY!;
+
+                const tossPayments = await loadTossPayments(clientKey);
 
                 const payment = tossPayments.payment({
                     customerKey,

@@ -29,7 +29,9 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        const secretKey = process.env.TOSS_SECRET_KEY!;
+        // 빌링키 발급에는 빌링 전용 시크릿 키 사용
+        const secretKey =
+            process.env.TOSS_BILLING_SECRET_KEY || process.env.TOSS_SECRET_KEY!;
         const encodedKey = Buffer.from(secretKey + ":").toString("base64");
 
         // 토스페이먼츠 빌링키 발급 API 호출

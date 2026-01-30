@@ -42,13 +42,16 @@ async function chargeBillingKey(
             .substr(2, 9)}`;
 
         // TossPayments billing API: billingKey goes in the PATH, not the body
+        // 빌링 결제에는 빌링 전용 시크릿 키 사용
+        const secretKey =
+            process.env.TOSS_BILLING_SECRET_KEY || process.env.TOSS_SECRET_KEY;
         const response = await fetch(
             `https://api.tosspayments.com/v1/billing/${billingKey}`,
             {
                 method: "POST",
                 headers: {
                     Authorization: `Basic ${Buffer.from(
-                        process.env.TOSS_SECRET_KEY + ":",
+                        secretKey + ":",
                     ).toString("base64")}`,
                     "Content-Type": "application/json",
                 },

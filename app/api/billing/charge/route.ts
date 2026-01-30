@@ -44,13 +44,16 @@ export async function POST(request: NextRequest) {
             .substr(2, 9)}`;
 
         // TossPayments billing API: billingKey goes in the PATH
+        // 빌링 결제에는 빌링 전용 시크릿 키 사용
+        const billingSecretKey =
+            process.env.TOSS_BILLING_SECRET_KEY || process.env.TOSS_SECRET_KEY;
         const response = await fetch(
             `https://api.tosspayments.com/v1/billing/${billingKey}`,
             {
                 method: "POST",
                 headers: {
                     Authorization: `Basic ${Buffer.from(
-                        process.env.TOSS_SECRET_KEY + ":",
+                        billingSecretKey + ":",
                     ).toString("base64")}`,
                     "Content-Type": "application/json",
                 },
@@ -158,13 +161,16 @@ export async function PUT(request: NextRequest) {
             .substr(2, 9)}`;
 
         // TossPayments billing API: billingKey goes in the PATH
+        // 빌링 결제에는 빌링 전용 시크릿 키 사용
+        const billingSecretKey =
+            process.env.TOSS_BILLING_SECRET_KEY || process.env.TOSS_SECRET_KEY;
         const response = await fetch(
             `https://api.tosspayments.com/v1/billing/${subscription.billingKey}`,
             {
                 method: "POST",
                 headers: {
                     Authorization: `Basic ${Buffer.from(
-                        process.env.TOSS_SECRET_KEY + ":",
+                        billingSecretKey + ":",
                     ).toString("base64")}`,
                     "Content-Type": "application/json",
                 },

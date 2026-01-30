@@ -20,13 +20,16 @@ export async function POST(request: NextRequest) {
         }
 
         // 토스페이먼츠 빌링키 발급 API
+        // 빌링키 발급에는 빌링 전용 시크릿 키 사용
+        const billingSecretKey =
+            process.env.TOSS_BILLING_SECRET_KEY || process.env.TOSS_SECRET_KEY;
         const response = await fetch(
             `https://api.tosspayments.com/v1/payments/${paymentKey}/billing-key`,
             {
                 method: "POST",
                 headers: {
                     Authorization: `Basic ${Buffer.from(
-                        process.env.TOSS_SECRET_KEY + ":",
+                        billingSecretKey + ":",
                     ).toString("base64")}`,
                     "Content-Type": "application/json",
                 },
@@ -64,12 +67,13 @@ export async function POST(request: NextRequest) {
 
         // Handle test billing cycle (100 won / 1 minute)
         const cycle = billingCycle || "monthly";
-        const plan = cycle === "test" 
-            ? "test" 
-            : amount >= 29900 
-                ? "pro" 
-                : amount >= 19900 
-                    ? "plus" 
+        const plan =
+            cycle === "test"
+                ? "test"
+                : amount >= 29900
+                  ? "pro"
+                  : amount >= 19900
+                    ? "plus"
                     : "basic";
 
         const subscriptionData = {

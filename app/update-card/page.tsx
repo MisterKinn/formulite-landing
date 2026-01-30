@@ -83,9 +83,10 @@ function UpdateCardContent() {
                 });
             }
 
-            const clientKey = process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY;
+            // 카드 업데이트는 빌링용 클라이언트 키 사용
+            const clientKey = process.env.NEXT_PUBLIC_TOSS_BILLING_CLIENT_KEY;
             if (!clientKey) {
-                setError("TossPayments client key not configured");
+                setError("TossPayments billing client key not configured");
                 return;
             }
 
