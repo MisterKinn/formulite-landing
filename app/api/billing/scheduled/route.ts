@@ -174,11 +174,27 @@ export async function POST(request: NextRequest) {
  */
 export async function GET(request: NextRequest) {
     try {
-        // Vercel Cron Jobs의 경우 x-vercel-cron 헤더 확인
+        // Vercel Cron 확인 - 여러 방법으로 체크
         const isVercelCron = request.headers.get("x-vercel-cron");
+        const userAgent = request.headers.get("user-agent") || "";
+        const host = request.headers.get("host") || "";
         
-        // 프로덕션에서 Vercel Cron이 아닌 경우 상태만 반환
-        if (process.env.NODE_ENV === "production" && !isVercelCron) {
+        // Vercel 내부 호출 확인 (novaai-*.vercel.app 또는 x-vercel-cron 헤더)
+        const isInternalCall = 
+            isVercelCron || 
+            host.includes("vercel.app") || 
+            host.startsWith("novaai-") ||
+            userAgent.includes("vercel-cron");
+        
+        console.log("[scheduled-billing] GET request", {
+            isVercelCron: !!isVercelCron,
+            host,
+            userAgent: userAgent.slice(0, 50),
+            isInternalCall,
+        });
+        
+        // 프로덕션에서 Vercel 내부 호출이 아닌 경우 상태만 반환
+        if (process.env.NODE_ENV === "production" && !isInternalCall) {
             const status = {
                 timestamp: new Date().toISOString(),
                 environment: process.env.NODE_ENV,
@@ -193,7 +209,7 @@ export async function GET(request: NextRequest) {
         }
 
         // Vercel Cron에서 호출되면 빌링 처리 수행
-        console.log("[scheduled-billing] Cron job triggered via GET");
+        console.log("[scheduled-billing] Processing billing via cron...");
         
         const results = await processScheduledBilling();
 
