@@ -178,21 +178,21 @@ export async function GET(request: NextRequest) {
         const isVercelCron = request.headers.get("x-vercel-cron");
         const userAgent = request.headers.get("user-agent") || "";
         const host = request.headers.get("host") || "";
-        
+
         // Vercel 내부 호출 확인 (novaai-*.vercel.app 또는 x-vercel-cron 헤더)
-        const isInternalCall = 
-            isVercelCron || 
-            host.includes("vercel.app") || 
+        const isInternalCall =
+            isVercelCron ||
+            host.includes("vercel.app") ||
             host.startsWith("novaai-") ||
             userAgent.includes("vercel-cron");
-        
+
         console.log("[scheduled-billing] GET request", {
             isVercelCron: !!isVercelCron,
             host,
             userAgent: userAgent.slice(0, 50),
             isInternalCall,
         });
-        
+
         // 프로덕션에서 Vercel 내부 호출이 아닌 경우 상태만 반환
         if (process.env.NODE_ENV === "production" && !isInternalCall) {
             const status = {
@@ -210,7 +210,7 @@ export async function GET(request: NextRequest) {
 
         // Vercel Cron에서 호출되면 빌링 처리 수행
         console.log("[scheduled-billing] Processing billing via cron...");
-        
+
         const results = await processScheduledBilling();
 
         const failedUsers = results

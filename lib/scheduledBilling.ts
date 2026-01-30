@@ -113,14 +113,20 @@ export async function processScheduledBilling(): Promise<BillingResult[]> {
         const results: BillingResult[] = [];
 
         // 디버깅: 모든 활성 구독 정보 출력
-        console.log(`🔍 Checking ${snapshot.docs.length} active subscriptions...`);
+        console.log(
+            `🔍 Checking ${snapshot.docs.length} active subscriptions...`,
+        );
         snapshot.docs.forEach((doc, idx) => {
             const sub = doc.data().subscription;
             console.log(`   [${idx + 1}] User: ${doc.id}`);
-            console.log(`       isRecurring: ${sub?.isRecurring} (type: ${typeof sub?.isRecurring})`);
+            console.log(
+                `       isRecurring: ${sub?.isRecurring} (type: ${typeof sub?.isRecurring})`,
+            );
             console.log(`       nextBillingDate: ${sub?.nextBillingDate}`);
             console.log(`       now: ${nowStr}`);
-            console.log(`       shouldProcess: ${sub?.isRecurring === true && sub?.nextBillingDate && sub.nextBillingDate <= nowStr}`);
+            console.log(
+                `       shouldProcess: ${sub?.isRecurring === true && sub?.nextBillingDate && sub.nextBillingDate <= nowStr}`,
+            );
         });
 
         // 필터링: isRecurring=true 이고 nextBillingDate <= now인 것만 처리
