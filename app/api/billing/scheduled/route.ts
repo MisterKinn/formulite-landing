@@ -169,23 +169,65 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * 스케줄링 상태 조회 (GET)
+ * 스케줄링 실행 (GET - Vercel Cron 호출용)
+ * Vercel Cron은 기본적으로 GET 요청을 보내므로 여기서 빌링 처리
  */
 export async function GET(request: NextRequest) {
     try {
-        // 간단한 상태 정보 반환
-        const status = {
+        // Vercel Cron Jobs의 경우 x-vercel-cron 헤더 확인
+        const isVercelCron = request.headers.get("x-vercel-cron");
+        
+        // 프로덕션에서 Vercel Cron이 아닌 경우 상태만 반환
+        if (process.env.NODE_ENV === "production" && !isVercelCron) {
+            const status = {
+                timestamp: new Date().toISOString(),
+                environment: process.env.NODE_ENV,
+                billingEnabled: !!process.env.TOSS_SECRET_KEY,
+                cronSecret: !!process.env.CRON_SECRET,
+            };
+
+            return NextResponse.json({
+                message: "Scheduled billing service is running",
+                status,
+            });
+        }
+
+        // Vercel Cron에서 호출되면 빌링 처리 수행
+        console.log("[scheduled-billing] Cron job triggered via GET");
+        
+        const results = await processScheduledBilling();
+
+        const failedUsers = results
+            .filter((r) => !r.success)
+            .map((r) => ({
+                userId: r.userId,
+                error: r.error || "Unknown error",
+            }));
+
+        const summary = {
             timestamp: new Date().toISOString(),
-            environment: process.env.NODE_ENV,
-            billingEnabled: !!process.env.TOSS_SECRET_KEY,
-            cronSecret: !!process.env.CRON_SECRET,
+            totalProcessed: results.length,
+            successful: results.filter((r) => r.success).length,
+            failed: results.filter((r) => !r.success).length,
+            totalAmount: results
+                .filter((r) => r.success && r.amount)
+                .reduce((sum, r) => sum + (r.amount || 0), 0),
+            failedUsers,
         };
 
+        // Send email report if there were any billings processed
+        if (summary.totalProcessed > 0) {
+            await sendBillingReport(summary);
+        }
+
+        console.log("[scheduled-billing] Cron completed:", summary);
+
         return NextResponse.json({
-            message: "Scheduled billing service is running",
-            status,
+            message: "Scheduled billing processed via cron",
+            summary,
         });
     } catch (error) {
+        console.error("[scheduled-billing] Cron error:", error);
         return NextResponse.json(
             { error: "Service unavailable" },
             { status: 503 },

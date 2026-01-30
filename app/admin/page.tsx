@@ -88,10 +88,16 @@ export default function AdminPage() {
 
     // Delete state
     const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
-    const [deletingPaymentKey, setDeletingPaymentKey] = useState<string | null>(null);
+    const [deletingPaymentKey, setDeletingPaymentKey] = useState<string | null>(
+        null,
+    );
 
     // Handle payment deletion
-    const handleDeletePayment = async (paymentKey: string, userId: string, orderName: string) => {
+    const handleDeletePayment = async (
+        paymentKey: string,
+        userId: string,
+        orderName: string,
+    ) => {
         if (
             !confirm(
                 `정말로 이 결제 내역을 삭제하시겠습니까?\n\n주문명: ${orderName}\n결제키: ${paymentKey}`,
@@ -108,7 +114,7 @@ export default function AdminPage() {
                 {
                     method: "DELETE",
                     headers: { Authorization: `Bearer ${token}` },
-                }
+                },
             );
 
             if (!response.ok) {

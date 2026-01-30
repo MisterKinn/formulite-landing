@@ -60,18 +60,23 @@ async function getLogoAttachment(): Promise<{
     }
 
     const logoUrl = process.env.EMAIL_LOGO_URL || NOVA_LOGO_URL;
-    
+
     try {
         console.log("[email] Fetching logo for CID embedding from:", logoUrl);
         const response = await fetch(logoUrl, {
             headers: { Accept: "image/*" },
         });
-        
+
         if (response.ok) {
             const arrayBuffer = await response.arrayBuffer();
             cachedLogoBase64 = Buffer.from(arrayBuffer).toString("base64");
-            cachedLogoContentType = response.headers.get("content-type") || "image/png";
-            console.log("[email] Logo cached for CID embedding, size:", cachedLogoBase64.length, "bytes");
+            cachedLogoContentType =
+                response.headers.get("content-type") || "image/png";
+            console.log(
+                "[email] Logo cached for CID embedding, size:",
+                cachedLogoBase64.length,
+                "bytes",
+            );
             return {
                 content: cachedLogoBase64,
                 filename: "nova-logo.png",
@@ -81,7 +86,7 @@ async function getLogoAttachment(): Promise<{
     } catch (err) {
         console.warn("[email] Failed to fetch logo for CID embedding:", err);
     }
-    
+
     return null;
 }
 
@@ -100,7 +105,7 @@ async function getEmailAssetsAsync(): Promise<{
     // Use direct URL - CID embedding was causing issues with some email clients
     const logoUrl = process.env.EMAIL_LOGO_URL || NOVA_LOGO_URL;
     console.log("[email] Using direct logo URL:", logoUrl);
-    
+
     return { baseUrl, logoUrl };
 }
 
