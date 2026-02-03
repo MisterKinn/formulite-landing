@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
         const { plan, billingCycle } = body;
 
         // Validate plan
-        const validPlans = ["free", "basic", "plus", "pro"];
+        const validPlans = ["free", "plus", "pro"];
         if (!plan || !validPlans.includes(plan)) {
             return NextResponse.json(
                 { error: "Invalid plan" },
@@ -73,9 +73,8 @@ export async function POST(request: NextRequest) {
         const planAmounts: Record<string, { monthly: number; yearly: number }> =
             {
                 free: { monthly: 0, yearly: 0 },
-                basic: { monthly: 9900, yearly: 99000 },
-                plus: { monthly: 19900, yearly: 199000 },
-                pro: { monthly: 29900, yearly: 299000 },
+                plus: { monthly: 19900, yearly: 159000 },
+                pro: { monthly: 49900, yearly: 399000 },
             };
         const newAmount =
             planAmounts[plan]?.[cycle as "monthly" | "yearly"] || 0;
@@ -83,7 +82,6 @@ export async function POST(request: NextRequest) {
         // Plan display names for orderName
         const planNames: Record<string, string> = {
             free: "무료",
-            basic: "베이직",
             plus: "플러스",
             pro: "프로",
         };

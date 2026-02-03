@@ -1304,8 +1304,9 @@ nextjs-portal {
         /* Display all 4 cards in one horizontal row with equal width */
         grid-template-columns: repeat(4, 1fr);
         gap: 1.5rem;
-        max-width: 1400px;
+        max-width: 1300px;
         margin: 0 auto;
+        justify-content: center;
     }
 }
 

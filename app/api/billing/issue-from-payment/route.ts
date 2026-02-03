@@ -70,11 +70,11 @@ export async function POST(request: NextRequest) {
         const plan =
             cycle === "test"
                 ? "test"
-                : amount >= 29900
+                : amount >= 49900
                   ? "pro"
                   : amount >= 19900
                     ? "plus"
-                    : "basic";
+                    : "free";
 
         const subscriptionData = {
             billingKey,

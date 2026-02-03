@@ -87,16 +87,14 @@ export async function POST(request: NextRequest) {
 
         // 구독 정보가 있으면 활성 구독으로 설정
         // Determine plan based on amount and billing cycle
-        let plan: "free" | "basic" | "plus" | "pro" | "test" = "free";
+        let plan: "free" | "plus" | "pro" | "test" = "free";
         if (billingCycle === "test") {
             plan = "test";
         } else if (amount) {
-            if (amount >= 29900) {
+            if (amount >= 49900) {
                 plan = "pro";
             } else if (amount >= 19900) {
                 plan = "plus";
-            } else if (amount >= 9900) {
-                plan = "basic";
             }
         }
 

@@ -30,7 +30,8 @@ export function Navbar() {
                     const data = snap.data() as any;
                     setDisplayName(data?.displayName ?? null);
                     // Get plan from subscription or default to free
-                    const plan = data?.subscription?.plan || data?.plan || "free";
+                    const plan =
+                        data?.subscription?.plan || data?.plan || "free";
                     setUserPlan(plan);
                 }
             } catch (err) {
@@ -50,7 +51,6 @@ export function Navbar() {
         const planNames: Record<string, string> = {
             pro: "프로 플랜",
             plus: "플러스 플랜",
-            basic: "베이직 플랜",
             free: "무료 플랜",
         };
         return planNames[plan] || "무료 플랜";
@@ -172,7 +172,7 @@ export function Navbar() {
                                         onClick={() => {
                                             sessionStorage.setItem(
                                                 "profileTab",
-                                                "subscription"
+                                                "subscription",
                                             );
                                         }}
                                     >
@@ -208,7 +208,7 @@ export function Navbar() {
                                         onClick={() => {
                                             sessionStorage.setItem(
                                                 "profileTab",
-                                                "account"
+                                                "account",
                                             );
                                         }}
                                     >

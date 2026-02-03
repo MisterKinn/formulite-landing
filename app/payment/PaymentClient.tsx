@@ -9,8 +9,8 @@ export default function PaymentClient() {
     const searchParams = useSearchParams();
     const { user } = useAuth();
 
-    const amount = Number(searchParams.get("amount") || 29900);
-    const orderName = searchParams.get("orderName") || "Nova AI Pro";
+    const amount = Number(searchParams.get("amount") || 49900);
+    const orderName = searchParams.get("orderName") || "Nova AI 프로";
     const recurring = searchParams.get("recurring") === "true";
     const billingCycle =
         (searchParams.get("billingCycle") as "monthly" | "yearly" | "test") ||
@@ -88,6 +88,7 @@ export default function PaymentClient() {
                     method: "CARD",
                     amount: {
                         value: amount,
+                        currency: "KRW",
                     },
                     orderId,
                     orderName,

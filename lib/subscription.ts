@@ -10,7 +10,7 @@ import { app } from "../firebaseConfig";
 const db = getFirestore(app);
 
 export interface SubscriptionData {
-    plan: "free" | "basic" | "plus" | "pro" | "test";
+    plan: "free" | "plus" | "pro" | "test";
     billingKey?: string;
     customerKey?: string;
     /** true for recurring subscriptions */
@@ -60,7 +60,7 @@ export async function saveSubscription(userId: string, data: SubscriptionData) {
                 aiCallUsage: currentData.aiCallUsage ?? 0, // Preserve existing usage or initialize to 0
                 updatedAt: new Date().toISOString(),
             },
-            { merge: true }
+            { merge: true },
         );
         return { success: true };
     } catch (error) {
@@ -72,7 +72,7 @@ export async function saveSubscription(userId: string, data: SubscriptionData) {
 // Create product if missing (product catalog stored under 'products')
 export async function createProductIfNotExists(
     productId: string,
-    productData: { plan: SubscriptionData["plan"]; price: number }
+    productData: { plan: SubscriptionData["plan"]; price: number },
 ) {
     try {
         const productRef = doc(db, "products", productId);
@@ -95,7 +95,7 @@ export async function createProductIfNotExists(
 // Create a subscription record (server-side subscription contract id) and save under user's subscription
 export async function createSubscriptionEntry(
     userId: string,
-    data: SubscriptionData & { productId: string; subscriptionId: string }
+    data: SubscriptionData & { productId: string; subscriptionId: string },
 ) {
     try {
         // ensure product exists (best-effort)
@@ -131,7 +131,7 @@ export async function getSubscription(userId: string) {
 // Update user plan
 export async function updateUserPlan(
     userId: string,
-    plan: "free" | "plus" | "pro"
+    plan: "free" | "plus" | "pro",
 ) {
     try {
         const userRef = doc(db, "users", userId);
@@ -148,7 +148,7 @@ export async function updateUserPlan(
 
 // Calculate next billing date (30 days for monthly, 365 days for yearly, 1 minute for test)
 export function getNextBillingDate(
-    billingCycle: "monthly" | "yearly" | "test" = "monthly"
+    billingCycle: "monthly" | "yearly" | "test" = "monthly",
 ): string {
     const date = new Date();
     if (billingCycle === "test") {

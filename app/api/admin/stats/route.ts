@@ -35,7 +35,6 @@ export async function GET(request: NextRequest) {
 
         const planCounts: Record<string, number> = {
             free: 0,
-            basic: 0,
             plus: 0,
             pro: 0,
         };

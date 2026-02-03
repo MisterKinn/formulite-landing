@@ -35,9 +35,9 @@ export async function POST(request: NextRequest) {
         // order_xxx → 단건용 시크릿 키 사용
         const isBillingPayment = orderId?.startsWith("billing");
         const secretKey = isBillingPayment
-            ? (process.env.TOSS_BILLING_SECRET_KEY || process.env.TOSS_SECRET_KEY)
+            ? process.env.TOSS_BILLING_SECRET_KEY || process.env.TOSS_SECRET_KEY
             : process.env.TOSS_SECRET_KEY;
-            
+
         if (!secretKey) {
             console.error("TOSS_SECRET_KEY is not set");
             return NextResponse.json(
@@ -115,13 +115,13 @@ export async function POST(request: NextRequest) {
                 const userId = (customerKey || "").split("_")[1] || null;
                 if (userId) {
                     // map amount to plan
-                    let plan: "basic" | "plus" | "pro" | null = null;
-                    if (totalAmount >= 29900) {
+                    let plan: "test" | "plus" | "pro" | null = null;
+                    if (totalAmount >= 49900) {
                         plan = "pro";
                     } else if (totalAmount >= 19900) {
                         plan = "plus";
-                    } else if (totalAmount >= 9900) {
-                        plan = "basic";
+                    } else if (totalAmount >= 100) {
+                        plan = "test";
                     }
                     if (plan) {
                         const { saveSubscription } =

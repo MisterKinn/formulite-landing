@@ -30,25 +30,12 @@ interface PricingPlan {
 
 const plans: PricingPlan[] = [
     {
-        name: "테스트",
-        subDescription: "빌링 테스트용 (1분마다 100원 결제)",
-        price: "100",
-        period: "/분",
-        features: [
-            "빌링 테스트 전용",
-            "1분마다 자동 결제",
-            "100원씩 결제",
-            "언제든 취소 가능",
-        ],
-        cta: "테스트 시작",
-    },
-    {
         name: "무료",
         subDescription: "제한적인 AI 생성과 기본 기능을 제공합니다.",
         price: "0",
         period: "/월",
         features: [
-            "하루 10회 AI 생성",
+            "하루 5회 AI 생성",
             "기본 수식 자동화",
             "광고 없는 경험",
             "커뮤니티 지원",
@@ -57,19 +44,16 @@ const plans: PricingPlan[] = [
         cta: "무료로 시작하기",
     },
     {
-        name: "베이직 요금제",
-        subDescription: "전문적인 한글 문서 자동화를 시작해보세요.",
-        price: "9,900",
+        name: "테스트",
+        subDescription: "테스트용 100원 요금제입니다.",
+        price: "100",
         period: "/월",
         features: [
-            "제한된 AI 생성",
-            "모든 수식 자동화",
-            "코드 저장 & 관리",
-            "우선 지원 서비스",
-            "AI 최적화 기능",
+            "테스트 전용",
+            "월 10회 AI 생성",
+            "기본 기능",
         ],
-        cta: "베이직 시작하기",
-        popular: false,
+        cta: "테스트 결제",
     },
     {
         name: "플러스 요금제",
@@ -77,7 +61,7 @@ const plans: PricingPlan[] = [
         price: "19,900",
         period: "/월",
         features: [
-            "베이직 모든 기능",
+            "월 110회 AI 생성",
             "고급 AI 모델",
             "팀 공유 기능",
             "우선 지원 서비스",
@@ -89,10 +73,10 @@ const plans: PricingPlan[] = [
     {
         name: "프로 요금제",
         subDescription: "모든 프리미엄 기능을 사용하세요.",
-        price: "29,900",
+        price: "49,900",
         period: "/월",
         features: [
-            "무제한 모든 기능",
+            "월 330회 AI 생성",
             "팀 협업 기능",
             "API 액세스",
             "전담 지원 서비스",
@@ -106,29 +90,20 @@ export default function Pricing() {
     const router = useRouter();
 
     const handlePlanClick = (planName: string, price: string) => {
-        if (planName === "테스트") {
-            // 테스트 플랜 (1분마다 100원)
-            router.push(
-                "/payment?amount=100&orderName=테스트 요금제 (1분마다 100원)&recurring=true&billingCycle=test"
-            );
-        } else if (planName === "무료") {
+        if (planName === "무료") {
             // 무료 플랜은 로그인 페이지로 이동
             router.push("/login");
-        } else if (planName === "베이직 요금제") {
-            // 베이직 플랜으로 결제 페이지 이동 (월간 구독)
-            router.push(
-                "/payment?amount=9900&orderName=Nova AI 베이직 요금제&recurring=true"
-            );
+        } else if (planName === "테스트") {
+            // 테스트 100원 결제
+            router.push("/payment?amount=100&orderName=Nova AI 테스트");
         } else if (planName === "플러스 요금제") {
-            // 플러스 플랜으로 결제 페이지 이동 (월간 구독)
+            // 플러스 플랜으로 결제 페이지 이동 (단건 결제)
             router.push(
-                "/payment?amount=19900&orderName=Nova AI 플러스 요금제&recurring=true"
+                "/payment?amount=19900&orderName=Nova AI 플러스 요금제",
             );
         } else if (planName === "프로 요금제") {
-            // 프로 플랜으로 결제 페이지 이동 (월간 구독)
-            router.push(
-                "/payment?amount=29900&orderName=Nova AI 프로 요금제&recurring=true"
-            );
+            // 프로 플랜으로 결제 페이지 이동 (단건 결제)
+            router.push("/payment?amount=49900&orderName=Nova AI 프로 요금제");
         }
     };
 

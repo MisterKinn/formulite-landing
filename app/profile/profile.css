@@ -1776,13 +1776,15 @@
 .profile-plans-grid {
     display: grid;
     grid-template-columns: 1fr;
-    gap: 1rem;
+    gap: 1.25rem;
+    max-width: 1000px;
+    margin: 0 auto;
 }
 
 @media (min-width: 768px) {
     .profile-plans-grid {
-        grid-template-columns: repeat(4, 1fr);
-        gap: 1rem;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1.25rem;
     }
 }
 
@@ -1791,11 +1793,12 @@
     position: relative;
     display: flex;
     flex-direction: column;
-    padding: 1.5rem;
+    padding: 1.75rem;
     background: var(--card);
     border: 1px solid var(--border);
     border-radius: 12px;
     transition: border-color 0.2s ease;
+    min-width: 225px;
 }
 
 .profile-plan-item:hover {

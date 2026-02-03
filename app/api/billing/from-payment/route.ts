@@ -62,11 +62,11 @@ export async function POST(request: NextRequest) {
             billingKey,
             customerKey,
             plan: amount
-                ? amount >= 29900
+                ? amount >= 49900
                     ? "pro"
                     : amount >= 19900
                       ? "plus"
-                      : "basic"
+                      : "free"
                 : "free",
             status: "active",
             registeredAt: new Date().toISOString(),

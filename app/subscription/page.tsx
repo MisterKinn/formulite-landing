@@ -21,7 +21,7 @@ interface SubscriptionInfo {
 export default function SubscriptionDashboard() {
     const { user } = useAuth();
     const [subscription, setSubscription] = useState<SubscriptionInfo | null>(
-        null
+        null,
     );
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -52,7 +52,7 @@ export default function SubscriptionDashboard() {
                     console.log("   - 결제 주기:", sub.billingCycle);
                 } else {
                     console.log(
-                        "⚠️ 빌링키가 없습니다. 카드를 먼저 등록해주세요."
+                        "⚠️ 빌링키가 없습니다. 카드를 먼저 등록해주세요.",
                     );
                 }
             } else {
@@ -68,7 +68,7 @@ export default function SubscriptionDashboard() {
 
     const handleStartSubscription = async (
         plan: "plus" | "pro",
-        cycle: "monthly" | "yearly"
+        cycle: "monthly" | "yearly",
     ) => {
         if (!subscription?.billingKey) {
             alert("먼저 카드를 등록해주세요");
@@ -78,10 +78,10 @@ export default function SubscriptionDashboard() {
         setActionLoading(`subscribe_${plan}_${cycle}`);
 
         try {
-            // 프로필 페이지의 구독 로직을 재사용
+            // 프로필 페이지의 구독 로직을 재사용 (단건 결제)
             const planPrices = {
-                plus: { monthly: 9900, yearly: 99000 },
-                pro: { monthly: 29900, yearly: 299000 },
+                plus: { monthly: 19900, yearly: 159000 },
+                pro: { monthly: 49900, yearly: 399000 },
             };
 
             const amount = planPrices[plan][cycle];
@@ -89,8 +89,8 @@ export default function SubscriptionDashboard() {
                 plan === "plus" ? "플러스" : "프로"
             } 요금제`;
 
-            // 구독 시작 (첫 결제)
-            window.location.href = `/payment?amount=${amount}&orderName=${orderName}&recurring=true&billingCycle=${cycle}`;
+            // 단건 결제로 이동
+            window.location.href = `/payment?amount=${amount}&orderName=${orderName}`;
         } catch (err: any) {
             alert(err.message || "구독 시작에 실패했습니다");
         } finally {
@@ -121,7 +121,7 @@ export default function SubscriptionDashboard() {
 
             if (result.success) {
                 alert(
-                    `테스트 결제 성공!\n주문ID: ${result.result.orderId}\n금액: ${result.result.amount}원`
+                    `테스트 결제 성공!\n주문ID: ${result.result.orderId}\n금액: ${result.result.amount}원`,
                 );
                 loadSubscriptionInfo(); // 정보 새로고침
             } else {
@@ -199,7 +199,7 @@ export default function SubscriptionDashboard() {
                                 등록일:{" "}
                                 {subscription.registeredAt
                                     ? new Date(
-                                          subscription.registeredAt
+                                          subscription.registeredAt,
                                       ).toLocaleString("ko-KR")
                                     : "정보 없음"}
                             </p>
@@ -250,7 +250,7 @@ export default function SubscriptionDashboard() {
                                     <span>
                                         {subscription.nextBillingDate
                                             ? new Date(
-                                                  subscription.nextBillingDate
+                                                  subscription.nextBillingDate,
                                               ).toLocaleDateString("ko-KR")
                                             : "확인 중"}
                                     </span>
@@ -275,7 +275,7 @@ export default function SubscriptionDashboard() {
                                         <span>마지막 결제:</span>
                                         <span>
                                             {new Date(
-                                                subscription.lastPaymentDate
+                                                subscription.lastPaymentDate,
                                             ).toLocaleDateString("ko-KR")}
                                         </span>
                                     </div>
@@ -314,7 +314,7 @@ export default function SubscriptionDashboard() {
                                     onClick={() =>
                                         handleStartSubscription(
                                             "plus",
-                                            "monthly"
+                                            "monthly",
                                         )
                                     }
                                     disabled={
@@ -331,7 +331,7 @@ export default function SubscriptionDashboard() {
                                     onClick={() =>
                                         handleStartSubscription(
                                             "plus",
-                                            "yearly"
+                                            "yearly",
                                         )
                                     }
                                     disabled={
@@ -353,7 +353,7 @@ export default function SubscriptionDashboard() {
                                     onClick={() =>
                                         handleStartSubscription(
                                             "pro",
-                                            "monthly"
+                                            "monthly",
                                         )
                                     }
                                     disabled={

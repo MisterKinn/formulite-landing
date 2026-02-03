@@ -513,7 +513,6 @@ export default function AdminPage() {
                             >
                                 <option value="">모든 플랜</option>
                                 <option value="free">Free</option>
-                                <option value="basic">Basic</option>
                                 <option value="plus">Plus</option>
                                 <option value="pro">Pro</option>
                             </select>

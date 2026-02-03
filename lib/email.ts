@@ -128,7 +128,6 @@ function getEmailAssets() {
 function getPlanDisplayName(plan: string): string {
     const names: Record<string, string> = {
         free: "Free",
-        basic: "Basic",
         plus: "Plus",
         pro: "Pro",
     };
@@ -876,8 +875,8 @@ export async function sendSubscriptionChangedEmail(
         );
 
         const isUpgrade =
-            ["pro", "plus", "basic"].indexOf(data.newPlan.toLowerCase()) <
-            ["pro", "plus", "basic"].indexOf(data.oldPlan.toLowerCase());
+            ["pro", "plus"].indexOf(data.newPlan.toLowerCase()) <
+            ["pro", "plus"].indexOf(data.oldPlan.toLowerCase());
 
         const subject = `[Nova AI] 요금제가 ${isUpgrade ? "업그레이드" : "변경"}되었습니다`;
         const text = `안녕하세요,

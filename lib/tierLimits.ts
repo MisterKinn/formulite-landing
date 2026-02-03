@@ -1,9 +1,9 @@
 // Tier limits configuration
 export const TIER_LIMITS = {
     free: 5,
-    basic: 100,
-    plus: 500,
-    pro: 1500,
+    test: 10,
+    plus: 110,
+    pro: 330,
 } as const;
 
 export type PlanTier = keyof typeof TIER_LIMITS;

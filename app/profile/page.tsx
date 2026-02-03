@@ -123,7 +123,7 @@ const plansData: PlanData[] = [
         yearlyPrice: 0,
         icon: <SparklesIcon />,
         features: [
-            { text: "하루 10회 AI 생성", included: true },
+            { text: "하루 5회 AI 생성", included: true },
             { text: "기본 수식 자동화", included: true },
             { text: "광고 없는 경험", included: true },
             { text: "커뮤니티 지원", included: true },
@@ -131,24 +131,6 @@ const plansData: PlanData[] = [
             { text: "코드 저장 & 관리", included: false },
         ],
         ctaText: "현재 플랜",
-    },
-    {
-        id: "basic",
-        name: "베이직",
-        description: "전문적인 한글 문서 자동화를\n시작해보세요",
-        monthlyPrice: 9900,
-        yearlyPrice: 7900,
-        icon: <ZapIcon />,
-        popular: false,
-        features: [
-            { text: "제한된 AI 생성", included: true },
-            { text: "모든 수식 자동화", included: true },
-            { text: "코드 저장 & 관리", included: true },
-            { text: "우선 지원 서비스", included: true },
-            { text: "AI 최적화 기능", included: true },
-            { text: "API 액세스", included: false },
-        ],
-        ctaText: "베이직으로 업그레이드",
     },
     {
         id: "plus",
@@ -159,7 +141,7 @@ const plansData: PlanData[] = [
         icon: <ZapIcon />,
         popular: true,
         features: [
-            { text: "베이직 모든 기능", included: true },
+            { text: "월 110회 AI 생성", included: true },
             { text: "고급 AI 모델", included: true },
             { text: "팀 공유 기능", included: true },
             { text: "우선 지원 서비스", included: true },
@@ -172,11 +154,11 @@ const plansData: PlanData[] = [
         id: "pro",
         name: "프로",
         description: "모든 프리미엄 기능을 위한\n가장 강력한 플랜",
-        monthlyPrice: 29900,
-        yearlyPrice: 23900,
+        monthlyPrice: 49900,
+        yearlyPrice: 39900,
         icon: <CrownIcon />,
         features: [
-            { text: "무제한 모든 기능", included: true },
+            { text: "월 330회 AI 생성", included: true },
             { text: "팀 협업 기능", included: true },
             { text: "API 액세스", included: true },
             { text: "전담 지원 서비스", included: true },
@@ -191,9 +173,8 @@ const plansData: PlanData[] = [
 function getTierOrder(planId: string): number {
     const tierOrder: { [key: string]: number } = {
         free: 0,
-        basic: 1,
-        plus: 2,
-        pro: 3,
+        plus: 1,
+        pro: 2,
     };
     return tierOrder[planId] ?? 0;
 }
@@ -207,7 +188,6 @@ function getCtaText(planId: string, currentPlanId: string): string {
         // Downgrade
         const planNames: { [key: string]: string } = {
             free: "무료로",
-            basic: "베이직으로",
             plus: "플러스로",
             pro: "프로로",
         };
@@ -216,7 +196,6 @@ function getCtaText(planId: string, currentPlanId: string): string {
         // Upgrade
         const planNames: { [key: string]: string } = {
             free: "무료로",
-            basic: "베이직으로",
             plus: "플러스로",
             pro: "프로로",
         };
@@ -604,7 +583,6 @@ function ProfileContent() {
     const getPlanIcon = (planId?: string) => {
         if (planId === "pro") return <CrownIcon />;
         if (planId === "plus") return <ZapIcon />;
-        if (planId === "basic") return <ZapIcon />;
         return <SparklesIcon />;
     };
 
@@ -619,10 +597,6 @@ function ProfileContent() {
             plus: {
                 name: "플러스 플랜",
                 description: "전문 기능을 이용 중입니다",
-            },
-            basic: {
-                name: "베이직 플랜",
-                description: "베이직 기능을 이용 중입니다",
             },
             free: {
                 name: "무료 플랜",
@@ -711,21 +685,17 @@ function ProfileContent() {
         setLoadingPlan(plan.id);
 
         try {
-            // 결제 페이지로 리다이렉트
+            // 결제 페이지로 리다이렉트 (단건 결제)
             const planNameMap: Record<string, string> = {
-                basic: "베이직",
                 plus: "플러스",
                 pro: "프로",
             };
             const planName = planNameMap[plan.id] || plan.name;
 
-            // compute amount based on billing cycle
-            const planAmount =
-                billingCycle === "monthly"
-                    ? plan.monthlyPrice
-                    : plan.yearlyPrice * 12;
+            // 단건 결제는 월간 가격만 사용
+            const planAmount = plan.monthlyPrice;
 
-            window.location.href = `/payment?amount=${planAmount}&orderName=Nova AI ${planName} 요금제&recurring=true&billingCycle=${billingCycle}`;
+            window.location.href = `/payment?amount=${planAmount}&orderName=Nova AI ${planName} 요금제`;
         } catch (err: unknown) {
             console.error("결제 오류:", err);
             const error = err as { code?: string };
