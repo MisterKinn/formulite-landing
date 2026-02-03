@@ -115,13 +115,11 @@ export async function POST(request: NextRequest) {
                 const userId = (customerKey || "").split("_")[1] || null;
                 if (userId) {
                     // map amount to plan
-                    let plan: "test" | "plus" | "pro" | null = null;
+                    let plan: "plus" | "pro" | null = null;
                     if (totalAmount >= 49900) {
                         plan = "pro";
                     } else if (totalAmount >= 19900) {
                         plan = "plus";
-                    } else if (totalAmount >= 100) {
-                        plan = "test";
                     }
                     if (plan) {
                         const { saveSubscription } =

@@ -44,18 +44,6 @@ const plans: PricingPlan[] = [
         cta: "무료로 시작하기",
     },
     {
-        name: "테스트",
-        subDescription: "테스트용 100원 요금제입니다.",
-        price: "100",
-        period: "/월",
-        features: [
-            "테스트 전용",
-            "월 10회 AI 생성",
-            "기본 기능",
-        ],
-        cta: "테스트 결제",
-    },
-    {
         name: "플러스 요금제",
         subDescription: "더 많은 기능과 우선 지원을 받으세요.",
         price: "19,900",
@@ -93,9 +81,6 @@ export default function Pricing() {
         if (planName === "무료") {
             // 무료 플랜은 로그인 페이지로 이동
             router.push("/login");
-        } else if (planName === "테스트") {
-            // 테스트 100원 결제
-            router.push("/payment?amount=100&orderName=Nova AI 테스트");
         } else if (planName === "플러스 요금제") {
             // 플러스 플랜으로 결제 페이지 이동 (단건 결제)
             router.push(
