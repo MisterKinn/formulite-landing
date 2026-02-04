@@ -49,7 +49,7 @@ const plans: PricingPlan[] = [
         price: "19,900",
         period: "/월",
         features: [
-            "월 110회 AI 생성",
+            "월 220회 AI 생성",
             "고급 AI 모델",
             "팀 공유 기능",
             "우선 지원 서비스",
@@ -64,7 +64,7 @@ const plans: PricingPlan[] = [
         price: "49,900",
         period: "/월",
         features: [
-            "월 330회 AI 생성",
+            "월 660회 AI 생성",
             "팀 협업 기능",
             "API 액세스",
             "전담 지원 서비스",
