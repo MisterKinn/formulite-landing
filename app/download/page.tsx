@@ -24,14 +24,15 @@ export default function DownloadContent() {
         {
             name: "Windows",
             img: "/windows.png",
-            link: `${GITHUB_RELEASE_BASE}/Nova.AI.Setup.exe`,
+            link: `${GITHUB_RELEASE_BASE}/nova-ai-setup-windows.exe`,
+            liteLink: `${GITHUB_RELEASE_BASE}/nova-ai-lite-setup-windows.exe`,
             desc: "Windows 10 이상",
             size: "104 MB",
         },
         {
             name: "Mac",
             img: "/apple.png",
-            link: `${GITHUB_RELEASE_BASE}/Nova.AI.dmg`,
+            link: `${GITHUB_RELEASE_BASE}/nova-ai-setup-mac.dmg`,
             desc: "macOS 11 이상",
             size: "253 MB",
         },
@@ -112,27 +113,41 @@ export default function DownloadContent() {
                                     {p.size}
                                 </span>
                             </div>
-                            <a
-                                href={p.link}
-                                download
-                                className="download-card-button"
-                                onClick={(e) => e.stopPropagation()}
-                            >
-                                <svg
-                                    width="20"
-                                    height="20"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    strokeWidth="2"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
+                            <div className="download-card-actions">
+                                <a
+                                    href={p.link}
+                                    download
+                                    className="download-card-button"
+                                    onClick={(e) => e.stopPropagation()}
+                                    aria-label={`${p.name} 다운로드`}
                                 >
-                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                                    <polyline points="7 10 12 15 17 10" />
-                                    <line x1="12" y1="15" x2="12" y2="3" />
-                                </svg>
-                            </a>
+                                    <svg
+                                        width="20"
+                                        height="20"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                    >
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                        <polyline points="7 10 12 15 17 10" />
+                                        <line x1="12" y1="15" x2="12" y2="3" />
+                                    </svg>
+                                </a>
+                                {p.name === "Windows" && p.liteLink && (
+                                    <a
+                                        href={p.liteLink}
+                                        download
+                                        className="download-card-button download-card-button--lite"
+                                        onClick={(e) => e.stopPropagation()}
+                                        aria-label="Windows Lite 다운로드"
+                                    >
+                                        Lite
+                                    </a>
+                                )}
+                            </div>
                         </div>
                     ))}
                 </section>
