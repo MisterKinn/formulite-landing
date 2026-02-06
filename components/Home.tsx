@@ -241,10 +241,13 @@ export default function Home() {
             </div>
 
             <div className="hero-image-wrap">
-                <img
-                    src="/main.png"
-                    alt="Nova AI 인터페이스"
+                <video
+                    src="/novaai.mp4"
                     className="hero-main-image"
+                    autoPlay
+                    loop
+                    muted
+                    playsInline
                 />
             </div>
         </section>
