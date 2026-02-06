@@ -199,7 +199,7 @@ export default function Home() {
                                 className="primary-button"
                                 onClick={() =>
                                     handleDownload(
-                                        "https://github.com/MisterKinn/formulite-landing/releases/download/v1.0.0/Nova.AI.dmg",
+                                        "https://github.com/MisterKinn/formulite-landing/releases/download/v1.0.0/nova-ai-setup-mac.dmg",
                                     )
                                 }
                             >
@@ -218,7 +218,7 @@ export default function Home() {
                                 className="primary-button"
                                 onClick={() =>
                                     handleDownload(
-                                        "https://github.com/MisterKinn/formulite-landing/releases/download/v1.0.0/Nova.AI.Setup.exe",
+                                        "https://github.com/MisterKinn/formulite-landing/releases/download/v1.0.0/nova-ai-setup-windows.exe",
                                     )
                                 }
                             >
