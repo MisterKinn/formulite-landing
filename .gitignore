@@ -1,0 +1,60 @@
+backend/firebase_account.py
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+backend/firebase_account.py
+
+# Virtual Env
+.venv
+env/
+.env
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# GUI / EXE
+*.exe
+*.spec
+*.dmg
+*.pkg
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+.cursor/
+
+# Node
+node_modules/
+npm-debug.log
+
+*.md

@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width,initial-scale=1" />
+        <title>Login Callback</title>
+        <style>
+            body {
+                margin: 0;
+                font-family: system-ui, -apple-system, BlinkMacSystemFont,
+                    "Segoe UI", Roboto, "Helvetica Neue", Arial;
+                background: #f7f8fa;
+                color: #111;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                height: 100vh;
+            }
+            .card {
+                background: #fff;
+                padding: 28px;
+                border-radius: 12px;
+                box-shadow: 0 8px 30px rgba(2, 6, 23, 0.08);
+                max-width: 720px;
+                text-align: center;
+            }
+            .emoji {
+                font-size: 36px;
+            }
+            h1 {
+                margin: 8px 0;
+                font-size: 20px;
+            }
+            p.message {
+                color: #374151;
+                margin: 8px 0;
+            }
+            .meta {
+                color: #6b7280;
+                font-size: 13px;
+                margin-top: 10px;
+                word-break: break-word;
+            }
+            .btn {
+                display: inline-block;
+                margin-top: 14px;
+                padding: 8px 14px;
+                border-radius: 8px;
+                background: #2563eb;
+                color: #fff;
+                text-decoration: none;
+                border: none;
+                cursor: pointer;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="card">
+            <div class="emoji">✅</div>
+            <h1>Login successful</h1>
+            <p class="message">
+                You can close this window. This page also logs the received user
+                info for local testing.
+            </p>
+            <p class="meta" id="params"></p>
+            <button class="btn" onclick="window.close()">Close window</button>
+            <p style="margin-top: 12px; font-size: 12px; color: #94a3b8">
+                Served by <strong>test-callback.html</strong> (test server)
+            </p>
+        </div>
+        <script>
+            const params = Object.fromEntries(
+                new URL(location.href).searchParams.entries()
+            );
+            document.getElementById("params").textContent =
+                JSON.stringify(params, null, 2) || "";
+            console.log("Test callback params:", params);
+            // auto-close after 1s to mimic production behavior
+            setTimeout(() => window.close(), 1000);
+        </script>
+    </body>
+</html>
