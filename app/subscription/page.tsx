@@ -94,8 +94,14 @@ export default function SubscriptionDashboard() {
                 plan === "go" ? "Go" : plan === "plus" ? "Plus" : "Ultra"
             } 요금제`;
 
-            // 단건 결제로 이동
-            window.location.href = `/payment?amount=${amount}&orderName=${orderName}`;
+            // 결제 페이지로 billingCycle을 함께 전달해야
+            // 결제 성공 후 nextBillingDate가 월/연간에 맞게 계산됩니다.
+            const params = new URLSearchParams({
+                amount: String(amount),
+                orderName,
+                billingCycle: cycle,
+            });
+            window.location.href = `/payment?${params.toString()}`;
         } catch (err: any) {
             alert(err.message || "구독 시작에 실패했습니다");
         } finally {

@@ -1,8 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getAuth, onAuthStateChanged, signOut, User } from "firebase/auth";
+import {
+    CreditCard,
+    Home,
+    LayoutDashboard,
+    LogOut,
+    TrendingUp,
+    Users,
+} from "lucide-react";
 import { getFirebaseAppOrNull } from "@/firebaseConfig";
 import { ADMIN_EMAILS, ADMIN_SESSION_STORAGE_KEY } from "@/lib/adminPortal";
 import "./admin.css";
@@ -48,7 +56,9 @@ interface UserData {
         status: string;
         amount: number;
         billingCycle: string;
+        startDate?: string;
         nextBillingDate: string;
+        periodLabel?: string;
         failureCount: number;
         lastFailureReason?: string;
     };
@@ -74,7 +84,13 @@ interface Payment {
 
 const EDITABLE_PLANS = ["free", "go", "plus", "pro"] as const;
 type EditablePlan = (typeof EDITABLE_PLANS)[number];
-
+const PLAN_LABELS: Record<string, string> = {
+    free: "FREE",
+    go: "GO",
+    plus: "PLUS",
+    pro: "ULTRA",
+    ultra: "ULTRA",
+};
 export default function AdminPage() {
     const router = useRouter();
     const [authUser, setAuthUser] = useState<User | null>(null);
@@ -110,7 +126,6 @@ export default function AdminPage() {
     const [paymentEndDate, setPaymentEndDate] = useState("");
 
     // Delete state
-    const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
     const [deletingPaymentKey, setDeletingPaymentKey] = useState<string | null>(
         null,
     );
@@ -125,6 +140,9 @@ export default function AdminPage() {
     );
     const [updatingPlanUserId, setUpdatingPlanUserId] = useState<string | null>(
         null,
+    );
+    const usageSaveTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>(
+        {},
     );
 
     const getAdminAuthHeader = useCallback(async () => {
@@ -185,50 +203,15 @@ export default function AdminPage() {
         }
     };
 
-    // Handle user deletion
-    const handleDeleteUser = async (userId: string, email: string) => {
-        if (
-            !confirm(
-                `정말로 "${email}" 사용자를 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없으며, 모든 결제 내역도 함께 삭제됩니다.`,
-            )
-        ) {
-            return;
-        }
-
-        setDeletingUserId(userId);
-        try {
-            const authorization = await getAdminAuthHeader();
-            if (!authorization) throw new Error("관리자 인증이 필요합니다.");
-            const response = await fetch(`/api/admin/users/${userId}`, {
-                method: "DELETE",
-                headers: { Authorization: authorization },
-            });
-
-            if (!response.ok) {
-                const data = await response.json();
-                throw new Error(data.error || "삭제 실패");
-            }
-
-            // Remove user from local state
-            setUsers(users.filter((u) => u.uid !== userId));
-            setUsersTotal((prev) => prev - 1);
-            alert("사용자가 삭제되었습니다.");
-        } catch (error) {
-            console.error("Delete user error:", error);
-            alert(
-                error instanceof Error
-                    ? error.message
-                    : "사용자 삭제에 실패했습니다.",
-            );
-        } finally {
-            setDeletingUserId(null);
-        }
-    };
-
     // Handle remaining usage update
-    const handleUpdateRemainingUsage = async (user: UserData) => {
+    const handleUpdateRemainingUsage = async (
+        user: UserData,
+        nextRemaining?: number,
+    ) => {
         const rawValue =
-            usageEditValues[user.uid] ?? String(user.usage?.remaining ?? 0);
+            typeof nextRemaining === "number"
+                ? String(nextRemaining)
+                : (usageEditValues[user.uid] ?? String(user.usage?.remaining ?? 0));
         const parsedValue = Number(rawValue);
         const usageLimit = user.usage?.limit ?? 0;
 
@@ -277,7 +260,6 @@ export default function AdminPage() {
                 ...prev,
                 [user.uid]: String(data.usage?.remaining ?? parsedValue),
             }));
-            alert("남은 사용량이 수정되었습니다.");
         } catch (error) {
             console.error("Update remaining usage error:", error);
             alert(
@@ -291,8 +273,9 @@ export default function AdminPage() {
     };
 
     // Handle plan update (usage limit/remaining changes together)
-    const handleUpdatePlan = async (user: UserData) => {
+    const handleUpdatePlan = async (user: UserData, nextPlan?: EditablePlan) => {
         const selectedPlan =
+            nextPlan ||
             planEditValues[user.uid] ||
             (EDITABLE_PLANS.includes(user.subscription.plan as EditablePlan)
                 ? (user.subscription.plan as EditablePlan)
@@ -345,7 +328,6 @@ export default function AdminPage() {
                 ...prev,
                 [user.uid]: String(data.usage?.remaining ?? 0),
             }));
-            alert("플랜이 수정되었고 사용량이 갱신되었습니다.");
         } catch (error) {
             console.error("Update plan error:", error);
             alert(
@@ -357,6 +339,35 @@ export default function AdminPage() {
             setUpdatingPlanUserId(null);
         }
     };
+
+    const scheduleRemainingUsageAutoSave = useCallback(
+        (user: UserData, rawValue: string) => {
+            setUsageEditValues((prev) => ({ ...prev, [user.uid]: rawValue }));
+            if (rawValue === "") return;
+
+            const parsedValue = Number(rawValue);
+            if (!Number.isInteger(parsedValue)) return;
+
+            const prevTimer = usageSaveTimersRef.current[user.uid];
+            if (prevTimer) {
+                clearTimeout(prevTimer);
+            }
+            usageSaveTimersRef.current[user.uid] = setTimeout(() => {
+                void handleUpdateRemainingUsage(user, parsedValue);
+                delete usageSaveTimersRef.current[user.uid];
+            }, 500);
+        },
+        [handleUpdateRemainingUsage],
+    );
+
+    useEffect(() => {
+        return () => {
+            Object.values(usageSaveTimersRef.current).forEach((timerId) =>
+                clearTimeout(timerId),
+            );
+            usageSaveTimersRef.current = {};
+        };
+    }, []);
 
     useEffect(() => {
         let active = true;
@@ -442,11 +453,11 @@ export default function AdminPage() {
         };
 
         fetchStats();
-    }, [authUser, adminSessionToken, activeTab, getAdminAuthHeader]);
+    }, [authUser, adminSessionToken, getAdminAuthHeader]);
 
     // Fetch users
     useEffect(() => {
-        if ((!authUser && !adminSessionToken) || activeTab !== "users") return;
+        if (!authUser && !adminSessionToken) return;
 
         const fetchUsers = async () => {
             setUsersLoading(true);
@@ -481,7 +492,6 @@ export default function AdminPage() {
     }, [
         authUser,
         adminSessionToken,
-        activeTab,
         getAdminAuthHeader,
         userSearch,
         userPlanFilter,
@@ -490,8 +500,7 @@ export default function AdminPage() {
 
     // Fetch payments
     useEffect(() => {
-        if ((!authUser && !adminSessionToken) || activeTab !== "payments")
-            return;
+        if (!authUser && !adminSessionToken) return;
 
         const fetchPayments = async () => {
             setPaymentsLoading(true);
@@ -528,7 +537,6 @@ export default function AdminPage() {
     }, [
         authUser,
         adminSessionToken,
-        activeTab,
         getAdminAuthHeader,
         paymentSearch,
         paymentStatusFilter,
@@ -549,7 +557,7 @@ export default function AdminPage() {
         return (
             <div className="admin-loading">
                 <div style={{ textAlign: "center" }}>
-                    <h2 style={{ marginBottom: "1rem", color: "#111827" }}>
+                    <h2 style={{ marginBottom: "1rem", color: "#f8fafc" }}>
                         관리자 접근 권한이 필요합니다
                     </h2>
                     <p style={{ color: "#6b7280", marginBottom: "1.5rem" }}>
@@ -593,653 +601,723 @@ export default function AdminPage() {
         router.push("/login");
     };
 
+    const formatCurrency = (value: number) => `${value.toLocaleString()}원`;
+
+    const formatDateTime = (value: string) =>
+        new Date(value).toLocaleDateString("ko-KR", {
+            year: "numeric",
+            month: "short",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+        });
+
+    const formatPeriodLabel = (subscription: UserData["subscription"]) => {
+        if (subscription.plan === "free" || subscription.status === "none") {
+            return "없음";
+        }
+        if (subscription.periodLabel) {
+            return subscription.periodLabel;
+        }
+        if (subscription.startDate && subscription.nextBillingDate) {
+            return `${new Date(subscription.startDate).toLocaleDateString("ko-KR")} ~ ${new Date(subscription.nextBillingDate).toLocaleDateString("ko-KR")}`;
+        }
+        return "-";
+    };
+
+    const navItems = [
+        {
+            key: "dashboard" as const,
+            label: "대시보드",
+            icon: <LayoutDashboard size={16} />,
+        },
+        {
+            key: "users" as const,
+            label: "사용자",
+            icon: <Users size={16} />,
+            count: usersTotal,
+        },
+        {
+            key: "payments" as const,
+            label: "결제",
+            icon: <CreditCard size={16} />,
+            count: paymentsTotal,
+        },
+    ];
+
     return (
         <div className="admin-container">
-            <header className="admin-header">
-                <div className="admin-header-text">
-                    <h1>관리자 페이지</h1>
-                    <p>사용자, 결제, 통계를 한 곳에서 관리합니다.</p>
-                </div>
-                <div className="admin-header-actions">
-                    <button
-                        type="button"
-                        className="admin-home-btn"
-                        onClick={() => router.push("/")}
-                    >
-                        홈으로 이동
-                    </button>
-                    <button
-                        type="button"
-                        className="admin-logout-btn"
-                        onClick={handleAdminLogout}
-                    >
-                        로그아웃
-                    </button>
-                </div>
-            </header>
-            <nav className="admin-nav">
-                <button
-                    className={`admin-nav-btn ${activeTab === "dashboard" ? "active" : ""}`}
-                    onClick={() => setActiveTab("dashboard")}
-                >
-                    대시보드
-                </button>
-                <button
-                    className={`admin-nav-btn ${activeTab === "users" ? "active" : ""}`}
-                    onClick={() => setActiveTab("users")}
-                >
-                    사용자 관리
-                </button>
-                <button
-                    className={`admin-nav-btn ${activeTab === "payments" ? "active" : ""}`}
-                    onClick={() => setActiveTab("payments")}
-                >
-                    결제 내역
-                </button>
-            </nav>
-
-            <main className="admin-main">
-                {/* Dashboard Tab */}
-                {activeTab === "dashboard" && (
-                    <div className="admin-dashboard">
-                        {statsLoading ? (
-                            <div className="admin-loading-inline">
-                                <div className="admin-spinner" />
-                            </div>
-                        ) : stats ? (
-                            <>
-                                {stats.warning && (
-                                    <div className="admin-section">
-                                        <p className="admin-refund-info">
-                                            Firebase Admin 설정이 없어 실데이터를
-                                            불러오지 못했습니다. 현재는 0값으로
-                                            표시됩니다.
-                                        </p>
-                                    </div>
-                                )}
-                                <div className="admin-stats-grid">
-                                    <div className="admin-stat-card">
-                                        <h3>일 방문자 수</h3>
-                                        <p className="admin-stat-value">
-                                            {stats.dailyVisitors.toLocaleString()}
-                                        </p>
-                                    </div>
-                                    <div className="admin-stat-card">
-                                        <h3>일 다운로드 수</h3>
-                                        <p className="admin-stat-value">
-                                            {stats.dailyDownloads.toLocaleString()}
-                                        </p>
-                                    </div>
-                                    <div className="admin-stat-card">
-                                        <h3>회원가입 인원</h3>
-                                        <p className="admin-stat-value">
-                                            {stats.totalSignups.toLocaleString()}
-                                        </p>
-                                    </div>
-                                    <div className="admin-stat-card">
-                                        <h3>오늘 총 매출</h3>
-                                        <p className="admin-stat-value">
-                                            {stats.todaySales.toLocaleString()}
-                                            원
-                                        </p>
-                                    </div>
-                                </div>
-
-                                <div className="admin-section">
-                                    <h2>일자별 총 매출</h2>
-                                    <div className="admin-table-wrapper">
-                                        <table className="admin-table">
-                                            <thead>
-                                                <tr>
-                                                    <th>일자</th>
-                                                    <th>결제 건수</th>
-                                                    <th>총 매출</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {stats.dailyRevenue.map(
-                                                    (daily) => (
-                                                        <tr key={daily.date}>
-                                                            <td>{daily.date}</td>
-                                                            <td>
-                                                                {
-                                                                    daily.paymentCount
-                                                                }
-                                                                건
-                                                            </td>
-                                                            <td>
-                                                                {daily.totalSales.toLocaleString()}
-                                                                원
-                                                            </td>
-                                                        </tr>
-                                                    ),
-                                                )}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-
-                                <div className="admin-stats-grid">
-                                    <div className="admin-stat-card">
-                                        <h3>월간 반복 수익 (MRR)</h3>
-                                        <p className="admin-stat-value">
-                                            {stats.revenue.totalMRR.toLocaleString()}
-                                            원
-                                        </p>
-                                    </div>
-                                    <div className="admin-stat-card">
-                                        <h3>최근 30일 결제</h3>
-                                        <p className="admin-stat-value">
-                                            {stats.recentActivity.payments.total.toLocaleString()}
-                                            원
-                                        </p>
-                                        <p className="admin-stat-sub">
-                                            {
-                                                stats.recentActivity.payments
-                                                    .count
-                                            }
-                                            건
-                                        </p>
-                                    </div>
-                                </div>
-
-                                <div className="admin-section">
-                                    <h2>플랜별 사용자</h2>
-                                    <div className="admin-plan-grid">
-                                        {Object.entries(stats.planCounts).map(
-                                            ([plan, count]) => (
-                                                <div
-                                                    key={plan}
-                                                    className="admin-plan-card"
-                                                >
-                                                    <span
-                                                        className={`admin-plan-badge ${plan}`}
-                                                    >
-                                                        {plan.toUpperCase()}
-                                                    </span>
-                                                    <span className="admin-plan-count">
-                                                        {count}명
-                                                    </span>
-                                                </div>
-                                            ),
-                                        )}
-                                    </div>
-                                </div>
-
-                                <div className="admin-section">
-                                    <h2>구독 상태</h2>
-                                    <div className="admin-status-grid">
-                                        <div className="admin-status-item">
-                                            <span className="admin-status-label">
-                                                활성
-                                            </span>
-                                            <span className="admin-status-value active">
-                                                {stats.subscriptions.active}
-                                            </span>
-                                        </div>
-                                        <div className="admin-status-item">
-                                            <span className="admin-status-label">
-                                                취소됨
-                                            </span>
-                                            <span className="admin-status-value cancelled">
-                                                {stats.subscriptions.cancelled}
-                                            </span>
-                                        </div>
-                                        <div className="admin-status-item">
-                                            <span className="admin-status-label">
-                                                일시정지
-                                            </span>
-                                            <span className="admin-status-value suspended">
-                                                {stats.subscriptions.suspended}
-                                            </span>
-                                        </div>
-                                        <div className="admin-status-item">
-                                            <span className="admin-status-label">
-                                                무료
-                                            </span>
-                                            <span className="admin-status-value free">
-                                                {stats.subscriptions.free}
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="admin-section">
-                                    <h2>최근 30일 환불</h2>
-                                    <p className="admin-refund-info">
-                                        {stats.recentActivity.refunds.count}건 /{" "}
-                                        {stats.recentActivity.refunds.total.toLocaleString()}
-                                        원
-                                    </p>
-                                </div>
-                            </>
-                        ) : (
-                            <p>통계를 불러올 수 없습니다.</p>
-                        )}
+            <aside className="admin-sidebar">
+                <div className="admin-brand">
+                    <span className="admin-brand-dot" />
+                    <div>
+                        <h1>Nova Admin</h1>
+                        <p>운영 콘솔</p>
                     </div>
-                )}
+                </div>
 
-                {/* Users Tab */}
-                {activeTab === "users" && (
-                    <div className="admin-users">
-                        <div className="admin-filters">
-                            <input
-                                type="text"
-                                placeholder="이메일 검색..."
-                                value={userSearch}
-                                onChange={(e) => setUserSearch(e.target.value)}
-                                className="admin-search"
-                            />
-                            <select
-                                value={userPlanFilter}
-                                onChange={(e) =>
-                                    setUserPlanFilter(e.target.value)
-                                }
-                                className="admin-select"
-                            >
-                                <option value="">모든 플랜</option>
-                                <option value="free">Free</option>
-                                <option value="go">Go</option>
-                                <option value="plus">Plus</option>
-                                <option value="pro">Pro</option>
-                            </select>
-                            <select
-                                value={userStatusFilter}
-                                onChange={(e) =>
-                                    setUserStatusFilter(e.target.value)
-                                }
-                                className="admin-select"
-                            >
-                                <option value="">모든 상태</option>
-                                <option value="active">활성</option>
-                                <option value="cancelled">취소됨</option>
-                                <option value="suspended">일시정지</option>
-                            </select>
-                        </div>
+                <nav className="admin-sidebar-nav">
+                    {navItems.map((item) => (
+                        <button
+                            key={item.key}
+                            type="button"
+                            className={`admin-sidebar-btn ${activeTab === item.key ? "active" : ""}`}
+                            onClick={() => setActiveTab(item.key)}
+                        >
+                            <span className="admin-sidebar-btn-left">
+                                {item.icon}
+                                {item.label}
+                            </span>
+                            {typeof item.count === "number" && (
+                                <span className="admin-sidebar-count">
+                                    {item.count}
+                                </span>
+                            )}
+                        </button>
+                    ))}
+                </nav>
 
-                        <p className="admin-result-count">총 {usersTotal}명</p>
+                <div className="admin-sidebar-footer">
+                    <p>로그인 계정</p>
+                    <strong>{authUser?.email ?? "관리자 세션"}</strong>
+                </div>
+            </aside>
 
-                        {usersLoading ? (
-                            <div className="admin-loading-inline">
-                                <div className="admin-spinner" />
-                            </div>
-                        ) : (
-                            <div className="admin-table-wrapper">
-                                <table className="admin-table">
-                                    <thead>
-                                        <tr>
-                                            <th>이메일</th>
-                                            <th>현재 플랜</th>
-                                            <th>상태</th>
-                                            <th>오늘 사용량</th>
-                                            <th>남은 사용량</th>
-                                            <th>누적 금액</th>
-                                            <th>다음 결제일</th>
-                                            <th>실패 횟수</th>
-                                            <th>작업</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {users.map((user) => (
-                                            <tr key={user.uid}>
-                                                <td>{user.email}</td>
-                                                <td>
-                                                    <span
-                                                        className={`admin-plan-badge ${user.subscription.plan}`}
-                                                    >
-                                                        {user.subscription.plan.toUpperCase()}
-                                                    </span>
-                                                </td>
-                                                <td>
-                                                    <span
-                                                        className={`admin-status-badge ${user.subscription.status}`}
-                                                    >
+            <div className="admin-content">
+                <header className="admin-header">
+                    <div className="admin-header-text">
+                        <h2>
+                            {activeTab === "dashboard"
+                                ? "서비스 운영 현황"
+                                : activeTab === "users"
+                                  ? "사용자 관리"
+                                  : "결제 관리"}
+                        </h2>
+                        <p>
+                            {activeTab === "dashboard"
+                                ? "핵심 지표와 매출 흐름을 실시간으로 확인합니다."
+                                : activeTab === "users"
+                                  ? "회원 상태, 플랜, 사용량을 한 화면에서 관리합니다."
+                                  : "결제 상태와 환불 이력을 빠르게 검토합니다."}
+                        </p>
+                    </div>
+                    <div className="admin-header-actions">
+                        <button
+                            type="button"
+                            className="admin-home-btn"
+                            onClick={() => router.push("/")}
+                        >
+                            <Home size={14} />
+                            홈
+                        </button>
+                        <button
+                            type="button"
+                            className="admin-logout-btn"
+                            onClick={handleAdminLogout}
+                        >
+                            <LogOut size={14} />
+                            로그아웃
+                        </button>
+                    </div>
+                </header>
+
+                <main className="admin-main">
+                    {activeTab === "dashboard" && (
+                        <div className="admin-dashboard">
+                            {statsLoading ? (
+                                <div className="admin-loading-inline">
+                                    <div className="admin-spinner" />
+                                </div>
+                            ) : stats ? (
+                                <>
+                                    {stats.warning && (
+                                        <div className="admin-banner-warning">
+                                            Firebase Admin 설정이 없어 일부 지표가
+                                            0으로 표시될 수 있습니다.
+                                        </div>
+                                    )}
+
+                                    <section className="admin-kpi-grid">
+                                        <article className="admin-kpi-card">
+                                            <div className="admin-kpi-head">
+                                                <span>일 방문자</span>
+                                                <TrendingUp size={14} />
+                                            </div>
+                                            <strong>
+                                                {stats.dailyVisitors.toLocaleString()}
+                                            </strong>
+                                        </article>
+                                        <article className="admin-kpi-card">
+                                            <div className="admin-kpi-head">
+                                                <span>일 다운로드</span>
+                                                <TrendingUp size={14} />
+                                            </div>
+                                            <strong>
+                                                {stats.dailyDownloads.toLocaleString()}
+                                            </strong>
+                                        </article>
+                                        <article className="admin-kpi-card">
+                                            <div className="admin-kpi-head">
+                                                <span>누적 회원</span>
+                                                <Users size={14} />
+                                            </div>
+                                            <strong>
+                                                {stats.totalSignups.toLocaleString()}
+                                            </strong>
+                                        </article>
+                                        <article className="admin-kpi-card">
+                                            <div className="admin-kpi-head">
+                                                <span>오늘 매출</span>
+                                                <CreditCard size={14} />
+                                            </div>
+                                            <strong>
+                                                {formatCurrency(stats.todaySales)}
+                                            </strong>
+                                        </article>
+                                    </section>
+
+                                    <section className="admin-overview-grid">
+                                        <article className="admin-panel">
+                                            <h3>수익 요약</h3>
+                                            <div className="admin-overview-list">
+                                                <div>
+                                                    <span>월간 반복 수익</span>
+                                                    <strong>
+                                                        {formatCurrency(
+                                                            stats.revenue.totalMRR,
+                                                        )}
+                                                    </strong>
+                                                </div>
+                                                <div>
+                                                    <span>최근 30일 결제</span>
+                                                    <strong>
+                                                        {formatCurrency(
+                                                            stats.recentActivity
+                                                                .payments.total,
+                                                        )}
+                                                    </strong>
+                                                </div>
+                                                <div>
+                                                    <span>최근 30일 환불</span>
+                                                    <strong className="negative">
+                                                        {stats.recentActivity
+                                                            .refunds.count}
+                                                        건 /{" "}
+                                                        {formatCurrency(
+                                                            stats.recentActivity
+                                                                .refunds.total,
+                                                        )}
+                                                    </strong>
+                                                </div>
+                                            </div>
+                                        </article>
+                                        <article className="admin-panel">
+                                            <h3>구독 상태</h3>
+                                            <div className="admin-status-grid">
+                                                <div className="admin-status-item">
+                                                    <span>활성</span>
+                                                    <strong className="active">
                                                         {
-                                                            user.subscription
-                                                                .status
+                                                            stats.subscriptions
+                                                                .active
                                                         }
-                                                    </span>
-                                                </td>
-                                                <td>
-                                                    {user.usage?.today ?? 0} /{" "}
-                                                    {user.usage?.limit ?? 0}
-                                                </td>
-                                                <td>
-                                                    {user.usage?.remaining ?? 0}
-                                                </td>
-                                                <td>
-                                                    {(
-                                                        user.cumulativeAmount || 0
-                                                    ).toLocaleString()}
-                                                    원
-                                                </td>
-                                                <td>
-                                                    {user.subscription
-                                                        .nextBillingDate
-                                                        ? new Date(
-                                                              user.subscription
-                                                                  .nextBillingDate,
-                                                          ).toLocaleDateString(
-                                                              "ko-KR",
-                                                          )
-                                                        : "-"}
-                                                </td>
-                                                <td>
-                                                    {user.subscription
-                                                        .failureCount > 0 ? (
+                                                    </strong>
+                                                </div>
+                                                <div className="admin-status-item">
+                                                    <span>취소</span>
+                                                    <strong className="cancelled">
+                                                        {
+                                                            stats.subscriptions
+                                                                .cancelled
+                                                        }
+                                                    </strong>
+                                                </div>
+                                                <div className="admin-status-item">
+                                                    <span>일시정지</span>
+                                                    <strong className="suspended">
+                                                        {
+                                                            stats.subscriptions
+                                                                .suspended
+                                                        }
+                                                    </strong>
+                                                </div>
+                                                <div className="admin-status-item">
+                                                    <span>무료</span>
+                                                    <strong className="free">
+                                                        {
+                                                            stats.subscriptions
+                                                                .free
+                                                        }
+                                                    </strong>
+                                                </div>
+                                            </div>
+                                        </article>
+                                    </section>
+
+                                    <section className="admin-two-column">
+                                        <article className="admin-panel">
+                                            <h3>일자별 매출</h3>
+                                            <div className="admin-table-wrapper">
+                                                <table className="admin-table">
+                                                    <thead>
+                                                        <tr>
+                                                            <th>일자</th>
+                                                            <th>결제 건수</th>
+                                                            <th>총 매출</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {stats.dailyRevenue.map(
+                                                            (daily) => (
+                                                                <tr
+                                                                    key={
+                                                                        daily.date
+                                                                    }
+                                                                >
+                                                                    <td>
+                                                                        {
+                                                                            daily.date
+                                                                        }
+                                                                    </td>
+                                                                    <td>
+                                                                        {
+                                                                            daily.paymentCount
+                                                                        }
+                                                                        건
+                                                                    </td>
+                                                                    <td>
+                                                                        {formatCurrency(
+                                                                            daily.totalSales,
+                                                                        )}
+                                                                    </td>
+                                                                </tr>
+                                                            ),
+                                                        )}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </article>
+                                        <article className="admin-panel">
+                                            <h3>플랜 분포</h3>
+                                            <div className="admin-plan-grid">
+                                                {Object.entries(
+                                                    stats.planCounts,
+                                                ).map(([plan, count]) => (
+                                                    <div
+                                                        key={plan}
+                                                        className="admin-plan-card"
+                                                    >
                                                         <span
-                                                            className="admin-failure-count"
-                                                            title={
-                                                                user
-                                                                    .subscription
-                                                                    .lastFailureReason
-                                                            }
+                                                            className={`admin-plan-badge ${plan}`}
                                                         >
-                                                            {
-                                                                user
-                                                                    .subscription
-                                                                    .failureCount
-                                                            }
+                                                            {PLAN_LABELS[plan] ??
+                                                                plan.toUpperCase()}
                                                         </span>
-                                                    ) : (
-                                                        "-"
-                                                    )}
-                                                </td>
-                                                <td>
-                                                    <div className="admin-action-group">
-                                                        <div className="admin-plan-edit">
-                                                            <select
-                                                                value={
-                                                                    planEditValues[
-                                                                        user.uid
-                                                                    ] ||
-                                                                    (EDITABLE_PLANS.includes(
+                                                        <strong>{count}명</strong>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </article>
+                                    </section>
+                                </>
+                            ) : (
+                                <p>통계를 불러올 수 없습니다.</p>
+                            )}
+                        </div>
+                    )}
+
+                    {activeTab === "users" && (
+                        <div className="admin-panel admin-users-panel">
+                            <div className="admin-panel-head">
+                                <h3>사용자 목록</h3>
+                                <p>총 {usersTotal}명</p>
+                            </div>
+                            <div className="admin-filters">
+                                <input
+                                    type="text"
+                                    placeholder="이메일 검색..."
+                                    value={userSearch}
+                                    onChange={(e) =>
+                                        setUserSearch(e.target.value)
+                                    }
+                                    className="admin-search"
+                                />
+                                <select
+                                    value={userPlanFilter}
+                                    onChange={(e) =>
+                                        setUserPlanFilter(e.target.value)
+                                    }
+                                    className="admin-select"
+                                >
+                                    <option value="">모든 플랜</option>
+                                    <option value="free">Free</option>
+                                    <option value="go">Go</option>
+                                    <option value="plus">Plus</option>
+                                    <option value="pro">Ultra</option>
+                                </select>
+                                <select
+                                    value={userStatusFilter}
+                                    onChange={(e) =>
+                                        setUserStatusFilter(e.target.value)
+                                    }
+                                    className="admin-select"
+                                >
+                                    <option value="">모든 상태</option>
+                                    <option value="active">활성</option>
+                                    <option value="cancelled">취소</option>
+                                    <option value="suspended">일시정지</option>
+                                    <option value="none">없음</option>
+                                </select>
+                            </div>
+
+                            {usersLoading ? (
+                                <div className="admin-loading-inline">
+                                    <div className="admin-spinner" />
+                                </div>
+                            ) : (
+                                <div className="admin-table-wrapper">
+                                    <table className="admin-table">
+                                        <thead>
+                                            <tr>
+                                                <th>이메일</th>
+                                                <th>플랜</th>
+                                                <th>구독 기간</th>
+                                                <th>오늘 사용량</th>
+                                                <th>남은 사용량</th>
+                                                <th>누적 금액</th>
+                                                <th>다음 결제일</th>
+                                                <th>실패 횟수</th>
+                                                <th>관리</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {users.map((user) => (
+                                                <tr key={user.uid}>
+                                                    <td>{user.email}</td>
+                                                    <td>
+                                                        <span
+                                                            className={`admin-plan-badge ${user.subscription.plan}`}
+                                                        >
+                                                            {PLAN_LABELS[
+                                                                user.subscription
+                                                                    .plan
+                                                            ] ??
+                                                                user.subscription.plan.toUpperCase()}
+                                                        </span>
+                                                    </td>
+                                                    <td>
+                                                        <span className="admin-subscription-period">
+                                                            {formatPeriodLabel(
+                                                                user.subscription,
+                                                            )}
+                                                        </span>
+                                                    </td>
+                                                    <td>
+                                                        {user.usage?.today ?? 0} /{" "}
+                                                        {user.usage?.limit ?? 0}
+                                                    </td>
+                                                    <td>
+                                                        {user.usage?.remaining ??
+                                                            0}
+                                                    </td>
+                                                    <td>
+                                                        {formatCurrency(
+                                                            user.cumulativeAmount ||
+                                                                0,
+                                                        )}
+                                                    </td>
+                                                    <td>
+                                                        {user.subscription
+                                                            .nextBillingDate
+                                                            ? new Date(
+                                                                  user
+                                                                      .subscription
+                                                                      .nextBillingDate,
+                                                              ).toLocaleDateString(
+                                                                  "ko-KR",
+                                                              )
+                                                            : "-"}
+                                                    </td>
+                                                    <td>
+                                                        {user.subscription
+                                                            .failureCount > 0 ? (
+                                                            <span
+                                                                className="admin-failure-count"
+                                                                title={
+                                                                    user
+                                                                        .subscription
+                                                                        .lastFailureReason
+                                                                }
+                                                            >
+                                                                {
+                                                                    user
+                                                                        .subscription
+                                                                        .failureCount
+                                                                }
+                                                            </span>
+                                                        ) : (
+                                                            "-"
+                                                        )}
+                                                    </td>
+                                                    <td>
+                                                        <div className="admin-action-group">
+                                                            <div className="admin-plan-edit">
+                                                                <select
+                                                                    value={
+                                                                        planEditValues[
+                                                                            user
+                                                                                .uid
+                                                                        ] ||
+                                                                        (EDITABLE_PLANS.includes(
+                                                                            user
+                                                                                .subscription
+                                                                                .plan as EditablePlan,
+                                                                        )
+                                                                            ? (user
+                                                                                  .subscription
+                                                                                  .plan as EditablePlan)
+                                                                            : "free")
+                                                                    }
+                                                                    onChange={(
+                                                                        e,
+                                                                    ) => {
+                                                                        const selectedPlan =
+                                                                            e
+                                                                                .target
+                                                                                .value as EditablePlan;
+                                                                        setPlanEditValues(
+                                                                            (
+                                                                                prev,
+                                                                            ) => ({
+                                                                                ...prev,
+                                                                                [user.uid]:
+                                                                                    selectedPlan,
+                                                                            }),
+                                                                        );
+                                                                        void handleUpdatePlan(
+                                                                            user,
+                                                                            selectedPlan,
+                                                                        );
+                                                                    }}
+                                                                    className="admin-plan-select"
+                                                                >
+                                                                    <option value="free">
+                                                                        Free
+                                                                    </option>
+                                                                    <option value="go">
+                                                                        Go
+                                                                    </option>
+                                                                    <option value="plus">
+                                                                        Plus
+                                                                    </option>
+                                                                    <option value="pro">
+                                                                        Ultra
+                                                                    </option>
+                                                                </select>
+                                                            </div>
+                                                            <div className="admin-usage-edit">
+                                                                <input
+                                                                    type="number"
+                                                                    min={0}
+                                                                    max={
                                                                         user
-                                                                            .subscription
-                                                                            .plan as EditablePlan,
-                                                                    )
-                                                                        ? (user
-                                                                              .subscription
-                                                                              .plan as EditablePlan)
-                                                                        : "free")
-                                                                }
-                                                                onChange={(e) =>
-                                                                    setPlanEditValues(
-                                                                        (prev) => ({
-                                                                            ...prev,
-                                                                            [user.uid]:
-                                                                                e
-                                                                                    .target
-                                                                                    .value as EditablePlan,
-                                                                        }),
-                                                                    )
-                                                                }
-                                                                className="admin-plan-select"
-                                                            >
-                                                                <option value="free">
-                                                                    Free
-                                                                </option>
-                                                                <option value="go">
-                                                                    Go
-                                                                </option>
-                                                                <option value="plus">
-                                                                    Plus
-                                                                </option>
-                                                                <option value="pro">
-                                                                    Pro
-                                                                </option>
-                                                            </select>
-                                                            <button
-                                                                onClick={() =>
-                                                                    handleUpdatePlan(
-                                                                        user,
-                                                                    )
-                                                                }
-                                                                disabled={
-                                                                    updatingPlanUserId ===
-                                                                    user.uid
-                                                                }
-                                                                className="admin-save-btn"
-                                                            >
-                                                                {updatingPlanUserId ===
-                                                                user.uid
-                                                                    ? "저장 중..."
-                                                                    : "플랜 저장"}
-                                                            </button>
+                                                                            .usage
+                                                                            ?.limit ??
+                                                                        0
+                                                                    }
+                                                                    step={1}
+                                                                    value={
+                                                                        usageEditValues[
+                                                                            user
+                                                                                .uid
+                                                                        ] ??
+                                                                        String(
+                                                                            user
+                                                                                .usage
+                                                                                ?.remaining ??
+                                                                                0,
+                                                                        )
+                                                                    }
+                                                                    onChange={(
+                                                                        e,
+                                                                    ) =>
+                                                                        scheduleRemainingUsageAutoSave(
+                                                                            user,
+                                                                            e
+                                                                                .target
+                                                                                .value,
+                                                                        )
+                                                                    }
+                                                                    className="admin-usage-input"
+                                                                />
+                                                            </div>
+                                                            {(updatingPlanUserId ===
+                                                                user.uid ||
+                                                                updatingUsageUserId ===
+                                                                    user.uid) && (
+                                                                <span className="admin-inline-saving">
+                                                                    저장 중...
+                                                                </span>
+                                                            )}
                                                         </div>
-                                                        <div className="admin-usage-edit">
-                                                            <input
-                                                                type="number"
-                                                                min={0}
-                                                                max={
-                                                                    user.usage
-                                                                        ?.limit ?? 0
-                                                                }
-                                                                step={1}
-                                                                value={
-                                                                    usageEditValues[
-                                                                        user.uid
-                                                                    ] ??
-                                                                    String(
-                                                                        user.usage
-                                                                            ?.remaining ??
-                                                                            0,
-                                                                    )
-                                                                }
-                                                                onChange={(e) =>
-                                                                    setUsageEditValues(
-                                                                        (prev) => ({
-                                                                            ...prev,
-                                                                            [user.uid]:
-                                                                                e
-                                                                                    .target
-                                                                                    .value,
-                                                                        }),
-                                                                    )
-                                                                }
-                                                                className="admin-usage-input"
-                                                            />
-                                                            <button
-                                                                onClick={() =>
-                                                                    handleUpdateRemainingUsage(
-                                                                        user,
-                                                                    )
-                                                                }
-                                                                disabled={
-                                                                    updatingUsageUserId ===
-                                                                    user.uid
-                                                                }
-                                                                className="admin-save-btn"
-                                                            >
-                                                                {updatingUsageUserId ===
-                                                                user.uid
-                                                                    ? "저장 중..."
-                                                                    : "저장"}
-                                                            </button>
-                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {activeTab === "payments" && (
+                        <div className="admin-panel admin-payments-panel">
+                            <div className="admin-panel-head">
+                                <h3>결제 내역</h3>
+                                <p>총 {paymentsTotal}건</p>
+                            </div>
+                            <div className="admin-filters">
+                                <input
+                                    type="text"
+                                    placeholder="이메일 검색..."
+                                    value={paymentSearch}
+                                    onChange={(e) =>
+                                        setPaymentSearch(e.target.value)
+                                    }
+                                    className="admin-search"
+                                />
+                                <select
+                                    value={paymentStatusFilter}
+                                    onChange={(e) =>
+                                        setPaymentStatusFilter(e.target.value)
+                                    }
+                                    className="admin-select"
+                                >
+                                    <option value="">모든 상태</option>
+                                    <option value="DONE">완료</option>
+                                    <option value="REFUNDED">환불</option>
+                                </select>
+                                <input
+                                    type="date"
+                                    value={paymentStartDate}
+                                    onChange={(e) =>
+                                        setPaymentStartDate(e.target.value)
+                                    }
+                                    className="admin-date"
+                                />
+                                <input
+                                    type="date"
+                                    value={paymentEndDate}
+                                    onChange={(e) =>
+                                        setPaymentEndDate(e.target.value)
+                                    }
+                                    className="admin-date"
+                                />
+                            </div>
+
+                            {paymentsLoading ? (
+                                <div className="admin-loading-inline">
+                                    <div className="admin-spinner" />
+                                </div>
+                            ) : (
+                                <div className="admin-table-wrapper">
+                                    <table className="admin-table">
+                                        <thead>
+                                            <tr>
+                                                <th>결제일</th>
+                                                <th>사용자</th>
+                                                <th>주문명</th>
+                                                <th>금액</th>
+                                                <th>결제수단</th>
+                                                <th>상태</th>
+                                                <th>결제키</th>
+                                                <th>삭제</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {payments.map((payment) => (
+                                                <tr key={payment.paymentKey}>
+                                                    <td>
+                                                        {formatDateTime(
+                                                            payment.approvedAt,
+                                                        )}
+                                                    </td>
+                                                    <td>{payment.userEmail}</td>
+                                                    <td>{payment.orderName}</td>
+                                                    <td
+                                                        className={
+                                                            payment.status ===
+                                                            "REFUNDED"
+                                                                ? "refunded"
+                                                                : ""
+                                                        }
+                                                    >
+                                                        {formatCurrency(
+                                                            payment.amount,
+                                                        )}
+                                                    </td>
+                                                    <td>
+                                                        {payment.card
+                                                            ?.company ||
+                                                            payment.method}
+                                                        {payment.card
+                                                            ?.number && (
+                                                            <span className="admin-card-number">
+                                                                *
+                                                                {payment.card.number.slice(
+                                                                    -4,
+                                                                )}
+                                                            </span>
+                                                        )}
+                                                    </td>
+                                                    <td>
+                                                        <span
+                                                            className={`admin-payment-status ${payment.status}`}
+                                                        >
+                                                            {payment.status ===
+                                                            "DONE"
+                                                                ? "완료"
+                                                                : "환불"}
+                                                        </span>
+                                                    </td>
+                                                    <td className="admin-payment-key">
+                                                        {payment.paymentKey.slice(
+                                                            0,
+                                                            20,
+                                                        )}
+                                                        ...
+                                                    </td>
+                                                    <td>
                                                         <button
                                                             onClick={() =>
-                                                                handleDeleteUser(
-                                                                    user.uid,
-                                                                    user.email,
+                                                                handleDeletePayment(
+                                                                    payment.paymentKey,
+                                                                    payment.userId,
+                                                                    payment.orderName,
                                                                 )
                                                             }
                                                             disabled={
-                                                                deletingUserId ===
-                                                                user.uid
+                                                                deletingPaymentKey ===
+                                                                payment.paymentKey
                                                             }
                                                             className="admin-delete-btn"
                                                         >
-                                                            {deletingUserId ===
-                                                            user.uid
+                                                            {deletingPaymentKey ===
+                                                            payment.paymentKey
                                                                 ? "삭제 중..."
                                                                 : "삭제"}
                                                         </button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
-                    </div>
-                )}
-
-                {/* Payments Tab */}
-                {activeTab === "payments" && (
-                    <div className="admin-payments">
-                        <div className="admin-filters">
-                            <input
-                                type="text"
-                                placeholder="이메일 검색..."
-                                value={paymentSearch}
-                                onChange={(e) =>
-                                    setPaymentSearch(e.target.value)
-                                }
-                                className="admin-search"
-                            />
-                            <select
-                                value={paymentStatusFilter}
-                                onChange={(e) =>
-                                    setPaymentStatusFilter(e.target.value)
-                                }
-                                className="admin-select"
-                            >
-                                <option value="">모든 상태</option>
-                                <option value="DONE">완료</option>
-                                <option value="REFUNDED">환불됨</option>
-                            </select>
-                            <input
-                                type="date"
-                                value={paymentStartDate}
-                                onChange={(e) =>
-                                    setPaymentStartDate(e.target.value)
-                                }
-                                className="admin-date"
-                            />
-                            <span style={{ color: "#a1a1aa" }}>~</span>
-                            <input
-                                type="date"
-                                value={paymentEndDate}
-                                onChange={(e) =>
-                                    setPaymentEndDate(e.target.value)
-                                }
-                                className="admin-date"
-                            />
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
                         </div>
-
-                        <p className="admin-result-count">
-                            총 {paymentsTotal}건
-                        </p>
-
-                        {paymentsLoading ? (
-                            <div className="admin-loading-inline">
-                                <div className="admin-spinner" />
-                            </div>
-                        ) : (
-                            <div className="admin-table-wrapper">
-                                <table className="admin-table">
-                                    <thead>
-                                        <tr>
-                                            <th>결제일</th>
-                                            <th>사용자</th>
-                                            <th>주문명</th>
-                                            <th>금액</th>
-                                            <th>결제수단</th>
-                                            <th>상태</th>
-                                            <th>결제키</th>
-                                            <th>삭제</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {payments.map((payment) => (
-                                            <tr key={payment.paymentKey}>
-                                                <td>
-                                                    {new Date(
-                                                        payment.approvedAt,
-                                                    ).toLocaleDateString(
-                                                        "ko-KR",
-                                                        {
-                                                            year: "numeric",
-                                                            month: "short",
-                                                            day: "numeric",
-                                                            hour: "2-digit",
-                                                            minute: "2-digit",
-                                                        },
-                                                    )}
-                                                </td>
-                                                <td>{payment.userEmail}</td>
-                                                <td>{payment.orderName}</td>
-                                                <td
-                                                    className={
-                                                        payment.status ===
-                                                        "REFUNDED"
-                                                            ? "refunded"
-                                                            : ""
-                                                    }
-                                                >
-                                                    {payment.amount?.toLocaleString()}
-                                                    원
-                                                </td>
-                                                <td>
-                                                    {payment.card?.company ||
-                                                        payment.method}
-                                                    {payment.card?.number && (
-                                                        <span className="admin-card-number">
-                                                            {payment.card.number.slice(
-                                                                -4,
-                                                            )}
-                                                        </span>
-                                                    )}
-                                                </td>
-                                                <td>
-                                                    <span
-                                                        className={`admin-payment-status ${payment.status}`}
-                                                    >
-                                                        {payment.status ===
-                                                        "DONE"
-                                                            ? "완료"
-                                                            : "환불됨"}
-                                                    </span>
-                                                </td>
-                                                <td className="admin-payment-key">
-                                                    {payment.paymentKey.slice(
-                                                        0,
-                                                        20,
-                                                    )}
-                                                    ...
-                                                </td>
-                                                <td>
-                                                    <button
-                                                        onClick={() =>
-                                                            handleDeletePayment(
-                                                                payment.paymentKey,
-                                                                payment.userId,
-                                                                payment.orderName,
-                                                            )
-                                                        }
-                                                        disabled={
-                                                            deletingPaymentKey ===
-                                                            payment.paymentKey
-                                                        }
-                                                        className="admin-delete-btn"
-                                                    >
-                                                        {deletingPaymentKey ===
-                                                        payment.paymentKey
-                                                            ? "삭제 중..."
-                                                            : "삭제"}
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
-                    </div>
-                )}
-            </main>
+                    )}
+                </main>
+            </div>
         </div>
     );
 }

@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyAdmin, admin } from "@/lib/adminAuth";
 import { getTierLimit, PlanTier } from "@/lib/tierLimits";
 import { normalizeCreatedAt } from "@/lib/userData";
+import { resolveEffectiveUsagePlan } from "@/lib/aiUsage";
 
 const db = admin.firestore();
 
@@ -48,6 +49,7 @@ interface AdminUserListItem {
         billingCycle: string;
         startDate: string;
         nextBillingDate: string;
+        periodLabel?: string;
         failureCount: number;
         lastFailureReason?: string;
     };
@@ -56,6 +58,40 @@ interface AdminUserListItem {
         limit: number;
         remaining: number;
     };
+}
+
+function toDateOrNull(value: unknown): Date | null {
+    if (typeof value !== "string" || !value) return null;
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function calcPeriodEndDate(startDate: Date, billingCycle: string): Date {
+    const next = new Date(startDate);
+    if (billingCycle === "yearly") {
+        next.setFullYear(next.getFullYear() + 1);
+        return next;
+    }
+    if (billingCycle === "test") {
+        next.setMinutes(next.getMinutes() + 1);
+        return next;
+    }
+    next.setMonth(next.getMonth() + 1);
+    return next;
+}
+
+function formatPeriodDate(value: Date): string {
+    return value.toLocaleDateString("ko-KR");
+}
+
+function inferCycleFromPayment(payment: { amount?: number; orderName?: string }): string | null {
+    const orderName = String(payment.orderName || "").toLowerCase();
+    if (orderName.includes("연간") || orderName.includes("yearly")) return "yearly";
+    if (orderName.includes("월간") || orderName.includes("monthly")) return "monthly";
+
+    const amount = Number(payment.amount || 0);
+    if ([99960, 251160, 831600, 712800].includes(amount)) return "yearly";
+    return null;
 }
 
 /**
@@ -99,7 +135,7 @@ export async function GET(request: NextRequest) {
             const data = doc.data();
             const authUser = authUsersByUid.get(doc.id);
             const subscription = data.subscription || {};
-            const plan = (subscription.plan || data.plan || "free") as PlanTier;
+            const plan = resolveEffectiveUsagePlan(data) as PlanTier;
             const status = String(subscription.status || "none");
             const todayUsage = data.aiCallUsage || 0;
             const usageLimit = getTierLimit(plan);
@@ -186,19 +222,65 @@ export async function GET(request: NextRequest) {
                         .get();
 
                     let cumulativeAmount = 0;
+                    let cycleFromLatestPayment: string | null = null;
+                    let latestDoneApprovedAt: Date | null = null;
                     paymentsSnapshot.forEach((paymentDoc) => {
                         const payment = paymentDoc.data() as {
                             status?: string;
                             amount?: number;
+                            approvedAt?: string;
+                            orderName?: string;
                         };
                         if (payment.status === "DONE") {
                             cumulativeAmount += Number(payment.amount || 0);
+                            const approvedAt = toDateOrNull(payment.approvedAt);
+                            if (
+                                approvedAt &&
+                                (!latestDoneApprovedAt ||
+                                    approvedAt.getTime() >
+                                        latestDoneApprovedAt.getTime())
+                            ) {
+                                latestDoneApprovedAt = approvedAt;
+                                cycleFromLatestPayment = inferCycleFromPayment(payment);
+                            }
                         }
                     });
 
                     const user = mergedUsers.get(uid);
                     if (user) {
                         user.cumulativeAmount = cumulativeAmount;
+                        const plan = String(user.subscription.plan || "free").toLowerCase();
+                        if (plan === "free" || cumulativeAmount <= 0) {
+                            user.subscription.status = "none";
+                            user.subscription.startDate = "";
+                            user.subscription.nextBillingDate = "";
+                            user.subscription.periodLabel = "없음";
+                            return;
+                        }
+
+                        const existingStartDate = toDateOrNull(
+                            user.subscription.startDate,
+                        );
+                        const periodStart = latestDoneApprovedAt || existingStartDate;
+
+                        if (!periodStart) {
+                            user.subscription.periodLabel = "-";
+                            return;
+                        }
+
+                        const cycle =
+                            cycleFromLatestPayment ||
+                            String(user.subscription.billingCycle || "monthly");
+                        const existingEndDate = toDateOrNull(
+                            user.subscription.nextBillingDate,
+                        );
+                        const periodEnd = latestDoneApprovedAt
+                            ? calcPeriodEndDate(periodStart, cycle)
+                            : existingEndDate || calcPeriodEndDate(periodStart, cycle);
+
+                        user.subscription.startDate = periodStart.toISOString();
+                        user.subscription.nextBillingDate = periodEnd.toISOString();
+                        user.subscription.periodLabel = `${formatPeriodDate(periodStart)} ~ ${formatPeriodDate(periodEnd)}`;
                     }
                 } catch {
                     // 누적 금액 계산 실패 시 0원 유지

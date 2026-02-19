@@ -190,6 +190,7 @@ function PaymentSuccessContent() {
                             orderId,
                             amount: Number(amount),
                             userId: resolvedUserId,
+                            billingCycle,
                         }),
                     });
 
@@ -314,6 +315,7 @@ function PaymentSuccessContent() {
                         orderId,
                         amount: Number(amount),
                         userId: resolvedUserId,
+                        billingCycle,
                     }),
                 });
 

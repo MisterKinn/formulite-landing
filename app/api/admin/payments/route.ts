@@ -5,6 +5,24 @@ import { verifyAdmin, admin } from "@/lib/adminAuth";
 
 const db = admin.firestore();
 
+async function listAllAuthUsers() {
+    let pageToken: string | undefined = undefined;
+    const users: Array<{ uid: string; email: string }> = [];
+
+    do {
+        const result = await admin.auth().listUsers(1000, pageToken);
+        result.users.forEach((user) => {
+            users.push({
+                uid: user.uid,
+                email: user.email || "",
+            });
+        });
+        pageToken = result.pageToken;
+    } while (pageToken);
+
+    return users;
+}
+
 interface AdminPaymentItem {
     paymentKey: string;
     userId: string;
@@ -17,6 +35,14 @@ interface AdminPaymentItem {
     approvedAt: string;
     card?: { company: string; number: string };
     createdAt: string;
+}
+
+function looksLikeEmail(value: unknown): value is string {
+    return (
+        typeof value === "string" &&
+        value.includes("@") &&
+        value.includes(".")
+    );
 }
 
 /**
@@ -50,12 +76,17 @@ export async function GET(request: NextRequest) {
             : null;
 
         // Get all users first to map email to payments
-        const usersSnapshot = await db.collection("users").get();
+        const [usersSnapshot, authUsers] = await Promise.all([
+            db.collection("users").get(),
+            listAllAuthUsers(),
+        ]);
         const userEmails: Record<string, string> = {};
+        const authUserMap = new Map(authUsers.map((item) => [item.uid, item.email]));
 
         usersSnapshot.forEach((doc) => {
             const data = doc.data();
-            userEmails[doc.id] = data.email || "Unknown";
+            const authEmail = authUserMap.get(doc.id);
+            userEmails[doc.id] = authEmail || (looksLikeEmail(data.email) ? data.email : "Unknown");
         });
 
         const allPayments: AdminPaymentItem[] = [];

@@ -4,8 +4,13 @@ import {
     validatePaymentAmount,
     logPaymentError,
 } from "@/lib/paymentErrors";
-import { inferPlanFromAmount } from "@/lib/userData";
+import {
+    buildUserRootPatch,
+    inferPlanFromAmount,
+    normalizePlanLike,
+} from "@/lib/userData";
 import { savePaymentRecord } from "@/lib/paymentHistory";
+import getFirebaseAdmin from "@/lib/firebaseAdmin";
 
 function extractUserIdFromCustomerKey(customerKey?: string | null): string | null {
     if (!customerKey) return null;
@@ -19,6 +24,41 @@ function extractUserIdFromCustomerKey(customerKey?: string | null): string | nul
     return null;
 }
 
+async function saveSubscriptionByAdmin(
+    userId: string,
+    input: {
+        plan: string;
+        amount: number;
+        startDate: string;
+        lastPaymentDate: string;
+        billingCycle?: "monthly" | "yearly" | "test";
+        status: "active" | "cancelled" | "expired";
+        customerKey?: string | null;
+        isRecurring?: boolean;
+    },
+    options?: { resetUsageAt?: string },
+) {
+    const admin = getFirebaseAdmin();
+    const db = admin.firestore();
+    const userRef = db.collection("users").doc(userId);
+    const userDoc = await userRef.get();
+    const currentData = userDoc.exists ? (userDoc.data() as Record<string, any>) : {};
+    const normalizedPlan = normalizePlanLike(input.plan, "free");
+    const subscription = {
+        ...(currentData.subscription || {}),
+        ...input,
+        plan: normalizedPlan,
+    };
+    const patch = buildUserRootPatch({
+        existingUser: currentData,
+        subscription,
+        plan: normalizedPlan,
+        aiCallUsage: options?.resetUsageAt ? 0 : undefined,
+        usageResetAt: options?.resetUsageAt,
+    });
+    await userRef.set(patch, { merge: true });
+}
+
 /**
  * Toss Payments Confirm API
  * - idempotent 처리
@@ -26,7 +66,13 @@ function extractUserIdFromCustomerKey(customerKey?: string | null): string | nul
  */
 export async function POST(request: NextRequest) {
     try {
-        const { paymentKey, orderId, amount, userId: passedUserId } =
+        const {
+            paymentKey,
+            orderId,
+            amount,
+            userId: passedUserId,
+            billingCycle,
+        } =
             await request.json();
 
         /* ------------------ 1. 기본 검증 ------------------ */
@@ -109,19 +155,25 @@ export async function POST(request: NextRequest) {
                                 : null;
 
                         if (plan) {
-                            const { saveSubscription } = await import(
-                                "@/lib/subscription"
-                            );
-                            await saveSubscription(resolvedUserId, {
+                            await saveSubscriptionByAdmin(
+                                resolvedUserId,
+                                {
                                 plan: plan as any,
                                 amount: numericAmount,
                                 startDate: new Date().toISOString(),
                                 lastPaymentDate: new Date().toISOString(),
                                 status: "active",
                                 isRecurring: false,
-                            } as any, {
-                                resetUsageAt: new Date().toISOString(),
-                            });
+                                billingCycle:
+                                    billingCycle === "yearly" ||
+                                    billingCycle === "test"
+                                        ? billingCycle
+                                        : "monthly",
+                                },
+                                {
+                                    resetUsageAt: new Date().toISOString(),
+                                },
+                            );
                         }
 
                         await savePaymentRecord(resolvedUserId, {
@@ -189,18 +241,25 @@ export async function POST(request: NextRequest) {
                         ? inferredPlan
                         : null;
                 if (plan) {
-                    const { saveSubscription } = await import("@/lib/subscription");
-                    await saveSubscription(resolvedUserId, {
-                        plan: plan as any,
-                        amount: totalAmount,
-                        startDate: new Date().toISOString(),
-                        lastPaymentDate: new Date().toISOString(),
-                        status: "active",
-                        customerKey,
-                        isRecurring: false, // confirmed as one-time via payment.confirm
-                    } as any, {
-                        resetUsageAt: new Date().toISOString(),
-                    });
+                    await saveSubscriptionByAdmin(
+                        resolvedUserId,
+                        {
+                            plan: plan as any,
+                            amount: totalAmount,
+                            startDate: new Date().toISOString(),
+                            lastPaymentDate: new Date().toISOString(),
+                            status: "active",
+                            customerKey,
+                            isRecurring: false, // confirmed as one-time via payment.confirm
+                            billingCycle:
+                                billingCycle === "yearly" || billingCycle === "test"
+                                    ? billingCycle
+                                    : "monthly",
+                        },
+                        {
+                            resetUsageAt: new Date().toISOString(),
+                        },
+                    );
                 }
 
                 await savePaymentRecord(resolvedUserId, {

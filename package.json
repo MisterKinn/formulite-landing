@@ -8,7 +8,9 @@
         "start": "next start",
         "lint": "eslint",
         "test:e2e": "playwright test",
-        "setup:firebase-admin": "./scripts/add_firebase_admin_to_env.sh"
+        "setup:firebase-admin": "./scripts/add_firebase_admin_to_env.sh",
+        "backfill:next-billing-date:dry-run": "node scripts/backfill_next_billing_date.js --dry-run",
+        "backfill:next-billing-date:apply": "node scripts/backfill_next_billing_date.js --apply"
     },
     "dependencies": {
         "@tosspayments/payment-sdk": "^1.9.2",
