@@ -298,7 +298,8 @@ class AIWorker(QThread):
                         description=(
                             "Type ONLY the content OUTSIDE/BEFORE the box container. "
                             "This includes the problem statement and equation. "
-                            "Do NOT include ?? ?? ?? conditions - those go INSIDE the box. "
+                            "Do NOT include any <보기> list items like ㄱ., ㄴ., ㄷ. - those go INSIDE the box. "
+                            "Do NOT include condition bullets - those go INSIDE the box. "
                             "Do NOT include the answer choices (????????."
                         ),
                         ocr_text=outside_ocr or ocr_text_full,
@@ -310,10 +311,11 @@ class AIWorker(QThread):
                     inside_script_raw = client.generate_script_for_image(
                         image_path,  # Use full image, not cropped inside
                         description=(
-                            "Type ONLY the ?? ?? ?? (or ?? ?? ?? ?? conditions that should go INSIDE the box. "
-                            "These are the numbered conditions like '?? k=0???...' or '?? k=3???...' "
+                            "Type ONLY the content that should go INSIDE the <보기> box. "
+                            "This includes list items like ㄱ., ㄴ., ㄷ. (or 가., 나., 다., 라.) and condition bullets. "
+                            "Include every line that belongs inside the box, in order. "
                             "Do NOT include the problem text before the box. "
-                            "Do NOT include answer choices (????????."
+                            "Do NOT include answer choices (① ② ③ ④ ⑤)."
                         ),
                         ocr_text=inside_ocr or ocr_text_full,
                     )

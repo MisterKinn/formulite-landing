@@ -3,6 +3,7 @@ from __future__ import annotations
 import textwrap
 import traceback
 import re
+import os
 from typing import Callable, Dict, List
 import ast
 
@@ -31,6 +32,27 @@ class ScriptCancelled(RuntimeError):
 class ScriptRunner:
     def __init__(self, controller: HwpController) -> None:
         self._controller = controller
+
+    def _is_view_item_line(self, stripped_line: str) -> bool:
+        """
+        Return True if the line looks like a <??> item starter (?./?./?. ...).
+        Supports insert_text(...) and insert_equation(...), with minor punctuation variants.
+        """
+        m = re.match(
+            r"^\s*insert_(?:text|equation)\(\s*['\"]\s*([^'\"]+)",
+            stripped_line,
+        )
+        if not m:
+            return False
+        head = (m.group(1) or "").strip()
+        if not head:
+            return False
+        return bool(
+            re.match(
+                r"^(?:(?:[\u3131-\u314e]|[\u3260-\u326d])(?:\s|[.)\uff0e]|,|$)|(?:\uac00|\ub098|\ub2e4|\ub77c|\ub9c8|\ubc14|\uc0ac|\uc544|\uc790|\ucc28|\uce74|\ud0c0|\ud30c|\ud558)\s*[.\uff0e])",
+                head,
+            )
+        )
 
     def _looks_like_hwpeq_text(self, text: str) -> bool:
         s = (text or "").strip()
@@ -426,14 +448,15 @@ class ScriptRunner:
         saw_outside = False
         saw_after_box = False
         fp_re = re.compile(r"^\s*focus_placeholder\(\s*(['\"])(.*?)\1\s*\)\s*$")
-        box_item_re = re.compile(r"^\s*insert_text\(\s*['\"]\s*[ㄱㄴㄷ]\.")
         content_re = re.compile(
             r"^\s*(insert_text|insert_equation|set_bold|set_underline|insert_underline|set_align_justify_next_line|set_align_right_next_line)\("
         )
         box_start_re = re.compile(
-            r"^\s*insert_text\(\s*['\"]\s*(○|◎|●|•|ㄱ\.|ㄴ\.|ㄷ\.|가\.|나\.|다\.)"
+            r"^\s*insert_text\(\s*['\"]\s*(?:(?:[\u3131-\u314e]|[\u3260-\u326d])(?:\s|[.)\uff0e]|,|$)|(?:\uac00|\ub098|\ub2e4|\ub77c|\ub9c8|\ubc14|\uc0ac|\uc544|\uc790|\ucc28|\uce74|\ud0c0|\ud30c|\ud558)\s*[.\uff0e])"
         )
-        choice_re = re.compile(r"^\s*insert_(?:text|equation)\(\s*['\"].*①")
+        choice_re = re.compile(
+            r"^\s*insert_(?:text|equation)\(\s*['\"]\s*(?:[\u2460-\u2473]|[1-9][.)])"
+        )
         # --- Dual template detection (header.hwp + box.hwp/box_white.hwp) ---
         # When both templates are present, their ### placeholders collide.
         # Fix: skip the plain-box template and use insert_box() instead.
@@ -486,7 +509,7 @@ class ScriptRunner:
                     and not saw_after_box
                     and (
                         stripped == "set_align_justify_next_line()"
-                        or box_item_re.match(stripped)
+                        or self._is_view_item_line(stripped)
                         or box_start_re.match(stripped)
                     )
                 ):
@@ -497,7 +520,7 @@ class ScriptRunner:
                     not seen_inside
                     and saw_template
                     and saw_outside
-                    and box_item_re.match(stripped)
+                    and self._is_view_item_line(stripped)
                 ):
                     if out and out[-1].strip() == "set_align_justify_next_line()":
                         out.pop()
@@ -586,10 +609,10 @@ class ScriptRunner:
 
     def _relocate_early_header_template(self, lines: List[str]) -> List[str]:
         """
-        If header.hwp is inserted too early, move it right before the 보기 block.
+        Ensure header.hwp is positioned right before the <??> item block.
 
-        This prevents normal stem/question text from being typed inside the
-        header template's table area (e.g., left side of "<보기>").
+        - If inserted too early: move down near first ?? item.
+        - If inserted too late: move up before first ?? item.
         """
         header_idx = -1
         for i, line in enumerate(lines):
@@ -600,13 +623,14 @@ class ScriptRunner:
         if header_idx < 0:
             return lines
 
-        box_item_re = re.compile(r"^\s*insert_text\(\s*['\"]\s*[ㄱㄴㄷ]\.")
         first_box_idx = -1
         for i, line in enumerate(lines):
-            if box_item_re.match(line.strip()):
+            if self._is_view_item_line(line.strip()):
                 first_box_idx = i
                 break
-        if first_box_idx < 0 or header_idx >= first_box_idx:
+        if first_box_idx < 0:
+            return lines
+        if header_idx == first_box_idx:
             return lines
 
         # Template block = header template line + immediate blanks + optional @@@ focus.
@@ -619,24 +643,25 @@ class ScriptRunner:
         ):
             block_end += 1
 
-        # Relocate only when substantial content exists before the first ㄱ/ㄴ/ㄷ.
-        content_re = re.compile(
-            r"^\s*(insert_text|insert_equation|insert_enter|insert_cropped_image|set_bold|set_underline|insert_underline|set_align_right_next_line)\("
-        )
-        content_count = 0
-        for i in range(block_end, first_box_idx):
-            if content_re.match(lines[i].strip()):
-                content_count += 1
-        if content_count < 8:
-            return lines
+        # Early case only: keep conservative threshold to avoid unnecessary relocation.
+        if header_idx < first_box_idx:
+            content_re = re.compile(
+                r"^\s*(insert_text|insert_equation|insert_enter|insert_cropped_image|set_bold|set_underline|insert_underline|set_align_right_next_line)\("
+            )
+            content_count = 0
+            for i in range(block_end, first_box_idx):
+                if content_re.match(lines[i].strip()):
+                    content_count += 1
+            if content_count < 8:
+                return lines
 
-        # Remove early header block.
+        # Remove current header block.
         out = lines[:header_idx] + lines[block_end:]
 
         # Find box start again in updated list.
         first_box_idx2 = -1
         for i, line in enumerate(out):
-            if box_item_re.match(line.strip()):
+            if self._is_view_item_line(line.strip()):
                 first_box_idx2 = i
                 break
         if first_box_idx2 < 0:
@@ -646,10 +671,11 @@ class ScriptRunner:
         if insert_at > 0 and out[insert_at - 1].strip() == "set_align_justify_next_line()":
             insert_at -= 1
 
-        header_block = [
-            "insert_template('header.hwp')",
-            "focus_placeholder('@@@')",
-        ]
+        header_block = ["insert_template('header.hwp')"]
+        if header_idx < first_box_idx:
+            # In early case, preserve outside-placeholder flow after relocation.
+            header_block.append("focus_placeholder('@@@')")
+
         return out[:insert_at] + header_block + out[insert_at:]
 
     def _split_dual_content_in_header(self, lines: List[str]) -> List[str]:
@@ -691,10 +717,9 @@ class ScriptRunner:
             return lines
 
         # Find first 보기 item (ㄱ./ㄴ./ㄷ.) inside the ### block
-        box_item_re = re.compile(r"^\s*insert_text\(\s*['\"]\s*[ㄱㄴㄷ]\.")
         first_bogi_idx = -1
         for i in range(hash_idx + 1, exit_idx):
-            if box_item_re.match(lines[i].strip()):
+            if self._is_view_item_line(lines[i].strip()):
                 first_bogi_idx = i
                 break
 
@@ -995,8 +1020,9 @@ class ScriptRunner:
         if not has_header:
             return lines
 
-        box_item_re = re.compile(r"^\s*insert_text\(\s*['\"]\s*[ㄱㄴㄷ]\.")
-        choice_re = re.compile(r"^\s*insert_(?:text|equation)\(\s*['\"].*①")
+        choice_re = re.compile(
+            r"^\s*insert_(?:text|equation)\(\s*['\"]\s*(?:[\u2460-\u2473]|[1-9][.)])"
+        )
 
         def _analyze(cur: List[str]) -> tuple[int, int, int, int]:
             first_box = -1
@@ -1005,7 +1031,7 @@ class ScriptRunner:
             amp_pos = -1
             for idx, row in enumerate(cur):
                 stripped = row.strip()
-                if first_box < 0 and box_item_re.match(stripped):
+                if first_box < 0 and self._is_view_item_line(stripped):
                     first_box = idx
                 if first_choice < 0 and choice_re.match(stripped):
                     first_choice = idx
@@ -1080,7 +1106,10 @@ class ScriptRunner:
         - If no choices exist, move cursor to &&& once and remove the marker.
         - If choices exist, drop any &&& that appear after the last choice.
         """
-        choice_re = re.compile(r"^\s*insert_(?:text|equation)\(\s*['\"].*①")
+        choice_re = re.compile(
+            r"^\s*insert_(?:text|equation)\(\s*['\"]\s*(?:[\u2460-\u2473]|[1-9][.)])"
+        )
+        
         has_choices_placeholder = any(
             l.strip().startswith("insert_template(")
             and any(name in l.strip().lower() for name in ("header.hwp", "box.hwp", "box_white.hwp"))
@@ -1117,6 +1146,106 @@ class ScriptRunner:
             out.append(line)
         return out
 
+    def _rewrite_first_hash_insert_to_direct_replace(self, lines: List[str]) -> List[str]:
+        """
+        Rewrite:
+          focus_placeholder('###')
+          insert_text('...')
+        into:
+          insert_text_at_hash_placeholder('...')
+
+        This directly replaces the ### marker text in-place and reduces
+        failures where cursor focus drifts outside the 보기 box.
+        """
+        out: List[str] = []
+        i = 0
+        while i < len(lines):
+            stripped = lines[i].strip()
+            if stripped in ("focus_placeholder('###')", 'focus_placeholder("###")'):
+                j = i + 1
+                while j < len(lines) and not lines[j].strip():
+                    j += 1
+                if j < len(lines):
+                    nxt = lines[j].strip()
+                    if nxt.startswith("insert_text(") and nxt.endswith(")"):
+                        inner = lines[j][lines[j].find("(") + 1 : lines[j].rfind(")")]
+                        out.append(f"insert_text_at_hash_placeholder({inner})")
+                        i = j + 1
+                        continue
+            out.append(lines[i])
+            i += 1
+        return out
+
+    def _force_first_view_item_into_hash_box(self, lines: List[str]) -> List[str]:
+        """
+        Ensure the first <보기> item line (ㄱ./ㄴ./ㄷ./가./나./다. etc.) is written
+        via insert_text_at_hash_placeholder(...). This anchors the cursor inside
+        the 보기 box so subsequent item lines stay inside.
+        """
+        out = list(lines)
+        # If we already have a direct hash replace, don't do it again.
+        if any(l.strip().startswith("insert_text_at_hash_placeholder(") for l in out):
+            return out
+
+        for i, row in enumerate(out):
+            stripped = row.strip()
+            if self._is_view_item_line(stripped):
+                # Only handle insert_text(...) and insert_equation(...).
+                if stripped.startswith("insert_text(") or stripped.startswith("insert_equation("):
+                    inner = row[row.find("(") + 1 : row.rfind(")")]
+                    func = "insert_text_at_hash_placeholder"
+                    if stripped.startswith("insert_equation("):
+                        # Keep equations inside the box by entering via hash, then insert equation.
+                        out[i] = f"{func}({inner})"
+                    else:
+                        out[i] = f"{func}({inner})"
+                    return out
+        return out
+
+    def _inject_view_box_test_text(self, lines: List[str]) -> List[str]:
+        """
+        Debug-only helper:
+        If NOVA_VIEW_BOX_TEST_TEXT is set, force-insert that text inside the
+        보기 box (### placeholder) so we can verify cursor routing.
+        """
+        test_text = (os.getenv("NOVA_VIEW_BOX_TEST_TEXT") or "").strip()
+        if not test_text:
+            return lines
+
+        out = list(lines)
+        header_idx = -1
+        for i, row in enumerate(out):
+            s = row.strip().lower()
+            if s.startswith("insert_template(") and "header.hwp" in s:
+                header_idx = i
+                break
+        if header_idx < 0:
+            return lines
+
+        hash_idx = -1
+        for i, row in enumerate(out):
+            s = row.strip()
+            if s in ("focus_placeholder('###')", 'focus_placeholder("###")'):
+                hash_idx = i
+                break
+
+        if hash_idx < 0:
+            # Ensure we enter 보기 box for debug injection even when marker is missing.
+            hash_idx = header_idx + 1
+            out.insert(hash_idx, "focus_placeholder('###')")
+
+        # Avoid duplicate insertions on repeated runs.
+        exists = any(
+            row.strip() == f"insert_text('{test_text}')"
+            or row.strip() == f'insert_text("{test_text}")'
+            for row in out
+        )
+        if not exists:
+            out.insert(hash_idx + 1, f"insert_text('{test_text}')")
+            out.insert(hash_idx + 2, "insert_paragraph()")
+
+        return out
+
     def _execute_fallback(
         self, script: str, log_fn: LogFn, cancel_check: CancelCheck | None = None
     ) -> None:
@@ -1134,6 +1263,7 @@ class ScriptRunner:
         }
         funcs_one_str = {
             "insert_text": self._controller.insert_text,
+            "insert_text_at_hash_placeholder": self._controller.insert_text_at_hash_placeholder,
             "insert_equation": self._controller.insert_equation,
             "insert_latex_equation": self._controller.insert_latex_equation,
             "insert_template": self._controller.insert_template,
@@ -1316,6 +1446,9 @@ class ScriptRunner:
         expanded_lines = self._ensure_exit_after_plain_box(expanded_lines)
         expanded_lines = self._drop_enter_after_exit_box(expanded_lines)
         expanded_lines = self._fix_header_view_box_order(expanded_lines)
+        expanded_lines = self._rewrite_first_hash_insert_to_direct_replace(expanded_lines)
+        expanded_lines = self._force_first_view_item_into_hash_box(expanded_lines)
+        expanded_lines = self._inject_view_box_test_text(expanded_lines)
         expanded_lines = self._normalize_choice_leading_space(expanded_lines)
         expanded_lines = self._drop_unused_choices_placeholder(expanded_lines)
         expanded_lines = self._ensure_score_right_align(expanded_lines)
@@ -1374,6 +1507,7 @@ class ScriptRunner:
         env: Dict[str, object] = {
             "__builtins__": SAFE_BUILTINS,
             "insert_text": _wrap1(self._controller.insert_text),
+            "insert_text_at_hash_placeholder": _wrap1(self._controller.insert_text_at_hash_placeholder),
             "insert_paragraph": _wrap0(self._controller.insert_paragraph),
             "insert_enter": _wrap0(self._controller.insert_enter),
             "insert_space": _wrap0(self._controller.insert_space),

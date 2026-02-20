@@ -1066,9 +1066,9 @@ class HwpController:
         This is safe to run at the very end of typing.
         """
         marker_candidates = {
-            "@@@": ["@@@", "＠＠＠", "@ @ @", "＠ ＠ ＠"],
-            "###": ["###", "＃＃＃", "# # #", "＃ ＃ ＃"],
-            "&&&": ["&&&", "＆＆＆", "& & &", "＆ ＆ ＆"],
+            "@@@": ["@@@", "@ @ @"],
+            "###": ["###", "# # #"],
+            "&&&": ["&&&", "& & &"],
         }
         for marker in ("@@@", "###", "&&&"):
             try:
@@ -1246,9 +1246,10 @@ class HwpController:
         candidates = [marker]
         original_pos = self._capture_cursor_pos()
         if marker == "@@@":
-            candidates.extend(["＠＠＠", "@ @ @", "＠ ＠ ＠"])
+            candidates.extend(["@ @ @"])
         elif marker == "&&&":
-            candidates.extend(["＆＆＆", "& & &", "＆ ＆ ＆"])
+            candidates.extend(["& & &"])
+
 
         found = False
         if self._repeat_find_retry(candidates, directions=(0, 1)):
@@ -1273,7 +1274,7 @@ class HwpController:
         RepeatFind cannot search into table cells on some HWP versions,
         so we use multiple strategies including structural navigation.
         """
-        candidates = ["###", "＃＃＃", "# # #", "＃ ＃ ＃"]
+        candidates = ["###", "# # #", "\uff03\uff03\uff03", "\uff03 \uff03 \uff03"]
         original_pos = self._capture_cursor_pos()
 
         # Strategy 1: Text search with scope-expanding flags (works on
@@ -1308,9 +1309,58 @@ class HwpController:
                 self._mark_inside_box()
                 return
 
+        # Strategy 5: Last resort - from document start, enter the first table cell.
+        # This is intentionally aggressive to avoid typing 보기 content outside.
+        if self._force_enter_any_forward_table():
+            if self._repeat_find_retry(candidates, attempts=2, directions=(0, 1)):
+                self._delete_found_marker()
+            self._mark_inside_box()
+            return
+
         # All strategies exhausted. Stay at current position so typing
         # at least continues near where it should be. Do NOT create a new
         # view box or move to doc start.
+
+    def insert_text_at_hash_placeholder(self, text: str) -> None:
+        """
+        Find the ### marker and replace that selected marker directly with `text`.
+        This avoids cursor-drift cases where focus_placeholder('###') succeeds
+        partially but subsequent typing happens outside the 보기 box.
+        """
+        payload = text or ""
+        candidates = ["###", "# # #", "\uff03\uff03\uff03", "\uff03 \uff03 \uff03"]
+        saved_pos = self._capture_cursor_pos()
+
+        found = False
+        # 1) Search around current position first.
+        if self._repeat_find_retry(candidates, directions=(0, 1, 2)):
+            found = True
+        # 2) Heading-guided path.
+        elif self._focus_view_box_from_heading():
+            if self._repeat_find_retry(candidates, attempts=2, directions=(0, 1)):
+                found = True
+        # 3) Global fallback from document start.
+        else:
+            self._move_doc_start()
+            if self._repeat_find_retry(candidates, attempts=10, directions=(0, 1)):
+                found = True
+
+        if found:
+            # If marker is selected by RepeatFind, inserting raw text replaces it in-place.
+            try:
+                self._insert_text_raw(payload)
+            except Exception:
+                # Fallback: delete marker then insert text normally.
+                self._delete_found_marker()
+                self.insert_text(payload)
+            self._mark_inside_box()
+            return
+
+        # Last fallback: try existing ### focus behavior then type.
+        if saved_pos is not None:
+            self._restore_cursor_pos(saved_pos)
+        self._focus_hash_placeholder()
+        self.insert_text(payload)
 
     def _delete_found_marker(self) -> None:
         """Delete the marker text that RepeatFind just selected."""
@@ -1328,7 +1378,7 @@ class HwpController:
         From the current cursor position, navigate forward (MoveDown)
         until entering a table cell. Returns True if a cell was entered.
         """
-        for _ in range(80):
+        for _ in range(300):
             self._run_action_best_effort("MoveDown")
             if self._move_to_table_cell():
                 return True
@@ -1340,7 +1390,15 @@ class HwpController:
         find a '<보기>' heading and move into the nearest table cell below it.
         """
         saved_pos = self._capture_cursor_pos()
-        heading_candidates = ["<보기>", "< 보 기 >", "<보", "보기>"]
+        heading_candidates = [
+            "<\ubcf4\uae30>",
+            "< \ubcf4 \uae30 >",
+            "<\ubcf4",
+            "\ubcf4\uae30>",
+            "\ubcf4\uae30",
+            "\uff1c\ubcf4\uae30\uff1e",
+            "\u3008\ubcf4\uae30\u3009",
+        ]
         # Search near current cursor first (both directions), then try from top.
         found_heading = self._repeat_find_retry(
             heading_candidates, attempts=6, delay_s=0.05, directions=(0, 1)
@@ -1357,13 +1415,26 @@ class HwpController:
 
         # Clear heading selection and move down near the box area.
         self._run_action_best_effort("Cancel")
-        for _ in range(20):
+        for _ in range(120):
             self._run_action_best_effort("MoveDown")
             if self._move_to_table_cell():
                 return True
 
         if saved_pos is not None:
             self._restore_cursor_pos(saved_pos)
+        return False
+
+    def _force_enter_any_forward_table(self) -> bool:
+        """
+        Last-resort fallback:
+        jump to document start and enter the first table cell found while moving down.
+        This prevents typing outside when ### focus fails on specific HWP builds/layouts.
+        """
+        self._move_doc_start()
+        for _ in range(600):
+            self._run_action_best_effort("MoveDown")
+            if self._move_to_table_cell():
+                return True
         return False
 
     def _mark_inside_box(self) -> None:
