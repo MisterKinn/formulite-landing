@@ -561,7 +561,7 @@ body {
     /* Footer */
     .footer {
         margin: 0;
-        padding: 2rem 1.25rem 2.5rem;
+        padding: 1.85rem 1.25rem 2.25rem;
         border-radius: 0;
         background: #000;
     }
@@ -570,41 +570,20 @@ body {
         max-width: 100%;
     }
 
-    .footer-brand {
-        justify-content: flex-start;
-        margin-bottom: 0.875rem;
+    .footer-info {
+        font-size: 0.72rem;
+        line-height: 1.65;
+        gap: 0.4rem;
     }
 
-    .footer-brand img {
-        width: 92px !important;
-        height: auto !important;
-    }
-
-    .footer-company {
-        font-size: 0.775rem;
-        line-height: 1.55;
-        text-align: left;
-        color: #c4cada;
-    }
-
-    .footer-company p {
-        margin: 0 0 0.2rem;
-    }
-
-    .footer-links-row {
-        margin-top: 1.4rem;
-        font-size: 0.78rem;
-        gap: 0.35rem;
-        color: #8f96a4;
-    }
-
-    .footer-policy-link + .footer-policy-link::before {
-        margin-right: 0.35rem;
+    .footer-line {
+        margin: 0;
+        line-height: 1.65;
     }
 
     .footer-copyright {
-        font-size: 0.82rem;
-        margin-top: 5rem;
+        font-size: 0.76rem;
+        margin-top: 1.45rem;
         line-height: 1.2;
         color: #8f96a4;
     }
