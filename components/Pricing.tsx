@@ -3,6 +3,7 @@
 import { MouseEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import { loadTossPayments } from "@tosspayments/tosspayments-sdk";
 
 const CheckIcon = ({ color = "currentColor" }: { color?: string }) => (
     <svg
@@ -183,13 +184,35 @@ export default function Pricing() {
             return;
         }
 
-        setIsPaying(true);
-        const registrationParams = new URLSearchParams({
-            amount: String(paymentMeta.amount),
-            orderName: paymentMeta.orderName,
-            billingCycle,
-        });
-        window.location.href = `/card-registration?${registrationParams.toString()}`;
+        try {
+            setIsPaying(true);
+
+            const clientKey =
+                process.env.NEXT_PUBLIC_TOSS_BILLING_CLIENT_KEY?.trim() ||
+                process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY?.trim() ||
+                "";
+
+            const tossPayments = await loadTossPayments(clientKey);
+            const customerKey = `user_${user.uid
+                .replace(/[^a-zA-Z0-9\-_=.@]/g, "")
+                .substring(0, 40)}`;
+            const payment = tossPayments.payment({ customerKey });
+
+            await payment.requestBillingAuth({
+                method: "CARD",
+                successUrl: `${window.location.origin}/card-registration/success?amount=${paymentMeta.amount}&orderName=${encodeURIComponent(paymentMeta.orderName)}&billingCycle=${billingCycle}`,
+                failUrl: `${window.location.origin}/card-registration/fail?amount=${paymentMeta.amount}&orderName=${encodeURIComponent(paymentMeta.orderName)}`,
+                customerEmail: user.email || "customer@example.com",
+                customerName: user.displayName || "고객",
+            });
+        } catch (error: unknown) {
+            const err = error as { code?: string; message?: string };
+            if (err?.code !== "USER_CANCEL") {
+                window.alert(err?.message || "결제 요청 중 오류가 발생했습니다.");
+            }
+        } finally {
+            setIsPaying(false);
+        }
     };
 
     return (

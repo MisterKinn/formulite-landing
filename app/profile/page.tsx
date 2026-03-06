@@ -5,6 +5,7 @@ import Link from "next/link";
 import { getAuth, deleteUser } from "firebase/auth";
 import { getFirebaseAppOrNull } from "../../firebaseConfig";
 import { getFirestore, doc, deleteDoc, getDoc } from "firebase/firestore";
+import { loadTossPayments } from "@tosspayments/tosspayments-sdk";
 import { useAuth } from "../../context/AuthContext";
 import "./profile.css";
 import "../style.css";
@@ -692,32 +693,39 @@ function ProfileContent() {
         setLoadingPlan(plan.id);
 
         try {
-            // 구독형(빌링 인증) 결제창으로 이동
             const planNameMap: Record<string, string> = {
                 go: "Go",
                 plus: "Plus",
                 pro: "Ultra",
             };
             const planName = planNameMap[plan.id] || plan.name;
-
-            // 월간 기준으로 첫 결제 금액을 전달
             const planAmount = plan.monthlyPrice;
+            const orderName = `Nova AI ${planName} 요금제`;
 
-            const registrationParams = new URLSearchParams({
-                amount: String(planAmount),
-                orderName: `Nova AI ${planName} 요금제`,
-                billingCycle: "monthly",
+            const clientKey =
+                process.env.NEXT_PUBLIC_TOSS_BILLING_CLIENT_KEY?.trim() ||
+                process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY?.trim() ||
+                "";
+
+            const tossPayments = await loadTossPayments(clientKey);
+            const customerKey = `user_${authUser.uid
+                .replace(/[^a-zA-Z0-9\-_=.@]/g, "")
+                .substring(0, 40)}`;
+            const payment = tossPayments.payment({ customerKey });
+
+            await payment.requestBillingAuth({
+                method: "CARD",
+                successUrl: `${window.location.origin}/card-registration/success?amount=${planAmount}&orderName=${encodeURIComponent(orderName)}&billingCycle=monthly`,
+                failUrl: `${window.location.origin}/card-registration/fail?amount=${planAmount}&orderName=${encodeURIComponent(orderName)}`,
+                customerEmail: authUser.email || "customer@example.com",
+                customerName: authUser.displayName || "고객",
             });
-            window.location.href =
-                `/card-registration?${registrationParams.toString()}`;
         } catch (err: unknown) {
             console.error("결제 오류:", err);
-            const error = err as { code?: string };
-            if (error.code === "USER_CANCEL") {
-                console.log("사용자가 결제를 취소했습니다.");
-            } else {
+            const error = err as { code?: string; message?: string };
+            if (error?.code !== "USER_CANCEL") {
                 setError(
-                    "결제 처리 중 오류가 발생했습니다. 다시 시도해주세요.",
+                    error?.message || "결제 처리 중 오류가 발생했습니다. 다시 시도해주세요.",
                 );
             }
         } finally {

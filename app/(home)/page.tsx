@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useMemo, useRef } from "react";
 import AOS from "aos";
 import { useRouter, useSearchParams } from "next/navigation";
+import { loadTossPayments } from "@tosspayments/tosspayments-sdk";
 import "aos/dist/aos.css";
 import "../style.css";
 import "../mobile.css";
@@ -82,14 +83,37 @@ function FormuLiteContent() {
         if (!user?.uid || paymentStartedRef.current) return;
         paymentStartedRef.current = true;
 
-        const registrationParams = new URLSearchParams({
-            amount: String(pendingPayment.amount),
-            orderName: pendingPayment.orderName,
-        });
-        if (pendingPayment.billingCycle) {
-            registrationParams.set("billingCycle", pendingPayment.billingCycle);
-        }
-        window.location.href = `/card-registration?${registrationParams.toString()}`;
+        const startBillingAuth = async () => {
+            try {
+                const clientKey =
+                    process.env.NEXT_PUBLIC_TOSS_BILLING_CLIENT_KEY?.trim() ||
+                    process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY?.trim() ||
+                    "";
+
+                const tossPayments = await loadTossPayments(clientKey);
+                const customerKey = `user_${user.uid
+                    .replace(/[^a-zA-Z0-9\-_=.@]/g, "")
+                    .substring(0, 40)}`;
+                const payment = tossPayments.payment({ customerKey });
+
+                const cycle = pendingPayment.billingCycle || "monthly";
+                await payment.requestBillingAuth({
+                    method: "CARD",
+                    successUrl: `${window.location.origin}/card-registration/success?amount=${pendingPayment.amount}&orderName=${encodeURIComponent(pendingPayment.orderName)}&billingCycle=${cycle}`,
+                    failUrl: `${window.location.origin}/card-registration/fail?amount=${pendingPayment.amount}&orderName=${encodeURIComponent(pendingPayment.orderName)}`,
+                    customerEmail: user.email || "customer@example.com",
+                    customerName: user.displayName || "고객",
+                });
+            } catch (error: unknown) {
+                const err = error as { code?: string; message?: string };
+                if (err?.code !== "USER_CANCEL") {
+                    window.alert(err?.message || "결제 요청 중 오류가 발생했습니다.");
+                }
+                router.replace("/");
+            }
+        };
+
+        void startBillingAuth();
     }, [isAuthenticated, loading, pendingPayment, router, user]);
 
     return (
