@@ -10,7 +10,7 @@ import subprocess
 @dataclass
 class EquationOptions:
     font_size_pt: float = 8.0
-    eq_font_name: str = "HyhwpEQ"
+    eq_font_name: str = "HYhwpEQ"
     treat_as_char: bool = True
     ensure_newline: bool = False
 

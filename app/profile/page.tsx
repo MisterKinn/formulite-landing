@@ -5,7 +5,6 @@ import Link from "next/link";
 import { getAuth, deleteUser } from "firebase/auth";
 import { getFirebaseAppOrNull } from "../../firebaseConfig";
 import { getFirestore, doc, deleteDoc, getDoc } from "firebase/firestore";
-import { loadTossPayments } from "@tosspayments/tosspayments-sdk";
 import { useAuth } from "../../context/AuthContext";
 import "./profile.css";
 import "../style.css";
@@ -18,9 +17,6 @@ import dynamic from "next/dynamic";
 const Sidebar = dynamic(() => import("../../components/Sidebar"), {
     ssr: false,
 });
-
-// 토스페이먼츠 클라이언트 키 (테스트용)
-const TOSS_CLIENT_KEY = "test_ck_D5GePWvyJnrK0W0k6q8gLzN97Eoq";
 
 // 아이콘 컴포넌트들
 const CheckIcon = () => (
@@ -696,7 +692,7 @@ function ProfileContent() {
         setLoadingPlan(plan.id);
 
         try {
-            // 결제 페이지로 리다이렉트 (단건 결제)
+            // 구독형(빌링 인증) 결제창으로 이동
             const planNameMap: Record<string, string> = {
                 go: "Go",
                 plus: "Plus",
@@ -704,10 +700,16 @@ function ProfileContent() {
             };
             const planName = planNameMap[plan.id] || plan.name;
 
-            // 단건 결제는 월간 가격만 사용
+            // 월간 기준으로 첫 결제 금액을 전달
             const planAmount = plan.monthlyPrice;
 
-            window.location.href = `/payment?amount=${planAmount}&orderName=Nova AI ${planName} 요금제`;
+            const registrationParams = new URLSearchParams({
+                amount: String(planAmount),
+                orderName: `Nova AI ${planName} 요금제`,
+                billingCycle: "monthly",
+            });
+            window.location.href =
+                `/card-registration?${registrationParams.toString()}`;
         } catch (err: unknown) {
             console.error("결제 오류:", err);
             const error = err as { code?: string };

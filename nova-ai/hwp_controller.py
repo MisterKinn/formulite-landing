@@ -49,11 +49,13 @@ class HwpControllerError(RuntimeError):
 
 def _is_rpc_unavailable_error(exc: Exception) -> bool:
     msg = str(exc)
+    lower = msg.lower()
     return (
-        "RPC 서버를 사용할 수 없습니다" in msg
-        or "RPC server is unavailable" in msg
-        or "0x800706BA" in msg
-        or "-2147023174" in msg
+        "rpc server is unavailable" in lower
+        or "0x800706ba" in lower
+        or "-2147023174" in lower
+        or ("rpc" in lower and ("unavailable" in lower or "server" in lower))
+        or ("RPC" in msg and ("?쒕쾭" in msg or "곌껐" in msg or "연결" in msg))
     )
 
 
@@ -63,8 +65,8 @@ def _format_connect_error(primary_exc: Exception, secondary_exc: Exception | Non
     ):
         return (
             "HWP 연결 실패: RPC 서버를 사용할 수 없습니다. "
-            "한글(HWP)을 완전히 종료했다가 다시 실행하고, "
-            "LitePro와 HWP를 같은 권한(일반/관리자)으로 실행하세요."
+            "한글(HWP)을 완전히 종료한 뒤 다시 실행하고, "
+            "LitePro와 HWP를 같은 권한(일반/관리자)으로 실행해 주세요."
         )
     return f"HWP 연결 실패: {primary_exc}"
 
@@ -89,10 +91,54 @@ class HwpController:
         self._underline_active = False
         self._bold_active = False
         self._template_dir = Path(__file__).resolve().parent / "templates"
+        # User-configurable typing styles (applied from GUI settings).
+        self._typing_text_font_name = "한컴 윤고딕 720"
+        self._typing_text_font_size_pt = 8.0
+        self._typing_eq_font_name = "HYhwpEQ"
+        self._typing_eq_font_size_pt = 8.0
+
+    def configure_typing_styles(
+        self,
+        *,
+        text_font_name: str | None = None,
+        text_font_size_pt: float | None = None,
+        eq_font_name: str | None = None,
+        eq_font_size_pt: float | None = None,
+    ) -> None:
+        """Update default text/equation styles used during typing."""
+        if text_font_name is not None and str(text_font_name).strip():
+            self._typing_text_font_name = str(text_font_name).strip()
+        if text_font_size_pt is not None:
+            try:
+                self._typing_text_font_size_pt = max(1.0, float(text_font_size_pt))
+            except Exception:
+                pass
+        if eq_font_name is not None and str(eq_font_name).strip():
+            self._typing_eq_font_name = str(eq_font_name).strip()
+        if eq_font_size_pt is not None:
+            try:
+                self._typing_eq_font_size_pt = max(1.0, float(eq_font_size_pt))
+            except Exception:
+                pass
 
     @staticmethod
     def _is_hwp_title(title: str) -> bool:
-        return bool(title and re.search(r"\b(한글|HWP|Hwp)\b", title))
+        if not title:
+            return False
+        t = str(title).strip()
+        if not t:
+            return False
+        lower = t.lower()
+        # Real HWP document tab/window title.
+        if re.search(r"\.hwp[x]?\b", lower):
+            return True
+        # Unsaved docs: "빈 문서1 - 한글", "Untitled - HWP", etc.
+        if re.search(r"\s-\s*(한글|hwp|hancom.*|hanword)\s*$", lower):
+            return True
+        # Main app window titles without explicit doc extension.
+        if "hancom office hanword" in lower or "한컴오피스 한글" in t:
+            return True
+        return False
 
     @staticmethod
     def _extract_doc_name_from_title(title: str) -> str:
@@ -101,8 +147,8 @@ class HwpController:
         match = re.search(r"([^\\/\-]+\.hwp[x]?)", title, re.IGNORECASE)
         if match:
             return match.group(1)
-        # Unsaved docs like "빈 문서1 - 한글"
-        m2 = re.search(r"^\s*(.*?)\s*-\s*(한글|HWP|Hwp)\s*$", title)
+        # Unsaved docs like "빈 문서1 - 한글" / "Untitled - HWP"
+        m2 = re.search(r"^\s*(.*?)\s*-\s*(?:한글|HWP|Hwp|Hancom.*)\s*$", title, re.IGNORECASE)
         if m2:
             return m2.group(1).strip()
         return ""
@@ -135,7 +181,7 @@ class HwpController:
         def enum_windows_callback(hwnd, window_titles):
             if win32gui.IsWindowVisible(hwnd):
                 title = win32gui.GetWindowText(hwnd)
-                if title and ("한글" in title or "HWP" in title or "Hwp" in title):
+                if HwpController._is_hwp_title(title):
                     window_titles.append(title)
 
         win32gui.EnumWindows(enum_windows_callback, results)
@@ -171,14 +217,14 @@ class HwpController:
 
     @staticmethod
     def _ensure_uia() -> tuple[Any, Any]:
-        """UI Automation 싱글턴 인스턴스를 반환합니다."""
+        """UI Automation 인스턴스를 반환합니다."""
+        import comtypes  # type: ignore
+        import comtypes.client  # type: ignore
+        try:
+            comtypes.CoInitialize()
+        except OSError:
+            pass
         if HwpController._uia_instance is None:
-            import comtypes  # type: ignore
-            import comtypes.client  # type: ignore
-            try:
-                comtypes.CoInitialize()
-            except OSError:
-                pass
             uia_mod = comtypes.client.GetModule("UIAutomationCore.dll")
             uia = comtypes.CoCreateInstance(
                 uia_mod.CUIAutomation._reg_clsid_,
@@ -189,79 +235,270 @@ class HwpController:
             HwpController._uia_walker = uia.CreateTreeWalker(uia.RawViewCondition)
         return HwpController._uia_instance, HwpController._uia_walker
 
+    _page_re = re.compile(r"(\d+)\s*/\s*(\d+)")
+
+    @staticmethod
+    def _find_hwp_window() -> int:
+        """Return the best HWP window handle, or 0."""
+        try:
+            import win32gui  # type: ignore
+        except ImportError:
+            return 0
+
+        fg = win32gui.GetForegroundWindow()
+        fg_title = win32gui.GetWindowText(fg) if fg else ""
+        if fg and fg_title and HwpController._is_hwp_title(fg_title):
+            return fg
+
+        current_filename = HwpController.get_current_filename()
+        candidates: list[tuple[int, str]] = []
+
+        def _cb(hwnd: int, _: Any) -> None:
+            if win32gui.IsWindowVisible(hwnd):
+                title = win32gui.GetWindowText(hwnd)
+                if title and HwpController._is_hwp_title(title):
+                    candidates.append((hwnd, title))
+
+        win32gui.EnumWindows(_cb, None)
+
+        if current_filename:
+            for hwnd, title in candidates:
+                if current_filename in title:
+                    return hwnd
+
+        for hwnd, title in candidates:
+            if re.search(r"\.hwp[x]?", title, re.IGNORECASE):
+                return hwnd
+
+        return candidates[0][0] if candidates else 0
+
+    @staticmethod
+    def _select_best_page_candidate(
+        candidates: list[tuple[int, int]], total_hint: int = 0
+    ) -> tuple[int, int]:
+        if not candidates:
+            return (0, 0)
+        valid = [(cur, total) for cur, total in candidates if cur > 0 and total > 0 and cur <= total]
+        if not valid:
+            return (0, 0)
+        if total_hint > 0:
+            hinted = [v for v in valid if v[1] == total_hint]
+            if hinted:
+                return max(hinted, key=lambda x: (x[1], x[0]))
+        # Avoid false positives like section indicator 1/1 by preferring larger totals.
+        return max(valid, key=lambda x: (x[1], x[0]))
+
+    @staticmethod
+    def _get_com_page_hint() -> tuple[int, int]:
+        """Best-effort: (current_page, total_page) from COM KeyIndicator/PageCount."""
+        try:
+            import pythoncom  # type: ignore
+            import win32com.client  # type: ignore
+
+            hwp = win32com.client.GetActiveObject("HWPFrame.HwpObject")
+
+            total = 0
+            try:
+                total = int(getattr(hwp, "PageCount", 0) or 0)
+            except Exception:
+                total = 0
+
+            current = 0
+            try:
+                seccnt = win32com.client.VARIANT(pythoncom.VT_BYREF | pythoncom.VT_I4, 0)
+                secno = win32com.client.VARIANT(pythoncom.VT_BYREF | pythoncom.VT_I4, 0)
+                prnpageno = win32com.client.VARIANT(pythoncom.VT_BYREF | pythoncom.VT_I4, 0)
+                colno = win32com.client.VARIANT(pythoncom.VT_BYREF | pythoncom.VT_I4, 0)
+                line = win32com.client.VARIANT(pythoncom.VT_BYREF | pythoncom.VT_I4, 0)
+                pos = win32com.client.VARIANT(pythoncom.VT_BYREF | pythoncom.VT_I4, 0)
+                over = win32com.client.VARIANT(pythoncom.VT_BYREF | pythoncom.VT_BOOL, False)
+                ctrlname = win32com.client.VARIANT(
+                    pythoncom.VT_BYREF | pythoncom.VT_BSTR, ""
+                )
+                hwp.KeyIndicator(seccnt, secno, prnpageno, colno, line, pos, over, ctrlname)
+                current = int(prnpageno.value or 0)
+            except Exception:
+                current = 0
+
+            if current > 0 and total > 0 and current <= total:
+                return (current, total)
+            if total > 0:
+                return (0, total)
+        except Exception:
+            pass
+        return (0, 0)
+
+    @staticmethod
+    def _read_page_from_statusbar(hwnd_parent: int, total_hint: int = 0) -> tuple[int, int]:
+        """Read page info from HWP status bar via cross-process Win32 API."""
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.windll.user32
+            kernel32 = ctypes.windll.kernel32
+
+            user32.FindWindowExW.restype = wintypes.HWND
+            kernel32.OpenProcess.restype = wintypes.HANDLE
+            kernel32.VirtualAllocEx.restype = ctypes.c_void_p
+
+            SB_GETPARTS = 0x0406
+            SB_GETTEXTLENGTHW = 0x040C
+            SB_GETTEXTW = 0x040D
+
+            def _find_sb(parent: int, depth: int = 0) -> int:
+                if depth > 5:
+                    return 0
+                child = user32.FindWindowExW(parent, 0, None, None)
+                while child:
+                    cls_buf = ctypes.create_unicode_buffer(256)
+                    user32.GetClassNameW(child, cls_buf, 256)
+                    if "statusbar" in cls_buf.value.lower():
+                        return child
+                    found = _find_sb(child, depth + 1)
+                    if found:
+                        return found
+                    child = user32.FindWindowExW(parent, child, None, None)
+                return 0
+
+            sb_hwnd = _find_sb(hwnd_parent)
+            if not sb_hwnd:
+                return (0, 0)
+
+            pid = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(sb_hwnd, ctypes.byref(pid))
+            hproc = kernel32.OpenProcess(0x0028, False, pid.value)
+            if not hproc:
+                return (0, 0)
+
+            try:
+                nparts = user32.SendMessageW(sb_hwnd, SB_GETPARTS, 0, 0)
+                matches: list[tuple[int, int]] = []
+                for i in range(min(nparts, 16)):
+                    text_len = user32.SendMessageW(
+                        sb_hwnd, SB_GETTEXTLENGTHW, i, 0
+                    ) & 0xFFFF
+                    if text_len <= 0 or text_len > 512:
+                        continue
+                    buf_size = (text_len + 2) * 2
+                    remote_buf = kernel32.VirtualAllocEx(
+                        hproc, None, buf_size, 0x1000, 0x04
+                    )
+                    if not remote_buf:
+                        continue
+                    try:
+                        user32.SendMessageW(
+                            sb_hwnd, SB_GETTEXTW,
+                            ctypes.c_ulonglong(i),
+                            ctypes.c_longlong(remote_buf),
+                        )
+                        local_buf = ctypes.create_unicode_buffer(text_len + 2)
+                        kernel32.ReadProcessMemory(
+                            hproc, ctypes.c_void_p(remote_buf),
+                            local_buf, buf_size, None,
+                        )
+                        m = HwpController._page_re.search(local_buf.value)
+                        if m:
+                            matches.append((int(m.group(1)), int(m.group(2))))
+                    finally:
+                        kernel32.VirtualFreeEx(
+                            hproc, ctypes.c_void_p(remote_buf), 0, 0x8000
+                        )
+                return HwpController._select_best_page_candidate(matches, total_hint)
+            finally:
+                kernel32.CloseHandle(hproc)
+
+            return (0, 0)
+        except Exception:
+            return (0, 0)
+
+    @staticmethod
+    def _read_page_from_uia_statusbar(
+        uia: Any, root_el: Any, total_hint: int = 0
+    ) -> tuple[int, int]:
+        """UIA FindFirst for StatusBar control, then search descendants."""
+        try:
+            cond = uia.CreatePropertyCondition(30003, 50025)
+            sb = root_el.FindFirst(4, cond)
+            if sb is None:
+                return (0, 0)
+            true_cond = uia.CreateTrueCondition()
+            descs = sb.FindAll(4, true_cond)
+            count = descs.Length if descs else 0
+            matches: list[tuple[int, int]] = []
+            for i in range(count):
+                try:
+                    name = descs.GetElement(i).CurrentName or ""
+                    m = HwpController._page_re.search(name)
+                    if m:
+                        matches.append((int(m.group(1)), int(m.group(2))))
+                except Exception:
+                    continue
+            return HwpController._select_best_page_candidate(matches, total_hint)
+        except Exception:
+            pass
+        return (0, 0)
+
     @staticmethod
     def get_current_page() -> tuple[int, int]:
         """현재 커서가 위치한 (현재 페이지, 전체 페이지)를 반환합니다. 실패 시 (0, 0)."""
         if not IS_WINDOWS:
             return (0, 0)
         try:
-            import win32gui  # type: ignore
-
-            # Prefer the foreground HWP window; otherwise match by current filename.
-            hwnd_target = 0
-            fg = win32gui.GetForegroundWindow()
-            fg_title = win32gui.GetWindowText(fg) if fg else ""
-
-            def _is_hwp_title(title: str) -> bool:
-                return bool(re.search(r"\b(한글|HWP|Hwp)\b", title))
-
-            if fg and fg_title and _is_hwp_title(fg_title):
-                hwnd_target = fg
-            else:
-                current_filename = HwpController.get_current_filename()
-                candidates: list[tuple[int, str]] = []
-
-                def _cb(hwnd: int, _: Any) -> None:
-                    if win32gui.IsWindowVisible(hwnd):
-                        title = win32gui.GetWindowText(hwnd)
-                        if title and _is_hwp_title(title):
-                            candidates.append((hwnd, title))
-
-                win32gui.EnumWindows(_cb, None)
-
-                if current_filename:
-                    for hwnd, title in candidates:
-                        if current_filename in title:
-                            hwnd_target = hwnd
-                            break
-
-                if not hwnd_target:
-                    for hwnd, title in candidates:
-                        if re.search(r"\.hwp[x]?", title, re.IGNORECASE):
-                            hwnd_target = hwnd
-                            break
-
-                if not hwnd_target and candidates:
-                    hwnd_target = candidates[0][0]
-
+            hwnd_target = HwpController._find_hwp_window()
             if not hwnd_target:
                 return (0, 0)
 
+            com_cur, com_total = HwpController._get_com_page_hint()
+            if com_cur > 0 and com_total > 0:
+                return (com_cur, com_total)
+
+            # Strategy 1: Win32 status bar (cross-process, no COM dependency)
+            result = HwpController._read_page_from_statusbar(hwnd_target, com_total)
+            if result[0] > 0:
+                return result
+
+            # Strategy 2+3: UIA-based approaches
             uia, walker = HwpController._ensure_uia()
             el = uia.ElementFromHandle(hwnd_target)
 
+            # Strategy 2: UIA FindFirst for StatusBar control type
+            result = HwpController._read_page_from_uia_statusbar(uia, el, com_total)
+            if result[0] > 0:
+                return result
+
+            # Strategy 3: Recursive UIA tree walk (deeper, exception-safe)
+            page_re = HwpController._page_re
+
             def _find_page(elem: Any, depth: int = 0) -> tuple[int, int]:
-                if depth > 8:
+                if depth > 25:
                     return (0, 0)
                 try:
                     name = elem.CurrentName or ""
-                    m = re.match(r"(\d+)/(\d+)쪽", name)
+                    m = page_re.match(name)
                     if m:
                         return (int(m.group(1)), int(m.group(2)))
                 except Exception:
-                    return (0, 0)
+                    pass
                 try:
                     child = walker.GetFirstChildElement(elem)
                     while child:
-                        result = _find_page(child, depth + 1)
-                        if result[0] > 0:
-                            return result
+                        found = _find_page(child, depth + 1)
+                        if found[0] > 0:
+                            return found
                         child = walker.GetNextSiblingElement(child)
                 except Exception:
                     pass
                 return (0, 0)
 
-            return _find_page(el)
+            fallback = _find_page(el)
+            if fallback[0] > 0:
+                if com_total > 0 and fallback[0] <= com_total:
+                    return (fallback[0], com_total)
+                return fallback
+            if com_total > 0:
+                return (0, com_total)
+            return (0, 0)
         except Exception:
             HwpController._uia_instance = None
             HwpController._uia_walker = None
@@ -287,13 +524,13 @@ class HwpController:
 
     def connect(self) -> None:
         if not IS_WINDOWS:
-            raise HwpControllerError("LitePro는 현재 Windows만 지원합니다.")
+            raise HwpControllerError("LitePro???꾩옱 Windows留?吏?먰빀?덈떎.")
 
         if self._hwp is not None:
             return
 
         if not self.find_hwp_windows():
-            raise HwpControllerError("한글(HWP) 창을 찾지 못했습니다. 먼저 HWP를 실행하세요.")
+            raise HwpControllerError("?쒓?(HWP) 李쎌쓣 李얠? 紐삵뻽?듬땲?? 癒쇱? HWP瑜??ㅽ뻾?섏꽭??")
 
         with _preserve_foreground():
             hwp_obj = None
@@ -449,6 +686,26 @@ class HwpController:
             raise HwpControllerError("HwpController.connect()를 먼저 호출하세요.")
         return self._hwp
 
+    def open_new_document(self) -> None:
+        """Open a new blank document in the connected HWP instance."""
+        self._ensure_connected()
+        with _preserve_foreground():
+            for action_name in ("FileNew", "NewFile", "FileNewBlank"):
+                if self._run_action_best_effort(action_name):
+                    # Reset line/context state for the new document.
+                    self._in_condition_box = False
+                    self._box_line_start = False
+                    self._line_start = True
+                    self._first_line_written = False
+                    self._align_right_next_line = False
+                    self._line_right_aligned = False
+                    self._align_justify_next_line = False
+                    self._line_justify_aligned = False
+                    self._line_center_aligned = False
+                    self._last_was_equation = False
+                    return
+        raise HwpControllerError("새 파일을 열지 못했습니다. HWP 상태를 확인해 주세요.")
+
     def _insert_text_raw(self, text: str) -> None:
         if not text:
             return
@@ -503,6 +760,13 @@ class HwpController:
     def insert_text(self, text: str) -> None:
         if not text:
             return
+        # Keep plain-text typing style consistent with user settings.
+        try:
+            self._set_font_name(self._typing_text_font_name)
+            self._set_font_size_pt(self._typing_text_font_size_pt)
+        except Exception:
+            # Best-effort only: do not block typing on style apply failure.
+            pass
         # Normalize escaped tab markers to actual tab
         if text.startswith("\\t") or text.startswith("/t"):
             text = "\t" + text[2:]
@@ -561,7 +825,7 @@ class HwpController:
             param.Bold = 1 if enabled else 0
             action.Execute("CharShape", param.HSet)
         except Exception as exc:
-            raise HwpControllerError(f"굵게 설정 실패: {exc}") from exc
+            raise HwpControllerError(f"援듦쾶 ?ㅼ젙 ?ㅽ뙣: {exc}") from exc
         self._bold_active = enabled
 
     def set_underline(self, enabled: bool | None = None) -> None:
@@ -578,12 +842,12 @@ class HwpController:
             param.UnderlineType = 1 if enabled else 0
             action.Execute("CharShape", param.HSet)
         except Exception as exc:
-            raise HwpControllerError(f"밑줄 설정 실패: {exc}") from exc
+            raise HwpControllerError(f"諛묒쨪 ?ㅼ젙 ?ㅽ뙣: {exc}") from exc
         self._underline_active = bool(enabled)
 
     def set_char_width_ratio(self, percent: int = 100) -> None:
         """
-        Set character width ratio (장평). 100 = 100%.
+        Set character width ratio (?ν룊). 100 = 100%.
         """
         hwp = self._ensure_connected()
         try:
@@ -606,7 +870,7 @@ class HwpController:
             if applied:
                 action.Execute("CharShape", param.HSet)
         except Exception as exc:
-            raise HwpControllerError(f"장평 설정 실패: {exc}") from exc
+            raise HwpControllerError(f"?ν룊 ?ㅼ젙 ?ㅽ뙣: {exc}") from exc
 
     def set_table_border_white(self) -> None:
         """
@@ -648,7 +912,7 @@ class HwpController:
                 action.Execute(action_name, param.HSet)
                 return
         except Exception as exc:
-            raise HwpControllerError(f"표 테두리 색상 설정 실패: {exc}") from exc
+            raise HwpControllerError(f"???뚮몢由??됱긽 ?ㅼ젙 ?ㅽ뙣: {exc}") from exc
 
     def insert_enter(self) -> None:
         hwp = self._ensure_connected()
@@ -668,7 +932,7 @@ class HwpController:
                 self._set_paragraph_align("left")
                 self._line_center_aligned = False
         except Exception as exc:
-            raise HwpControllerError(f"단락 나누기 실패: {exc}") from exc
+            raise HwpControllerError(f"?⑤씫 ?섎늻湲??ㅽ뙣: {exc}") from exc
 
     def insert_space(self) -> None:
         self.insert_text(" ")
@@ -690,7 +954,7 @@ class HwpController:
             param.Height = int(font_size_pt * 100)
             action.Execute("CharShape", param.HSet)
         except Exception as exc:
-            raise HwpControllerError(f"폰트 크기 설정 실패: {exc}") from exc
+            raise HwpControllerError(f"?고듃 ?ш린 ?ㅼ젙 ?ㅽ뙣: {exc}") from exc
 
     def _set_font_name(self, font_name: str) -> None:
         hwp = self._ensure_connected()
@@ -728,7 +992,7 @@ class HwpController:
                     pass
             action.Execute("CharShape", param.HSet)
         except Exception as exc:
-            raise HwpControllerError(f"글꼴 설정 실패: {exc}") from exc
+            raise HwpControllerError(f"湲瑗??ㅼ젙 ?ㅽ뙣: {exc}") from exc
 
     def _apply_compact_paragraph(self) -> None:
         """
@@ -788,8 +1052,8 @@ class HwpController:
         self,
         hwpeqn: str,
         *,
-        font_size_pt: float = 8.0,
-        eq_font_name: str = "HyhwpEQ",
+        font_size_pt: float | None = None,
+        eq_font_name: str | None = None,
         treat_as_char: bool = True,
         ensure_newline: bool = False,
     ) -> None:
@@ -813,10 +1077,17 @@ class HwpController:
 
         if not skip_auto_indent_right:
             self._maybe_insert_line_indent(2)
+        resolved_font_size = (
+            float(font_size_pt) if font_size_pt is not None else float(self._typing_eq_font_size_pt)
+        )
+        resolved_eq_font = (
+            str(eq_font_name).strip() if eq_font_name is not None and str(eq_font_name).strip()
+            else self._typing_eq_font_name
+        )
         hwp = self._ensure_connected()
         options = EquationOptions(
-            font_size_pt=font_size_pt,
-            eq_font_name=eq_font_name,
+            font_size_pt=resolved_font_size,
+            eq_font_name=resolved_eq_font,
             treat_as_char=treat_as_char,
             ensure_newline=ensure_newline,
         )
@@ -830,8 +1101,8 @@ class HwpController:
         self,
         latex: str,
         *,
-        font_size_pt: float = 8.0,
-        eq_font_name: str = "HyhwpEQ",
+        font_size_pt: float | None = None,
+        eq_font_name: str | None = None,
         treat_as_char: bool = True,
         ensure_newline: bool = False,
     ) -> None:
@@ -865,7 +1136,7 @@ class HwpController:
 
     def _apply_box_text_style(self, font_size_pt: float = 8.0) -> None:
         try:
-            self._set_font_name("HyhwpEQ")
+            self._set_font_name("HYhwpEQ")
             self._set_font_size_pt(font_size_pt)
         except Exception:
             pass
@@ -1030,7 +1301,7 @@ class HwpController:
         """Find and delete a template placeholder marker without moving the typing cursor."""
         candidates = [marker]
         if marker == "&&&":
-            candidates.extend(["＆＆＆", "& & &", "＆ ＆ ＆"])
+            candidates.extend(["&&&", "& & &"])
 
         saved_pos = self._capture_cursor_pos()
         # If position snapshot is unavailable on this HWP version, avoid
@@ -1088,11 +1359,11 @@ class HwpController:
         Example: insert_template("header.hwp")
         """
         if not name:
-            raise HwpControllerError("템플릿 이름이 비어있습니다.")
+            raise HwpControllerError("?쒗뵆由??대쫫??鍮꾩뼱?덉뒿?덈떎.")
         ok = self._try_insert_template(name)
         if not ok:
             template_path = self._template_dir / name
-            raise HwpControllerError(f"템플릿을 찾지 못했습니다: {template_path}")
+            raise HwpControllerError(f"?쒗뵆由우쓣 李얠? 紐삵뻽?듬땲?? {template_path}")
         # After inserting box templates, remove &&& placeholder if present
         # to prevent cursor-jump issues when focus_placeholder('&&&') runs later.
         base = name.lower().replace("\\", "/").rsplit("/", 1)[-1]
@@ -1123,7 +1394,7 @@ class HwpController:
         action = getattr(hwp, "HAction", None)
         param_sets = getattr(hwp, "HParameterSet", None)
         if action is None or param_sets is None or not hasattr(param_sets, "HFindReplace"):
-            raise HwpControllerError("HWP FindReplace 인터페이스를 찾지 못했습니다.")
+            raise HwpControllerError("HWP FindReplace ?명꽣?섏씠?ㅻ? 李얠? 紐삵뻽?듬땲??")
         param = param_sets.HFindReplace
         try:
             action.GetDefault("RepeatFind", param.HSet)
@@ -1237,7 +1508,7 @@ class HwpController:
     def focus_placeholder(self, marker: str) -> None:
         """
         Find `marker` (e.g. '@@@' or '###'), delete it, and leave the cursor there.
-        This enables "기존의 @@@/###을 지우고 그 자리에 타이핑" workflows.
+        This enables "湲곗〈??@@@/###??吏?곌퀬 洹??먮━????댄븨" workflows.
         """
         if marker == "###":
             self._focus_hash_placeholder()
@@ -1246,10 +1517,9 @@ class HwpController:
         candidates = [marker]
         original_pos = self._capture_cursor_pos()
         if marker == "@@@":
-            candidates.extend(["@ @ @"])
+            candidates.extend(["@@@", "@ @ @"])
         elif marker == "&&&":
-            candidates.extend(["& & &"])
-
+            candidates.extend(["&&&", "& & &"])
 
         found = False
         if self._repeat_find_retry(candidates, directions=(0, 1)):
@@ -1270,11 +1540,11 @@ class HwpController:
 
     def _focus_hash_placeholder(self) -> None:
         """
-        Specialized handler for ### which lives inside a table cell (보기 box).
+        Specialized handler for ### which lives inside a table cell (蹂닿린 box).
         RepeatFind cannot search into table cells on some HWP versions,
         so we use multiple strategies including structural navigation.
         """
-        candidates = ["###", "# # #", "\uff03\uff03\uff03", "\uff03 \uff03 \uff03"]
+        candidates = ["###", "# # #"]
         original_pos = self._capture_cursor_pos()
 
         # Strategy 1: Text search with scope-expanding flags (works on
@@ -1283,7 +1553,7 @@ class HwpController:
             self._delete_found_marker()
             return
 
-        # Strategy 2: Locate "<보기>" heading near current cursor and enter
+        # Strategy 2: Locate "<蹂닿린>" heading near current cursor and enter
         # the table right below it. This is robust even when ### text is not searchable.
         if self._focus_view_box_from_heading():
             if self._repeat_find_retry(candidates, attempts=2, directions=(0, 1)):
@@ -1292,7 +1562,7 @@ class HwpController:
             return
 
         # Strategy 3: Navigate forward from current position into the
-        # next table cell. After typing problem text, the 보기 box table
+        # next table cell. After typing problem text, the 蹂닿린 box table
         # is usually the next table going forward.
         if self._navigate_forward_into_table():
             if self._repeat_find_retry(candidates, attempts=2, directions=(0, 1)):
@@ -1309,58 +1579,9 @@ class HwpController:
                 self._mark_inside_box()
                 return
 
-        # Strategy 5: Last resort - from document start, enter the first table cell.
-        # This is intentionally aggressive to avoid typing 보기 content outside.
-        if self._force_enter_any_forward_table():
-            if self._repeat_find_retry(candidates, attempts=2, directions=(0, 1)):
-                self._delete_found_marker()
-            self._mark_inside_box()
-            return
-
         # All strategies exhausted. Stay at current position so typing
         # at least continues near where it should be. Do NOT create a new
         # view box or move to doc start.
-
-    def insert_text_at_hash_placeholder(self, text: str) -> None:
-        """
-        Find the ### marker and replace that selected marker directly with `text`.
-        This avoids cursor-drift cases where focus_placeholder('###') succeeds
-        partially but subsequent typing happens outside the 보기 box.
-        """
-        payload = text or ""
-        candidates = ["###", "# # #", "\uff03\uff03\uff03", "\uff03 \uff03 \uff03"]
-        saved_pos = self._capture_cursor_pos()
-
-        found = False
-        # 1) Search around current position first.
-        if self._repeat_find_retry(candidates, directions=(0, 1, 2)):
-            found = True
-        # 2) Heading-guided path.
-        elif self._focus_view_box_from_heading():
-            if self._repeat_find_retry(candidates, attempts=2, directions=(0, 1)):
-                found = True
-        # 3) Global fallback from document start.
-        else:
-            self._move_doc_start()
-            if self._repeat_find_retry(candidates, attempts=10, directions=(0, 1)):
-                found = True
-
-        if found:
-            # If marker is selected by RepeatFind, inserting raw text replaces it in-place.
-            try:
-                self._insert_text_raw(payload)
-            except Exception:
-                # Fallback: delete marker then insert text normally.
-                self._delete_found_marker()
-                self.insert_text(payload)
-            self._mark_inside_box()
-            return
-
-        # Last fallback: try existing ### focus behavior then type.
-        if saved_pos is not None:
-            self._restore_cursor_pos(saved_pos)
-        self._focus_hash_placeholder()
-        self.insert_text(payload)
 
     def _delete_found_marker(self) -> None:
         """Delete the marker text that RepeatFind just selected."""
@@ -1378,7 +1599,7 @@ class HwpController:
         From the current cursor position, navigate forward (MoveDown)
         until entering a table cell. Returns True if a cell was entered.
         """
-        for _ in range(300):
+        for _ in range(80):
             self._run_action_best_effort("MoveDown")
             if self._move_to_table_cell():
                 return True
@@ -1387,18 +1608,10 @@ class HwpController:
     def _focus_view_box_from_heading(self) -> bool:
         """
         Fallback path for ###:
-        find a '<보기>' heading and move into the nearest table cell below it.
+        find a '<蹂닿린>' heading and move into the nearest table cell below it.
         """
         saved_pos = self._capture_cursor_pos()
-        heading_candidates = [
-            "<\ubcf4\uae30>",
-            "< \ubcf4 \uae30 >",
-            "<\ubcf4",
-            "\ubcf4\uae30>",
-            "\ubcf4\uae30",
-            "\uff1c\ubcf4\uae30\uff1e",
-            "\u3008\ubcf4\uae30\u3009",
-        ]
+        heading_candidates = ["<보기>", "< 보 기 >", "<보기", "보기>"]
         # Search near current cursor first (both directions), then try from top.
         found_heading = self._repeat_find_retry(
             heading_candidates, attempts=6, delay_s=0.05, directions=(0, 1)
@@ -1415,7 +1628,7 @@ class HwpController:
 
         # Clear heading selection and move down near the box area.
         self._run_action_best_effort("Cancel")
-        for _ in range(120):
+        for _ in range(20):
             self._run_action_best_effort("MoveDown")
             if self._move_to_table_cell():
                 return True
@@ -1424,21 +1637,8 @@ class HwpController:
             self._restore_cursor_pos(saved_pos)
         return False
 
-    def _force_enter_any_forward_table(self) -> bool:
-        """
-        Last-resort fallback:
-        jump to document start and enter the first table cell found while moving down.
-        This prevents typing outside when ### focus fails on specific HWP builds/layouts.
-        """
-        self._move_doc_start()
-        for _ in range(600):
-            self._run_action_best_effort("MoveDown")
-            if self._move_to_table_cell():
-                return True
-        return False
-
     def _mark_inside_box(self) -> None:
-        """Update controller state to match being inside a 보기/조건 box."""
+        """Update controller state to match being inside a 蹂닿린/議곌굔 box."""
         self._in_condition_box = True
         self._box_line_start = True
         self._line_start = False
@@ -1476,12 +1676,12 @@ class HwpController:
             self._apply_box_text_style(8.0)
             self._apply_compact_paragraph()
         except Exception as exc:
-            raise HwpControllerError(f"박스 삽입 실패: {exc}") from exc
+            raise HwpControllerError(f"諛뺤뒪 ?쎌엯 ?ㅽ뙣: {exc}") from exc
 
     def insert_view_box(self) -> None:
         """
-        Insert a 1x1 table for a <보기> container.
-        The <보기> header text is assumed to be pre-printed or added separately.
+        Insert a 1x1 table for a <蹂닿린> container.
+        The <蹂닿린> header text is assumed to be pre-printed or added separately.
         """
         if self._try_insert_template("box_template.hwp"):
             if not self._move_to_table_cell():
@@ -1507,7 +1707,7 @@ class HwpController:
         if not self._first_line_written:
             self._first_line_written = True
 
-        # Match novaai behavior: add "< 보 기 >" header centered.
+        # Match novaai behavior: add "< 蹂?湲?>" header centered.
         try:
             hwp = self._ensure_connected()
             try:
@@ -1518,7 +1718,7 @@ class HwpController:
                 except Exception:
                     pass
             self._apply_box_text_style(8.0)
-            self.insert_text("< 보 기 >")
+            self.insert_text("< 蹂?湲?>")
             try:
                 hwp.HAction.Run("BreakPara")
             except Exception:
@@ -1533,7 +1733,7 @@ class HwpController:
         except Exception:
             pass
 
-        # Ensure <보기> content uses 8pt (and equation-friendly font) consistently.
+        # Ensure <蹂닿린> content uses 8pt (and equation-friendly font) consistently.
         self._apply_box_text_style(8.0)
         self._apply_compact_paragraph()
         # Default to justify alignment for boxed passages.
@@ -1552,7 +1752,7 @@ class HwpController:
         Insert a table and optionally fill cell contents row by row.
         """
         if rows <= 0 or cols <= 0:
-            raise HwpControllerError("표의 행/열은 1 이상이어야 합니다.")
+            raise HwpControllerError("?쒖쓽 ???댁? 1 ?댁긽?댁뼱???⑸땲??")
         hwp = self._ensure_connected()
         try:
             if not (self._align_justify_next_line or self._align_right_next_line):
@@ -1635,7 +1835,7 @@ class HwpController:
                             "FontName",
                         ):
                             if hasattr(param, attr):
-                                setattr(param, attr, "HyhwpEQ")
+                                setattr(param, attr, "HYhwpEQ")
                         # Best-effort for versions that only accept SetItem on HSet.
                         for key in (
                             "FaceName",
@@ -1649,7 +1849,7 @@ class HwpController:
                             "FontName",
                         ):
                             try:
-                                param.HSet.SetItem(key, "HyhwpEQ")
+                                param.HSet.SetItem(key, "HYhwpEQ")
                             except Exception:
                                 pass
                         action.Execute("CharShape", param.HSet)
@@ -1680,7 +1880,7 @@ class HwpController:
                         _apply_table_font()
                         self._apply_compact_paragraph()
                         try:
-                            self._set_font_name("HyhwpEQ")
+                            self._set_font_name("HYhwpEQ")
                         except Exception:
                             pass
                         if align_center:
@@ -1704,7 +1904,7 @@ class HwpController:
                         for _ in range(cols - 1):
                             _run("TableLeftCell")
         except Exception as exc:
-            raise HwpControllerError(f"표 삽입 실패: {exc}") from exc
+            raise HwpControllerError(f"???쎌엯 ?ㅽ뙣: {exc}") from exc
         finally:
             # Prevent follow-up typing from continuing inside the last table cell.
             # If callers need to keep the cursor inside the table (e.g., for additional table actions),
@@ -1744,11 +1944,11 @@ class HwpController:
                 pass
             self._in_condition_box = False
             self._box_line_start = False
-            raise HwpControllerError("박스 종료 실패: 표/박스 이동 실패")
+            raise HwpControllerError("諛뺤뒪 醫낅즺 ?ㅽ뙣: ??諛뺤뒪 ?대룞 ?ㅽ뙣")
         except Exception as exc:
-            raise HwpControllerError(f"박스 종료 실패: {exc}") from exc
+            raise HwpControllerError(f"諛뺤뒪 醫낅즺 ?ㅽ뙣: {exc}") from exc
 
-    # ── Image insertion (1x1 invisible-table approach) ──────
+    # ?? Image insertion (1x1 invisible-table approach) ??????
     _source_image_path: str | None = None
 
     def set_source_image(self, path: str | None) -> None:
@@ -1768,7 +1968,7 @@ class HwpController:
         """
         Crop a region from the source image and insert it into the HWP document.
 
-        Parameters are percentages (0.0–1.0) of the original image dimensions:
+        Parameters are percentages (0.0??.0) of the original image dimensions:
             x1_pct, y1_pct = top-left corner
             x2_pct, y2_pct = bottom-right corner
 
@@ -1778,7 +1978,7 @@ class HwpController:
         src = self._source_image_path
         if not src or not Path(src).exists():
             raise HwpControllerError(
-                "insert_cropped_image 실패: 원본 이미지 경로가 설정되지 않았습니다."
+                "insert_cropped_image 실패: 원본 이미지 경로가 설정되지 않았거나 파일이 없습니다."
             )
 
         try:
@@ -1791,14 +1991,22 @@ class HwpController:
         img = Image.open(src)
         w, h = img.size
 
-        x1 = max(0, min(int(x1_pct * w), w))
-        y1 = max(0, min(int(y1_pct * h), h))
-        x2 = max(0, min(int(x2_pct * w), w))
-        y2 = max(0, min(int(y2_pct * h), h))
+        # Be tolerant of model output: swapped/equal percentages are auto-normalized.
+        lx_pct, rx_pct = sorted((float(x1_pct), float(x2_pct)))
+        ty_pct, by_pct = sorted((float(y1_pct), float(y2_pct)))
 
+        x1 = max(0, min(int(lx_pct * w), w))
+        y1 = max(0, min(int(ty_pct * h), h))
+        x2 = max(0, min(int(rx_pct * w), w))
+        y2 = max(0, min(int(by_pct * h), h))
+
+        if x2 <= x1:
+            x2 = min(w, x1 + 1)
+        if y2 <= y1:
+            y2 = min(h, y1 + 1)
         if x2 <= x1 or y2 <= y1:
             raise HwpControllerError(
-                f"insert_cropped_image 실패: 잘못된 좌표 "
+                f"insert_cropped_image 실패: 유효한 좌표를 만들 수 없습니다 "
                 f"({x1_pct},{y1_pct})-({x2_pct},{y2_pct})"
             )
 
@@ -1828,7 +2036,28 @@ class HwpController:
         self._raw_insert_picture(str(tmp_path))
         self._exit_table_after_image()
 
-    # ── Low-level image helpers (table-based) ─────────────
+    def insert_generated_image(self, image_path: str) -> None:
+        """
+        Insert a pre-generated image file into the document using the same
+        table-based flow as insert_cropped_image().
+        """
+        path = (image_path or "").strip()
+        if not path:
+            raise HwpControllerError("insert_generated_image 실패: 이미지 경로가 비어 있습니다.")
+        p = Path(path)
+        if not p.exists():
+            raise HwpControllerError(f"insert_generated_image 실패: 파일을 찾을 수 없습니다: {path}")
+
+        self._insert_1x1_table()
+        self._set_current_table_border_none()
+        try:
+            self._set_paragraph_align("center")
+        except Exception:
+            pass
+        self._raw_insert_picture(str(p))
+        self._exit_table_after_image()
+
+    # ?? Low-level image helpers (table-based) ?????????????
 
     def _insert_1x1_table(self) -> None:
         """Insert a 1x1 table with zero-padding. Cursor lands inside the cell."""
@@ -1914,7 +2143,7 @@ class HwpController:
                 pass
 
     def _raw_insert_picture(self, image_path: str) -> None:
-        """Insert an image file into HWP as inline (글자처럼 취급)."""
+        """Insert an image file into HWP as inline (湲?먯쿂??痍④툒)."""
         hwp = self._ensure_connected()
         abs_path = str(Path(image_path).resolve())
 
@@ -1930,7 +2159,7 @@ class HwpController:
                     action.GetDefault("InsertPicture", param_obj.HSet)
                     param_obj.FileName = abs_path
                     if hasattr(param_obj, "Treatment"):
-                        param_obj.Treatment = 0  # 글자처럼 취급
+                        param_obj.Treatment = 0  # 湲?먯쿂??痍④툒
                     if hasattr(param_obj, "SizeType"):
                         param_obj.SizeType = 0
                     result = action.Execute("InsertPicture", param_obj.HSet)
@@ -1965,11 +2194,11 @@ class HwpController:
         Uses multiple strategies in order:
         1. ShapeObjDialog HAction (most reliable, works inside table cells)
         2. Direct ctrl.Properties manipulation
-        3. SelectCtrlReverse → retry strategies above
+        3. SelectCtrlReverse ??retry strategies above
         """
         hwp = self._ensure_connected()
 
-        # ── Strategy 1: ShapeObjDialog (works even inside table cells) ──
+        # ?? Strategy 1: ShapeObjDialog (works even inside table cells) ??
         try:
             pset = hwp.HParameterSet.HShapeObject
             hwp.HAction.GetDefault("ShapeObjDialog", pset.HSet)
@@ -1980,7 +2209,7 @@ class HwpController:
         except Exception:
             pass
 
-        # ── Strategy 2: Select the control, then direct property set ──
+        # ?? Strategy 2: Select the control, then direct property set ??
         ctrl = getattr(hwp, "CurSelectedCtrl", None)
 
         if ctrl is None:
@@ -2059,33 +2288,33 @@ class HwpController:
 
         Strategy:
         1. Physically resize the image with Pillow (0.3x).
-        2. Insert a 1x1 table (block-level element — text cannot flow beside it).
+        2. Insert a 1x1 table (block-level element ??text cannot flow beside it).
         3. Set table border to 0/none (invisible).
         4. Insert the resized image inside the table cell.
-        5. Exit the table — cursor moves below the image.
+        5. Exit the table ??cursor moves below the image.
 
         This approach uses structure (table) instead of properties
         (TreatAsChar, TextWrap) to enforce block layout.
         """
         abs_path = str(Path(image_path).resolve())
 
-        # ── 1. Physically resize the image ────────────────────
+        # ?? 1. Physically resize the image ????????????????????
         insert_path = self._physically_resize_image(abs_path, self._IMAGE_INSERT_SCALE)
 
-        # ── 2. Insert 1x1 table ──────────────────────────────
+        # ?? 2. Insert 1x1 table ??????????????????????????????
         self._insert_1x1_table()
 
-        # ── 3. Set table border to none (invisible) ──────────
+        # ?? 3. Set table border to none (invisible) ??????????
         self._set_current_table_border_none()
 
-        # ── 4. Center-align cell & insert the image ──────────
+        # ?? 4. Center-align cell & insert the image ??????????
         try:
             self._set_paragraph_align("center")
         except Exception:
             pass
         self._raw_insert_picture(insert_path)
 
-        # ── 5. Exit table — cursor below the image ───────────
+        # ?? 5. Exit table ??cursor below the image ???????????
         self._exit_table_after_image()
 
     def exit_table(self) -> None:
@@ -2109,6 +2338,7 @@ class HwpController:
                 return
             except Exception:
                 pass
-            raise HwpControllerError("표 종료 실패: 표/박스 이동 실패")
+            raise HwpControllerError("??醫낅즺 ?ㅽ뙣: ??諛뺤뒪 ?대룞 ?ㅽ뙣")
         except Exception as exc:
-            raise HwpControllerError(f"표 종료 실패: {exc}") from exc
+            raise HwpControllerError(f"??醫낅즺 ?ㅽ뙣: {exc}") from exc
+

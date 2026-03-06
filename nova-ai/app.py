@@ -155,7 +155,7 @@ def build_parser() -> argparse.ArgumentParser:
     insert_eq = subparsers.add_parser("insert-equation", help="수식 입력 (HwpEqn)")
     insert_eq.add_argument("equation", help="HwpEqn 수식 문자열")
     insert_eq.add_argument("--font-size", type=float, default=10.0)
-    insert_eq.add_argument("--font-name", default="HyhwpEQ")
+    insert_eq.add_argument("--font-name", default="HYhwpEQ")
     insert_eq.add_argument("--no-treat-as-char", action="store_true")
     insert_eq.add_argument("--newline", action="store_true")
     insert_eq.add_argument("--latex", action="store_true", help="LaTeX 입력으로 변환 후 삽입")
@@ -164,7 +164,7 @@ def build_parser() -> argparse.ArgumentParser:
     insert_latex = subparsers.add_parser("insert-latex-equation", help="LaTeX 수식 입력")
     insert_latex.add_argument("equation", help="LaTeX 수식 문자열")
     insert_latex.add_argument("--font-size", type=float, default=10.0)
-    insert_latex.add_argument("--font-name", default="HyhwpEQ")
+    insert_latex.add_argument("--font-name", default="HYhwpEQ")
     insert_latex.add_argument("--no-treat-as-char", action="store_true")
     insert_latex.add_argument("--newline", action="store_true")
     insert_latex.set_defaults(

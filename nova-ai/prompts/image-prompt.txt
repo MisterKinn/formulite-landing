@@ -1,0 +1,8 @@
+1. Based on the attached image, please recreate it as a clean vector-style illustration like those used in Korean CSAT (Suneung) problems.
+2. Refine all solid lines with high precision, and preserve any dashed lines clearly if present.
+3. Change all text to the standard equation font **HYhwpEQ**.
+4. Do not tilt the diagram like the original. Keep the x- and y-axes perfectly aligned (horizontal/vertical) with the page.
+5. The background must be clean white.
+6. Remove any pencil marks or handwritten traces made by the student.
+7. The generated image should be in grayscale.
+8. If, for a chemistry problem, the photo I took appears slightly tilted because it was shot from an angle, please do not reproduce the tilt—redraw it upright and properly aligned.

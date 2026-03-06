@@ -19,3 +19,7 @@ def _read_prompt(filename: str) -> str:
 
 def get_image_instructions_prompt() -> str:
     return _read_prompt("image_instructions_prompt.txt")
+
+
+def get_image_generation_prompt() -> str:
+    return _read_prompt("image-prompt.txt")
