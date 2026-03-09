@@ -1137,7 +1137,7 @@ export default function AdminPage() {
                                                                         String(
                                                                             user
                                                                                 .usage
-                                                                                ?.remaining ??
+                                                                                ?.cycleRemaining ??
                                                                                 0,
                                                                         )
                                                                     }
