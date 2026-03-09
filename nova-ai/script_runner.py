@@ -459,38 +459,36 @@ class ScriptRunner:
             r"^\s*insert_text\(\s*['\"]\s*(○|◎|●|•|ㄱ\.|ㄴ\.|ㄷ\.|가\.|나\.|다\.)"
         )
         choice_re = re.compile(r"^\s*insert_(?:text|equation)\(\s*['\"].*①")
-        # --- Dual template detection (header.hwp + box.hwp/box_white.hwp) ---
-        # When both templates are present, their ### placeholders collide.
-        # Fix: skip the plain-box template and use insert_box() instead.
-        _has_header_tpl = any(
-            l.strip().startswith("insert_template(") and "header.hwp" in l.strip().lower()
-            for l in lines
-        )
-        _has_plain_box_tpl = any(
-            l.strip().startswith("insert_template(")
-            and ("box.hwp" in l.strip().lower() or "box_white.hwp" in l.strip().lower())
-            and "header.hwp" not in l.strip().lower()
-            for l in lines
-        )
-        _dual_mode = _has_header_tpl and _has_plain_box_tpl
+        # `header.hwp` now enters the <보기> box immediately on insertion,
+        # so only placeholder-based templates participate in ### / &&& flow.
+        _dual_mode = False
         _dual_hash_count = 0
         _dual_box_phase = 0  # 0=before, 1=in condition box, 2=exited condition box
         for line in lines:
             stripped = line.strip()
             stripped_lower = stripped.lower()
+            is_header_template = (
+                stripped.startswith("insert_template(") and "header.hwp" in stripped_lower
+            )
+            is_placeholder_template = (
+                stripped.startswith("insert_template(")
+                and ("box.hwp" in stripped_lower or "box_white.hwp" in stripped_lower)
+                and "header.hwp" not in stripped_lower
+            )
             if stripped.startswith("insert_template(") and any(
                 name in stripped_lower for name in ("header.hwp", "box.hwp", "box_white.hwp")
             ):
-                # Dual mode: skip plain box template (replaced by insert_box())
-                if _dual_mode and ("box.hwp" in stripped_lower or "box_white.hwp" in stripped_lower) and "header.hwp" not in stripped_lower:
+                if is_header_template:
+                    saw_template = False
+                    has_choices_placeholder = False
+                    seen_inside = False
+                    inserted_inside = False
+                    saw_outside = False
+                    saw_after_box = False
+                    out.append(line)
                     continue
-                saw_template = True
-                if (
-                    "header.hwp" in stripped_lower
-                    or "box_white.hwp" in stripped_lower
-                    or "box.hwp" in stripped_lower
-                ):
-                    has_choices_placeholder = True
+                saw_template = is_placeholder_template
+                has_choices_placeholder = is_placeholder_template
                 out.append(line)
                 continue
             m = fp_re.match(stripped)
@@ -1108,7 +1106,8 @@ class ScriptRunner:
         choice_re = re.compile(r"^\s*insert_(?:text|equation)\(\s*['\"].*①")
         has_choices_placeholder = any(
             l.strip().startswith("insert_template(")
-            and any(name in l.strip().lower() for name in ("header.hwp", "box.hwp", "box_white.hwp"))
+            and any(name in l.strip().lower() for name in ("box.hwp", "box_white.hwp"))
+            and "header.hwp" not in l.strip().lower()
             for l in lines
         )
         last_choice_idx = -1
@@ -1142,6 +1141,71 @@ class ScriptRunner:
             out.append(line)
         return out
 
+    def _rewrite_header_template_flow(self, lines: List[str]) -> List[str]:
+        """
+        Normalize `header.hwp` to the new simple flow:
+        - insert_template('header.hwp')
+        - focus_placeholder('###')
+        - ... type <보기> content ...
+        - exit_box()
+
+        Any header-only @@@ / &&& markers are removed.
+        """
+        out: List[str] = []
+        header_template_re = re.compile(
+            r"^\s*insert_template\(\s*(['\"])header\.hwp\1\s*\)\s*$",
+            re.IGNORECASE,
+        )
+        placeholder_re = re.compile(r"^\s*focus_placeholder\(\s*(['\"])(.*?)\1\s*\)\s*$")
+        header_template_pending = False
+        inside_header_box = False
+
+        for line in lines:
+            stripped = line.strip()
+
+            if header_template_re.match(stripped):
+                if inside_header_box and (not out or out[-1].strip() != "exit_box()"):
+                    out.append("exit_box()")
+                    inside_header_box = False
+                out.append(line)
+                header_template_pending = True
+                continue
+
+            m = placeholder_re.match(stripped)
+            if m:
+                marker = m.group(2)
+                if header_template_pending and marker == "@@@":
+                    continue
+                if header_template_pending and marker == "###":
+                    out.append(line)
+                    header_template_pending = False
+                    inside_header_box = True
+                    continue
+                if header_template_pending and marker == "&&&":
+                    if not out or out[-1].strip() != "exit_box()":
+                        out.append("exit_box()")
+                    header_template_pending = False
+                    inside_header_box = False
+                    continue
+                if inside_header_box and marker == "&&&":
+                    if not out or out[-1].strip() != "exit_box()":
+                        out.append("exit_box()")
+                    inside_header_box = False
+                    continue
+
+            if stripped == "exit_box()" and inside_header_box:
+                out.append(line)
+                inside_header_box = False
+                header_template_pending = False
+                continue
+
+            out.append(line)
+
+        if inside_header_box and (not out or out[-1].strip() != "exit_box()"):
+            out.append("exit_box()")
+
+        return out
+
     def _execute_fallback(
         self, script: str, log_fn: LogFn, cancel_check: CancelCheck | None = None
     ) -> None:
@@ -1171,6 +1235,18 @@ class ScriptRunner:
         funcs_four_float = {
             "insert_cropped_image": self._controller.insert_cropped_image,
         }
+        funcs_var_args = {
+            "call_hwp_method": self._controller.call_hwp_method,
+            "insert_highlighted_text": self._controller.insert_highlighted_text,
+            "insert_colored_text": self._controller.insert_colored_text,
+            "insert_styled_text": self._controller.insert_styled_text,
+        }
+        funcs_action = {
+            "run_hwp_action": self._controller.run_hwp_action,
+        }
+        funcs_action_with_params = {
+            "execute_hwp_action": self._controller.execute_hwp_action,
+        }
 
         i = 0
         text = script
@@ -1179,7 +1255,10 @@ class ScriptRunner:
             + list(funcs_one_str.keys())
             + list(funcs_one_int.keys())
             + list(funcs_four_float.keys())
-            + ["set_bold", "set_underline", "insert_underline", "insert_table"],
+            + list(funcs_var_args.keys())
+            + list(funcs_action.keys())
+            + list(funcs_action_with_params.keys())
+            + ["set_bold", "set_underline", "insert_underline", "set_italic", "set_strike", "insert_table"],
             key=len,
             reverse=True,
         )
@@ -1254,6 +1333,12 @@ class ScriptRunner:
                 elif matched == "set_bold":
                     val = "true" in arg_str.lower()
                     self._controller.set_bold(val)
+                elif matched == "set_italic":
+                    val = "true" in arg_str.lower()
+                    self._controller.set_italic(val)
+                elif matched == "set_strike":
+                    val = "true" in arg_str.lower()
+                    self._controller.set_strike(val)
                 elif matched in ("set_underline", "insert_underline"):
                     if not arg_str:
                         self._controller.set_underline()
@@ -1285,6 +1370,33 @@ class ScriptRunner:
                             eval_args = [ast.literal_eval(a) for a in call.args]
                             eval_kwargs = {kw.arg: ast.literal_eval(kw.value) for kw in call.keywords if kw.arg}
                             self._controller.insert_table(*eval_args, **eval_kwargs)
+                    except Exception:
+                        pass
+                elif matched in funcs_action:
+                    try:
+                        node = ast.parse(f"f({arg_str})", mode="eval")
+                        call = node.body  # type: ignore[attr-defined]
+                        if isinstance(call, ast.Call) and call.args:
+                            action_name = ast.literal_eval(call.args[0])
+                            funcs_action[matched](str(action_name))
+                    except Exception:
+                        pass
+                elif matched in funcs_action_with_params:
+                    try:
+                        node = ast.parse(f"f({arg_str})", mode="eval")
+                        call = node.body  # type: ignore[attr-defined]
+                        if isinstance(call, ast.Call):
+                            eval_args = [ast.literal_eval(a) for a in call.args]
+                            funcs_action_with_params[matched](*eval_args)
+                    except Exception:
+                        pass
+                elif matched in funcs_var_args:
+                    try:
+                        node = ast.parse(f"f({arg_str})", mode="eval")
+                        call = node.body  # type: ignore[attr-defined]
+                        if isinstance(call, ast.Call):
+                            eval_args = [ast.literal_eval(a) for a in call.args]
+                            funcs_var_args[matched](*eval_args)
                     except Exception:
                         pass
             except Exception as exc:
@@ -1334,14 +1446,12 @@ class ScriptRunner:
             for sub_line in self._split_concat_calls(line):
                 expanded_lines.append(sub_line)
         expanded_lines = self._promote_math_insert_text_calls(expanded_lines)
-        expanded_lines = self._relocate_early_header_template(expanded_lines)
+        expanded_lines = self._rewrite_header_template_flow(expanded_lines)
         expanded_lines = self._normalize_placeholders(expanded_lines)
-        expanded_lines = self._split_dual_content_in_header(expanded_lines)
         expanded_lines = self._normalize_box_paragraphs(expanded_lines)
         expanded_lines = self._normalize_box_template_order(expanded_lines)
         expanded_lines = self._ensure_exit_after_plain_box(expanded_lines)
         expanded_lines = self._drop_enter_after_exit_box(expanded_lines)
-        expanded_lines = self._fix_header_view_box_order(expanded_lines)
         expanded_lines = self._normalize_choice_leading_space(expanded_lines)
         expanded_lines = self._drop_unused_choices_placeholder(expanded_lines)
         expanded_lines = self._ensure_score_right_align(expanded_lines)
@@ -1373,6 +1483,14 @@ class ScriptRunner:
 
             return _inner
 
+        def _wrap_bool(fn: Callable[[bool], None]) -> Callable[[bool], None]:
+            def _inner(enabled: bool = True) -> None:
+                if cancel_check and cancel_check():
+                    raise ScriptCancelled("cancelled")
+                return fn(enabled)
+
+            return _inner
+
         def _wrap_underline(fn: Callable[[bool | None], None]) -> Callable[[bool | None], None]:
             def _inner(enabled: bool | None = None) -> None:
                 if cancel_check and cancel_check():
@@ -1397,6 +1515,14 @@ class ScriptRunner:
 
             return _inner
 
+        def _wrap_varargs(fn: Callable[..., object]) -> Callable[..., object]:
+            def _inner(*args, **kwargs) -> object:  # type: ignore[no-untyped-def]
+                if cancel_check and cancel_check():
+                    raise ScriptCancelled("cancelled")
+                return fn(*args, **kwargs)
+
+            return _inner
+
         env: Dict[str, object] = {
             "__builtins__": SAFE_BUILTINS,
             "insert_text": _wrap1(self._controller.insert_text),
@@ -1414,13 +1540,21 @@ class ScriptRunner:
             "insert_table": _wrap_table(self._controller.insert_table),
             "insert_cropped_image": _wrap_crop(self._controller.insert_cropped_image),
             "insert_generated_image": _wrap1(self._controller.insert_generated_image),
+            "insert_highlighted_text": _wrap_varargs(self._controller.insert_highlighted_text),
+            "insert_colored_text": _wrap_varargs(self._controller.insert_colored_text),
+            "insert_styled_text": _wrap_varargs(self._controller.insert_styled_text),
             "set_bold": _wrap_bold(self._controller.set_bold),
+            "set_italic": _wrap_bool(self._controller.set_italic),
+            "set_strike": _wrap_bool(self._controller.set_strike),
             "set_underline": _wrap_underline(self._controller.set_underline),
             "insert_underline": _wrap_underline(self._controller.set_underline),
             "set_char_width_ratio": self._controller.set_char_width_ratio,
             "set_table_border_white": _wrap0(self._controller.set_table_border_white),
             "set_align_right_next_line": _wrap0(self._controller.set_align_right_next_line),
             "set_align_justify_next_line": _wrap0(self._controller.set_align_justify_next_line),
+            "run_hwp_action": _wrap1(self._controller.run_hwp_action),
+            "execute_hwp_action": _wrap_varargs(self._controller.execute_hwp_action),
+            "call_hwp_method": _wrap_varargs(self._controller.call_hwp_method),
         }
 
         log_fn("스크립트 실행 시작")

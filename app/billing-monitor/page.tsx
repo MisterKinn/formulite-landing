@@ -95,7 +95,7 @@ export default function BillingMonitorPage() {
                 background: "#0a0a0a",
                 minHeight: "100vh",
                 color: "#fff",
-                fontFamily: "system-ui",
+                fontFamily: "Pretendard, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
             }}
         >
             <h1 style={{ fontSize: 28, marginBottom: 8 }}>

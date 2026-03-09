@@ -39,7 +39,7 @@ type BillingCycle = "monthly" | "yearly";
 const plans: PricingPlan[] = [
     {
         name: "Free",
-        subDescription: "제한적인 AI 생성과 기본 기능을 제공합니다.",
+        subDescription: "기본 워크플로를 가볍게 검토할 수 있는 시작 플랜입니다.",
         prices: {
             monthly: "0",
             yearly: "0",
@@ -57,7 +57,7 @@ const plans: PricingPlan[] = [
     },
     {
         name: "Go 요금제",
-        subDescription: "핵심 기능을 합리적인 가격으로 시작하세요.",
+        subDescription: "개인 작업량을 빠르게 자동화하기에 적합한 플랜입니다.",
         prices: {
             monthly: "11,900",
             yearly: "8,330",
@@ -75,7 +75,7 @@ const plans: PricingPlan[] = [
     },
     {
         name: "Plus 요금제",
-        subDescription: "더 많은 기능과 우선 지원을 받으세요.",
+        subDescription: "가장 많은 팀이 선택하는 표준 워크플로 플랜입니다.",
         prices: {
             monthly: "29,900",
             yearly: "20,930",
@@ -94,7 +94,7 @@ const plans: PricingPlan[] = [
     },
     {
         name: "Ultra 요금제",
-        subDescription: "멀티 로그인이 가능합니다",
+        subDescription: "대량 처리와 팀 운영을 함께 고려한 확장형 플랜입니다.",
         prices: {
             monthly: "99,000",
             yearly: "69,300",
@@ -219,11 +219,10 @@ export default function Pricing() {
         <section id="pricing" className="pricing-section">
             <div className="section-inner">
                 <div className="pricing-header">
-                    <h2 className="pricing-title">이용 요금 안내</h2>
+                    <p className="section-kicker">요금제</p>
+                    <h2 className="pricing-title">작업량에 맞는 요금제</h2>
                     <p className="pricing-subtitle">
-                        합리적인 가격으로 강력한 AI 기능을 경험하세요.
-                        <br />
-                        필요에 맞는 요금제를 선택하고 지금 바로 시작하세요.
+                        개인 작업부터 팀 단위 운영까지, 필요한 수준에 맞게 선택할 수 있습니다.
                     </p>
                     <div className="pricing-billing-toggle" role="tablist" aria-label="결제 주기 선택">
                         <button
@@ -276,7 +275,7 @@ export default function Pricing() {
                                         </h3>
                                         {plan.popular && (
                                             <div className="pricing-badge-v2">
-                                                <span>BEST</span>
+                                                <span>가장 많이 선택</span>
                                             </div>
                                         )}
                                     </div>

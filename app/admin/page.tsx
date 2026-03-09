@@ -63,9 +63,9 @@ interface UserData {
         lastFailureReason?: string;
     };
     usage: {
-        today: number;
+        cycleUsed: number;
         limit: number;
-        remaining: number;
+        cycleRemaining: number;
     };
 }
 
@@ -203,7 +203,7 @@ export default function AdminPage() {
         }
     };
 
-    // Handle remaining usage update
+    // Handle remaining usage update for the current billing cycle
     const handleUpdateRemainingUsage = async (
         user: UserData,
         nextRemaining?: number,
@@ -211,16 +211,19 @@ export default function AdminPage() {
         const rawValue =
             typeof nextRemaining === "number"
                 ? String(nextRemaining)
-                : (usageEditValues[user.uid] ?? String(user.usage?.remaining ?? 0));
+                : (usageEditValues[user.uid] ??
+                  String(user.usage?.cycleRemaining ?? 0));
         const parsedValue = Number(rawValue);
         const usageLimit = user.usage?.limit ?? 0;
 
         if (!Number.isInteger(parsedValue) || parsedValue < 0) {
-            alert("남은 사용량은 0 이상의 정수여야 합니다.");
+            alert("월별 남은 사용량은 0 이상의 정수여야 합니다.");
             return;
         }
         if (parsedValue > usageLimit) {
-            alert(`남은 사용량은 현재 한도(${usageLimit})를 초과할 수 없습니다.`);
+            alert(
+                `월별 남은 사용량은 현재 한도(${usageLimit})를 초과할 수 없습니다.`,
+            );
             return;
         }
 
@@ -258,14 +261,14 @@ export default function AdminPage() {
             );
             setUsageEditValues((prev) => ({
                 ...prev,
-                [user.uid]: String(data.usage?.remaining ?? parsedValue),
+                [user.uid]: String(data.usage?.cycleRemaining ?? parsedValue),
             }));
         } catch (error) {
             console.error("Update remaining usage error:", error);
             alert(
                 error instanceof Error
                     ? error.message
-                    : "남은 사용량 수정에 실패했습니다.",
+                    : "월별 남은 사용량 수정에 실패했습니다.",
             );
         } finally {
             setUpdatingUsageUserId(null);
@@ -326,7 +329,7 @@ export default function AdminPage() {
             }));
             setUsageEditValues((prev) => ({
                 ...prev,
-                [user.uid]: String(data.usage?.remaining ?? 0),
+                [user.uid]: String(data.usage?.cycleRemaining ?? 0),
             }));
         } catch (error) {
             console.error("Update plan error:", error);
@@ -697,7 +700,7 @@ export default function AdminPage() {
                             {activeTab === "dashboard"
                                 ? "핵심 지표와 매출 흐름을 실시간으로 확인합니다."
                                 : activeTab === "users"
-                                  ? "회원 상태, 플랜, 사용량을 한 화면에서 관리합니다."
+                                  ? "회원 상태, 플랜, 결제 주기 기준 사용량을 한 화면에서 관리합니다."
                                   : "결제 상태와 환불 이력을 빠르게 검토합니다."}
                         </p>
                     </div>
@@ -982,8 +985,8 @@ export default function AdminPage() {
                                                 <th>이메일</th>
                                                 <th>플랜</th>
                                                 <th>구독 기간</th>
-                                                <th>오늘 사용량</th>
-                                                <th>남은 사용량</th>
+                                                <th>월별 사용량</th>
+                                                <th>월별 남은 사용량</th>
                                                 <th>누적 금액</th>
                                                 <th>다음 결제일</th>
                                                 <th>실패 횟수</th>
@@ -1013,11 +1016,11 @@ export default function AdminPage() {
                                                         </span>
                                                     </td>
                                                     <td>
-                                                        {user.usage?.today ?? 0} /{" "}
+                                                        {user.usage?.cycleUsed ?? 0} /{" "}
                                                         {user.usage?.limit ?? 0}
                                                     </td>
                                                     <td>
-                                                        {user.usage?.remaining ??
+                                                        {user.usage?.cycleRemaining ??
                                                             0}
                                                     </td>
                                                     <td>

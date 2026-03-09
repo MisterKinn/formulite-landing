@@ -54,9 +54,9 @@ interface AdminUserListItem {
         lastFailureReason?: string;
     };
     usage: {
-        today: number;
+        cycleUsed: number;
         limit: number;
-        remaining: number;
+        cycleRemaining: number;
     };
 }
 
@@ -137,9 +137,9 @@ export async function GET(request: NextRequest) {
             const subscription = data.subscription || {};
             const plan = resolveEffectiveUsagePlan(data) as PlanTier;
             const status = String(subscription.status || "none");
-            const todayUsage = data.aiCallUsage || 0;
+            const cycleUsage = Number(data.aiCallUsage || 0);
             const usageLimit = getTierLimit(plan);
-            const remainingUsage = Math.max(0, usageLimit - todayUsage);
+            const cycleRemaining = Math.max(0, usageLimit - cycleUsage);
 
             mergedUsers.set(doc.id, {
                 uid: doc.id,
@@ -163,9 +163,9 @@ export async function GET(request: NextRequest) {
                     lastFailureReason: subscription.lastFailureReason,
                 },
                 usage: {
-                    today: todayUsage,
+                    cycleUsed: cycleUsage,
                     limit: usageLimit,
-                    remaining: remainingUsage,
+                    cycleRemaining: cycleRemaining,
                 },
             });
         });
@@ -204,9 +204,9 @@ export async function GET(request: NextRequest) {
                     failureCount: 0,
                 },
                 usage: {
-                    today: 0,
+                    cycleUsed: 0,
                     limit: usageLimit,
-                    remaining: usageLimit,
+                    cycleRemaining: usageLimit,
                 },
             });
         });

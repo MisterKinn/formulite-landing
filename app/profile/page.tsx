@@ -19,6 +19,9 @@ const Sidebar = dynamic(() => import("../../components/Sidebar"), {
     ssr: false,
 });
 
+// 토스페이먼츠 클라이언트 키 (테스트용)
+const TOSS_CLIENT_KEY = "test_ck_D5GePWvyJnrK0W0k6q8gLzN97Eoq";
+
 // 아이콘 컴포넌트들
 const CheckIcon = () => (
     <svg

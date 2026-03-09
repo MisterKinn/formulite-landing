@@ -3,7 +3,6 @@ from __future__ import annotations
 import concurrent.futures
 import ast
 import base64
-import json
 import os
 import re
 import sys
@@ -13,6 +12,7 @@ import math
 import tempfile
 import time
 import uuid
+import wave
 from pathlib import Path
 
 # Allow running this file directly (python gui_app.py) by ensuring the
@@ -28,14 +28,17 @@ from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
+    QBoxLayout,
     QLabel,
     QPushButton,
     QMessageBox,
     QFileDialog,
     QTextEdit,
+    QListView,
     QListWidget,
     QListWidgetItem,
     QMenu,
+    QScrollArea,
     QStackedLayout,
     QSizePolicy,
     QProgressBar,
@@ -43,14 +46,17 @@ from PySide6.QtWidgets import (
     QDialog,
     QComboBox,
     QLineEdit,
+    QStyleOptionViewItem,
 )
 from PySide6.QtGui import (
     QColor, QPalette, QGuiApplication, QImage, QPixmap, QIcon,
     QFont, QFontDatabase, QPainter, QDoubleValidator, QIntValidator,
 )
+from PySide6.QtMultimedia import QAudioFormat, QAudioSource, QMediaDevices
 from PySide6.QtWidgets import QStyledItemDelegate, QStyle
 
 from ai_client import AIClient, AIClientError
+from chat_page import ChatComposeTextEdit, ChatMessageWidget, ChatWorker
 from hwp_controller import HwpController, HwpControllerError
 from ocr_pipeline import extract_text, extract_text_from_pil_image, OcrError
 from layout_detector import detect_container, crop_inside_rect, mask_rect_on_image
@@ -151,19 +157,89 @@ class SessionGuardWorker(QThread):
         self.finished.emit(bool(active))
 
 
+class VoiceTranscriptionWorker(QThread):
+    transcription_finished = Signal(str, str)
+    transcription_error = Signal(str, str)
+
+    def __init__(self, wav_path: str, model: str | None = None, parent=None) -> None:
+        super().__init__(parent)
+        self._wav_path = wav_path
+        self._model = (model or "").strip() or "gemini-2.5-flash"
+
+    @staticmethod
+    def _extract_response_text(response: object) -> str:
+        result_text = ""
+        try:
+            if hasattr(response, "text"):
+                result_text = str(response.text or "")
+            elif hasattr(response, "parts") and response.parts:
+                result_text = "".join(part.text for part in response.parts if hasattr(part, "text"))
+            elif hasattr(response, "candidates") and response.candidates:
+                for candidate in response.candidates:
+                    if hasattr(candidate, "content") and hasattr(candidate.content, "parts"):
+                        for part in candidate.content.parts:
+                            if hasattr(part, "text"):
+                                result_text += part.text
+        except Exception:
+            result_text = ""
+        return (result_text or "").strip()
+
+    def run(self) -> None:  # type: ignore[override]
+        uploaded_file = None
+        try:
+            from ai_client import _load_env as _load_ai_env  # type: ignore
+            import google.generativeai as genai  # type: ignore
+
+            _load_ai_env()
+            api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
+            if not api_key:
+                raise RuntimeError("GEMINI_API_KEY is missing.")
+
+            genai.configure(api_key=api_key)
+            uploaded_file = genai.upload_file(path=self._wav_path, mime_type="audio/wav")
+            model = genai.GenerativeModel(self._model)
+            prompt = (
+                "Transcribe this Korean speech clip for an HWP document editing assistant. "
+                "Return only the spoken user instruction in plain Korean text. "
+                "Do not add explanations. If there is no clear speech, return an empty string."
+            )
+            response = model.generate_content([prompt, uploaded_file])
+            text = self._extract_response_text(response)
+            self.transcription_finished.emit(text, self._wav_path)
+        except Exception as exc:
+            self.transcription_error.emit(str(exc), self._wav_path)
+        finally:
+            if uploaded_file is not None:
+                try:
+                    import google.generativeai as genai  # type: ignore
+
+                    genai.delete_file(uploaded_file.name)
+                except Exception:
+                    pass
+
+
 class AIWorker(QThread):
     finished = Signal(object)
     error = Signal(str)
     progress = Signal(int, str)
     item_finished = Signal(int, str)
 
-    def __init__(self, image_paths: list[str], image_mode: str = "crop") -> None:
+    def __init__(
+        self,
+        image_paths: list[str],
+        image_mode: str = "crop",
+        generation_mode: str = "problem",
+    ) -> None:
         super().__init__()
         self._image_paths = image_paths
         mode = (image_mode or "crop").strip().lower()
         if mode not in {"no_image", "crop", "ai_generate"}:
             mode = "crop"
         self._image_mode = mode
+        normalized_generation_mode = (generation_mode or "problem").strip().lower()
+        if normalized_generation_mode not in {"problem", "explanation", "problem_and_explanation"}:
+            normalized_generation_mode = "problem"
+        self._generation_mode = normalized_generation_mode
         self._image_generation_prompt_cache: str | None = None
 
     @staticmethod
@@ -336,7 +412,14 @@ class AIWorker(QThread):
         api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
         if not api_key:
             raise AIClientError("GEMINI_API_KEY is missing.")
-        model_name = (os.getenv("IMAGE_AI_MODEL") or "").strip() or "gemini-3-pro-image-preview"
+        model_name = (
+            os.getenv("IMAGE_AI_MODEL")
+            or os.getenv("NOVA_IMAGE_MODEL")
+            or os.getenv("GEMINI_MODEL")
+            or os.getenv("LITEPRO_MODEL")
+            or os.getenv("CHAT_AI_MODEL")
+            or "gemini-2.5-flash"
+        ).strip()
         prompt_text = self._get_image_generation_prompt()
 
         try:
@@ -441,6 +524,77 @@ class AIWorker(QThread):
             return stripped
         return script
 
+    @staticmethod
+    def _script_contains_table_style(script: str) -> bool:
+        lowered = (script or "").lower()
+        style_markers = (
+            "fill_color",
+            "background_color",
+            "bg_color",
+            "border_color",
+            "border_type",
+            "border_width",
+            "line_style",
+            "line_width",
+        )
+        return any(marker in lowered for marker in style_markers)
+
+    def _maybe_refine_table_styles(
+        self,
+        *,
+        idx: int,
+        client: AIClient,
+        image_path: str,
+        script: str,
+        ocr_text: str,
+        log_fn,
+    ) -> str:
+        code = self._extract_code(script or "")
+        if "insert_table(" not in code:
+            return code
+        if self._script_contains_table_style(code):
+            return code
+
+        style_prompt = (
+            "You are editing an existing HWP automation script.\n"
+            "Task: keep all commands and text, but enrich ONLY insert_table(...) cell_data styles "
+            "from the attached image.\n\n"
+            "Hard constraints:\n"
+            "1) Keep function order and non-table commands unchanged.\n"
+            "2) Do NOT remove existing text.\n"
+            "3) Only add style keys inside table cell objects: fill_color, border_color, "
+            "border_type, border_width, border_color_left/right/top/bottom, "
+            "border_type_left/right/top/bottom, border_width_left/right/top/bottom.\n"
+            "4) If outside borders differ from inside borders, use side-specific keys.\n"
+            "5) If no visual evidence for a style, leave that cell unchanged.\n"
+            "6) Return ONLY full Python code.\n\n"
+            "OCR hint:\n"
+            f"{ocr_text or '(none)'}\n\n"
+            "Existing script:\n"
+            "```python\n"
+            f"{code}\n"
+            "```"
+        )
+
+        try:
+            refined_raw = client.generate_script(style_prompt, image_path=image_path)
+        except Exception as exc:
+            log_fn(f"[{idx}] Table-style refine skipped: {exc}")
+            return code
+
+        refined = self._extract_code(refined_raw or "")
+        if not refined.strip():
+            log_fn(f"[{idx}] Table-style refine returned empty script")
+            return code
+        if refined.count("insert_table(") != code.count("insert_table("):
+            log_fn(f"[{idx}] Table-style refine rejected: insert_table count mismatch")
+            return code
+        if not self._script_contains_table_style(refined):
+            log_fn(f"[{idx}] Table-style refine rejected: style keys not added")
+            return code
+        log_fn(f"[{idx}] Table-style refine applied")
+        return refined
+
     def run(self) -> None:  # type: ignore[override]
         import sys
         def _log(msg: str) -> None:
@@ -513,6 +667,39 @@ class AIWorker(QThread):
                 except Exception as e:
                     _log(f"[{idx}] OCR failed (skipping): {type(e).__name__}: {e}")
                     ocr_text_full = ""
+
+                def _append_explanation_if_needed(problem_code: str) -> str:
+                    mode = getattr(self, "_generation_mode", "problem")
+                    if mode not in {"explanation", "problem_and_explanation"}:
+                        return (problem_code or "").strip()
+                    _log(f"[{idx}] Calling GPT explanation flow...")
+                    explanation_raw = client.generate_explanation_for_image(
+                        image_path,
+                        ocr_text=ocr_text_full,
+                    ) or ""
+                    _log(f"[{idx}] Explanation response length: {len(explanation_raw)}")
+                    explanation_code = self._extract_code(explanation_raw)
+                    if mode == "explanation":
+                        return explanation_code.strip()
+                    problem_clean = (problem_code or "").strip()
+                    explanation_clean = (explanation_code or "").strip()
+                    if problem_clean and explanation_clean:
+                        return "\n".join(
+                            [
+                                problem_clean,
+                                "insert_enter()",
+                                "insert_enter()",
+                                "insert_enter()",
+                                explanation_clean,
+                            ]
+                        ).strip()
+                    return problem_clean or explanation_clean
+
+                if self._generation_mode == "explanation":
+                    final_code = _append_explanation_if_needed("")
+                    if uid and final_code.strip():
+                        increment_ai_usage(uid)
+                    return final_code
 
                 # 2) Detect container + split generation when possible
                 _log(f"[{idx}] Detecting container...")
@@ -638,6 +825,15 @@ class AIWorker(QThread):
                     ).strip()
                     _log(f"[{idx}] Combined script length: {len(combined)}")
                     combined = self._apply_image_mode_pipeline(idx, image_path, combined, _log)
+                    combined = self._maybe_refine_table_styles(
+                        idx=idx,
+                        client=client,
+                        image_path=image_path,
+                        script=combined,
+                        ocr_text=ocr_text_full,
+                        log_fn=_log,
+                    )
+                    combined = _append_explanation_if_needed(combined)
                     if uid and combined.strip():
                         increment_ai_usage(uid)
                     return combined
@@ -659,6 +855,15 @@ class AIWorker(QThread):
                         ]
                     ).strip()
                     combined = self._apply_image_mode_pipeline(idx, image_path, combined, _log)
+                    combined = self._maybe_refine_table_styles(
+                        idx=idx,
+                        client=client,
+                        image_path=image_path,
+                        script=combined,
+                        ocr_text=ocr_text_full,
+                        log_fn=_log,
+                    )
+                    combined = _append_explanation_if_needed(combined)
                     if uid and combined.strip():
                         increment_ai_usage(uid)
                     return combined
@@ -671,18 +876,29 @@ class AIWorker(QThread):
                     _log(f"[{idx}] WARNING: Empty AI response!")
                 final_code = self._extract_code(raw_result)
                 final_code = self._apply_image_mode_pipeline(idx, image_path, final_code, _log)
+                final_code = self._maybe_refine_table_styles(
+                    idx=idx,
+                    client=client,
+                    image_path=image_path,
+                    script=final_code,
+                    ocr_text=ocr_text_full,
+                    log_fn=_log,
+                )
+                final_code = _append_explanation_if_needed(final_code)
                 if uid and final_code.strip():
                     increment_ai_usage(uid)
                 return final_code
 
-            # If you need to cap concurrency (rate limiting), set NOVA_AI_MAX_WORKERS.
+            # By default, submit all selected images concurrently so AI code
+            # generation starts at once for the whole batch. If needed, an
+            # environment variable can still cap the worker count.
             max_workers_env = os.getenv("NOVA_AI_MAX_WORKERS")
-            max_workers = total
+            max_workers = max(1, total)
             if max_workers_env:
                 try:
                     max_workers = max(1, min(total, int(max_workers_env)))
                 except Exception:
-                    max_workers = total
+                    max_workers = max(1, total)
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
                 future_to_idx: dict[concurrent.futures.Future[str], int] = {}
@@ -710,142 +926,6 @@ class AIWorker(QThread):
             self.error.emit(str(exc))
 
 
-class ChatWorker(QThread):
-    finished = Signal(object)
-    error = Signal(str)
-
-    def __init__(self, user_message: str, current_filename: str = "") -> None:
-        super().__init__()
-        self._user_message = user_message
-        self._current_filename = current_filename
-
-    @staticmethod
-    def _strip_code_fence(text: str) -> str:
-        cleaned = (text or "").strip()
-        if not cleaned.startswith("```"):
-            return cleaned
-        lines = cleaned.splitlines()
-        if lines and lines[0].strip().startswith("```"):
-            lines = lines[1:]
-        if lines and lines[-1].strip() == "```":
-            lines = lines[:-1]
-        return "\n".join(lines).strip()
-
-    @staticmethod
-    def _extract_json_payload(text: str) -> dict[str, object] | None:
-        cleaned = ChatWorker._strip_code_fence(text)
-        if not cleaned:
-            return None
-        decoder = json.JSONDecoder()
-        for idx, ch in enumerate(cleaned):
-            if ch != "{":
-                continue
-            try:
-                obj, _ = decoder.raw_decode(cleaned[idx:])
-            except Exception:
-                continue
-            if isinstance(obj, dict):
-                return obj
-        return None
-
-    @staticmethod
-    def _normalize_actions(raw_actions: object) -> list[dict[str, str]]:
-        allowed = {"open_new_file"}
-        normalized: list[dict[str, str]] = []
-        if not isinstance(raw_actions, list):
-            return normalized
-        for item in raw_actions:
-            name = ""
-            if isinstance(item, str):
-                name = item.strip()
-            elif isinstance(item, dict):
-                name = str(item.get("name") or "").strip()
-            if name in allowed:
-                normalized.append({"name": name})
-        return normalized
-
-    @staticmethod
-    def _infer_local_actions(message: str) -> list[dict[str, str]]:
-        text = (message or "").strip().lower()
-        if not text:
-            return []
-        has_new_doc = (
-            ("새 파일" in text)
-            or ("새파일" in text)
-            or ("새 문서" in text)
-            or ("new file" in text)
-            or ("new document" in text)
-        )
-        has_open_intent = (
-            ("열어" in text)
-            or ("열기" in text)
-            or ("만들" in text)
-            or ("create" in text)
-            or ("open" in text)
-        )
-        if has_new_doc and has_open_intent:
-            return [{"name": "open_new_file"}]
-        return []
-
-    def run(self) -> None:  # type: ignore[override]
-        message = (self._user_message or "").strip()
-        if not message:
-            self.finished.emit({"reply": "", "actions": [], "model": ""})
-            return
-
-        fallback_actions = self._infer_local_actions(message)
-        try:
-            # Ensure .env is loaded before reading CHAT_AI_MODEL.
-            from ai_client import _load_env as _load_ai_env  # type: ignore
-
-            _load_ai_env()
-        except Exception:
-            pass
-        chat_model = (os.getenv("CHAT_AI_MODEL") or "").strip() or "gemini-2.5-flash"
-        prompt = (
-            "당신은 Nova AI 데스크톱 앱의 HWP 편집 도우미입니다.\n"
-            "반드시 JSON 객체만 출력하세요. 마크다운 금지.\n\n"
-            "형식:\n"
-            "{\n"
-            '  "reply": "사용자에게 보여줄 짧은 한국어 응답",\n'
-            '  "actions": [{"name": "open_new_file"}]\n'
-            "}\n\n"
-            "허용된 action name:\n"
-            "- open_new_file : 한글(HWP)에서 새 빈 문서를 연다.\n\n"
-            "지원되지 않는 요청이면 actions를 빈 배열로 두고 reply에 가능한 안내를 작성하세요.\n"
-            f"현재 감지 문서: {self._current_filename or '없음'}\n"
-            f"사용자 요청: {message}"
-        )
-        try:
-            client = AIClient(model=chat_model, check_usage=False)
-            raw = client.generate_script(prompt)
-            parsed = self._extract_json_payload(raw)
-            reply = ""
-            actions: list[dict[str, str]] = []
-            if parsed is not None:
-                reply = str(parsed.get("reply") or "").strip()
-                actions = self._normalize_actions(parsed.get("actions"))
-            if not actions and fallback_actions:
-                actions = fallback_actions
-            if not reply:
-                if actions:
-                    reply = "요청한 편집 작업을 실행합니다."
-                else:
-                    reply = "요청을 확인했지만 현재 지원되는 자동 편집 명령이 제한적입니다."
-            self.finished.emit({"reply": reply, "actions": actions, "model": chat_model})
-        except Exception as exc:
-            if fallback_actions:
-                self.finished.emit(
-                    {
-                        "reply": "요청한 편집 작업을 실행합니다.",
-                        "actions": fallback_actions,
-                        "model": "local-fallback",
-                    }
-                )
-                return
-            self.error.emit(str(exc))
-
-
 # ???? Material Icons helper ????????????????????????????????????????????????????????
 _MI_MENU = "\ue5d2"
 _MI_PERSON = "\ue7fd"
@@ -863,6 +943,9 @@ _MI_HOME = "\ue88a"        # home (language/web)
 _MI_DOWNLOAD = "\ue2c4"    # file_download
 _MI_CLOSE = "\ue5cd"       # close
 _MI_CHAT = "\ue0b7"        # chat
+_MI_ADD = "\ue145"         # add
+_MI_MIC = "\ue029"         # mic
+_MI_ARROW_UP = "\ue5d8"    # arrow_upward
 
 
 def _material_icon(
@@ -1823,8 +1906,31 @@ class SidebarWidget(QFrame):
             self._logout_btn.setVisible(False)
 
 
+class ComboPopupItemDelegate(QStyledItemDelegate):
+    def paint(self, painter, option, index) -> None:  # type: ignore[override]
+        opt = QStyleOptionViewItem(option)
+        opt.state &= ~QStyle.StateFlag.State_HasFocus
+        super().paint(painter, opt, index)
+
+
 class DownwardPopupComboBox(QComboBox):
     """Always open combo popup below the control."""
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        popup_view = QListView(self)
+        popup_view.setMouseTracking(True)
+        popup_view.setUniformItemSizes(True)
+        popup_view.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        popup_view.setItemDelegate(ComboPopupItemDelegate(popup_view))
+        popup_view.setStyleSheet(
+            "QListView { background: #ffffff; border: 1px solid #d1d5db; outline: 0; "
+            "selection-background-color: #f3f4f6; selection-color: #111827; }"
+            "QListView::item { border: none; outline: 0; margin: 0; padding: 6px 10px; color: #111827; }"
+            "QListView::item:hover { background: #f3f4f6; border: none; outline: 0; }"
+            "QListView::item:selected { background: #f3f4f6; border: none; outline: 0; color: #111827; }"
+        )
+        self.setView(popup_view)
 
     def showPopup(self) -> None:  # type: ignore[override]
         super().showPopup()
@@ -1894,10 +2000,31 @@ class NovaAILiteWindow(QWidget):
         self._skipped_indexes: set[int] = set()
         self._typing_worker: "TypingWorker | None" = None
         self._chat_worker: "ChatWorker | None" = None
+        self._chat_typing_pending = False
+        self._chat_pending_reply = ""
+        self._chat_pipeline_status_item = None
+        self._chat_pipeline_status_widget: ChatMessageWidget | None = None
+        self._hide_voice_edit_ui = True
+        self._queued_chat_messages: list[str] = []
+        self._voice_session_active = False
+        self._voice_audio_source: QAudioSource | None = None
+        self._voice_audio_device = None
+        self._voice_sd_stream = None
+        self._voice_audio_lock = threading.Lock()
+        self._voice_audio_backend = ""
+        self._voice_pcm_buffer = bytearray()
+        self._voice_last_active_at = 0.0
+        self._voice_segment_started_at = 0.0
+        self._voice_detected_speech = False
+        self._voice_transcription_worker: VoiceTranscriptionWorker | None = None
+        self._voice_chunk_counter = 0
+        self._voice_preview_text = ""
+        self._voice_preview_status = ""
         self._typing_text_font_name = "한컴 윤고딕 720"
         self._typing_text_font_size_pt = 8.0
         self._typing_eq_font_name = "HYhwpEQ"
         self._typing_eq_font_size_pt = 8.0
+        self._typing_generation_mode = "problem"
         self._image_mode = "crop"
         self._typing_style_compact_breakpoint_px = 980
         _typing_dropdown_icon = (Path(__file__).resolve().parent / "assets" / "dropdown_triangle.png").as_posix()
@@ -1919,16 +2046,37 @@ class NovaAILiteWindow(QWidget):
             "QComboBox#typingSizeCombo::drop-down { width: 0px; border: none; }"
             "QComboBox#typingSizeCombo::down-arrow { image: none; width: 0px; height: 0px; }"
             "QComboBox QAbstractItemView { background: #ffffff; border: 1px solid #d1d5db;"
-            "  outline: 0; selection-background-color: #eef2ff; selection-color: #111827; }"
-            "QComboBox QAbstractItemView::item { border: none; padding: 4px 8px; }"
-            "QComboBox QAbstractItemView::item:hover { background-color: #eef2ff; border: none; }"
-            "QComboBox QAbstractItemView::item:selected { background-color: #eef2ff; border: none; color: #111827; }"
+            "  outline: 0; selection-background-color: #f3f4f6; selection-color: #111827; }"
+            "QComboBox QAbstractItemView::item { border: none; outline: 0; padding: 8px 12px; margin: 0; }"
+            "QComboBox QAbstractItemView::item:hover { background-color: #f3f4f6; border: none; outline: 0; }"
+            "QComboBox QAbstractItemView::item:selected { background-color: #f3f4f6; border: none; outline: 0; color: #111827; }"
         )
         _ts_root = QVBoxLayout(self._typing_style_bar)
         _ts_root.setContentsMargins(10, 6, 10, 6)
         _ts_root.setSpacing(6)
 
-        _img_mode_row = QHBoxLayout()
+        self._typing_kind_row_widget = QWidget()
+        _kind_row = QHBoxLayout(self._typing_kind_row_widget)
+        _kind_row.setContentsMargins(0, 0, 0, 0)
+        _kind_row.setSpacing(8)
+        _kind_lbl = QLabel("종류")
+        _kind_lbl.setObjectName("typingStyleLabel")
+        _kind_row.addSpacing(2)
+        _kind_lbl.setFixedWidth(52)
+        _kind_row.addWidget(_kind_lbl)
+        self._typing_kind_combo = DownwardPopupComboBox()
+        self._typing_kind_combo.setObjectName("typingFontCombo")
+        self._typing_kind_combo.setEditable(False)
+        self._typing_kind_combo.addItems(
+            ["문제만 타이핑하기", "해설만 타이핑하기", "문제+해설 타이핑하기"]
+        )
+        self._typing_kind_combo.setFixedWidth(220)
+        _kind_row.addWidget(self._typing_kind_combo)
+        _kind_row.addStretch(1)
+        _ts_root.addWidget(self._typing_kind_row_widget)
+
+        self._image_mode_row_widget = QWidget()
+        _img_mode_row = QHBoxLayout(self._image_mode_row_widget)
         _img_mode_row.setContentsMargins(0, 0, 0, 0)
         _img_mode_row.setSpacing(8)
         _img_mode_lbl = QLabel("이미지")
@@ -1940,12 +2088,12 @@ class NovaAILiteWindow(QWidget):
         self._image_mode_combo.setObjectName("typingFontCombo")
         self._image_mode_combo.setEditable(False)
         self._image_mode_combo.addItems(
-            ["이미지 없이 생성하기", "이미지 크롭해서 생성하기", "AI 이미지 생성하기"]
+            ["이미지 없이 생성하기", "이미지 크롭해서 생성하기"]
         )
         self._image_mode_combo.setFixedWidth(220)
         _img_mode_row.addWidget(self._image_mode_combo)
         _img_mode_row.addStretch(1)
-        _ts_root.addLayout(_img_mode_row)
+        _ts_root.addWidget(self._image_mode_row_widget)
 
         _ts_lay = QHBoxLayout()
         _ts_lay.setContentsMargins(0, 0, 0, 0)
@@ -1997,9 +2145,10 @@ class NovaAILiteWindow(QWidget):
         self._typing_eq_font_combo = DownwardPopupComboBox()
         self._typing_eq_font_combo.setObjectName("typingFontCombo")
         self._typing_eq_font_combo.setEditable(False)
-        self._typing_eq_font_combo.addItems(["HYhwpEQ", "HancomEQN"])
-        self._typing_eq_font_combo.setCurrentText(self._typing_eq_font_name)
+        self._typing_eq_font_combo.addItems(["HYhwpEQ"])
+        self._typing_eq_font_combo.setCurrentText("HYhwpEQ")
         self._typing_eq_font_combo.setFixedWidth(140)
+        self._typing_eq_font_combo.setEnabled(False)
         _ts_lay.addWidget(self._typing_eq_font_combo)
 
         _eq_size_lbl = QLabel("\uD06C\uAE30")
@@ -2027,6 +2176,7 @@ class NovaAILiteWindow(QWidget):
         self._typing_eq_size_combo.currentIndexChanged.connect(self._on_typing_style_changed)
         if self._typing_eq_size_combo.lineEdit() is not None:
             self._typing_eq_size_combo.lineEdit().editingFinished.connect(self._on_typing_style_changed)
+        self._typing_kind_combo.currentTextChanged.connect(self._on_typing_generation_mode_changed)
         self._image_mode_combo.currentTextChanged.connect(self._on_image_mode_changed)
 
         # Compact typing style bar (shown on narrow window widths).
@@ -2047,15 +2197,34 @@ class NovaAILiteWindow(QWidget):
             "QComboBox#typingSizeCombo::drop-down { width: 0px; border: none; }"
             "QComboBox#typingSizeCombo::down-arrow { image: none; width: 0px; height: 0px; }"
             "QComboBox QAbstractItemView { background: #ffffff; border: 1px solid #d1d5db;"
-            "  outline: 0; selection-background-color: #eef2ff; selection-color: #111827; }"
-            "QComboBox QAbstractItemView::item { border: none; padding: 4px 8px; }"
-            "QComboBox QAbstractItemView::item:hover { background-color: #eef2ff; border: none; }"
-            "QComboBox QAbstractItemView::item:selected { background-color: #eef2ff; border: none; color: #111827; }"
+            "  outline: 0; selection-background-color: #f3f4f6; selection-color: #111827; }"
+            "QComboBox QAbstractItemView::item { border: none; outline: 0; padding: 8px 12px; margin: 0; }"
+            "QComboBox QAbstractItemView::item:hover { background-color: #f3f4f6; border: none; outline: 0; }"
+            "QComboBox QAbstractItemView::item:selected { background-color: #f3f4f6; border: none; outline: 0; color: #111827; }"
         )
         _tsc_v = QVBoxLayout(self._typing_style_bar_compact)
         _tsc_v.setContentsMargins(10, 6, 10, 6)
         _tsc_v.setSpacing(6)
-        _img_mode_row_c = QHBoxLayout()
+        self._typing_kind_row_widget_compact = QWidget()
+        _kind_row_c = QHBoxLayout(self._typing_kind_row_widget_compact)
+        _kind_row_c.setContentsMargins(0, 0, 0, 0)
+        _kind_row_c.setSpacing(6)
+        _kind_lbl_c = QLabel("종류")
+        _kind_lbl_c.setObjectName("typingStyleLabel")
+        _kind_lbl_c.setFixedWidth(52)
+        _kind_row_c.addWidget(_kind_lbl_c)
+        self._typing_kind_combo_compact = DownwardPopupComboBox()
+        self._typing_kind_combo_compact.setObjectName("typingFontCombo")
+        self._typing_kind_combo_compact.setEditable(False)
+        self._typing_kind_combo_compact.addItems(
+            ["문제만 타이핑하기", "해설만 타이핑하기", "문제+해설 타이핑하기"]
+        )
+        self._typing_kind_combo_compact.setMinimumWidth(140)
+        _kind_row_c.addWidget(self._typing_kind_combo_compact, 1)
+        _tsc_v.addWidget(self._typing_kind_row_widget_compact)
+
+        self._image_mode_row_widget_compact = QWidget()
+        _img_mode_row_c = QHBoxLayout(self._image_mode_row_widget_compact)
         _img_mode_row_c.setContentsMargins(0, 0, 0, 0)
         _img_mode_row_c.setSpacing(6)
         _img_mode_lbl_c = QLabel("이미지")
@@ -2066,11 +2235,11 @@ class NovaAILiteWindow(QWidget):
         self._image_mode_combo_compact.setObjectName("typingFontCombo")
         self._image_mode_combo_compact.setEditable(False)
         self._image_mode_combo_compact.addItems(
-            ["이미지 없이 생성하기", "이미지 크롭해서 생성하기", "AI 이미지 생성하기"]
+            ["이미지 없이 생성하기", "이미지 크롭해서 생성하기"]
         )
         self._image_mode_combo_compact.setMinimumWidth(140)
         _img_mode_row_c.addWidget(self._image_mode_combo_compact, 1)
-        _tsc_v.addLayout(_img_mode_row_c)
+        _tsc_v.addWidget(self._image_mode_row_widget_compact)
         _tsc_row1 = QHBoxLayout()
         _tsc_row1.setSpacing(6)
         _tsc_txt_lbl = QLabel("\uAE00\uC528 \uD3F0\uD2B8")
@@ -2121,9 +2290,10 @@ class NovaAILiteWindow(QWidget):
         self._typing_eq_font_combo_compact = DownwardPopupComboBox()
         self._typing_eq_font_combo_compact.setObjectName("typingFontCombo")
         self._typing_eq_font_combo_compact.setEditable(False)
-        self._typing_eq_font_combo_compact.addItems(["HYhwpEQ", "HancomEQN"])
-        self._typing_eq_font_combo_compact.setCurrentText(self._typing_eq_font_name)
+        self._typing_eq_font_combo_compact.addItems(["HYhwpEQ"])
+        self._typing_eq_font_combo_compact.setCurrentText("HYhwpEQ")
         self._typing_eq_font_combo_compact.setMinimumWidth(96)
+        self._typing_eq_font_combo_compact.setEnabled(False)
         _tsc_row2.addWidget(self._typing_eq_font_combo_compact, 1)
         _tsc_eq_size_lbl = QLabel("\uD06C\uAE30")
         _tsc_eq_size_lbl.setObjectName("typingStyleLabel")
@@ -2153,6 +2323,9 @@ class NovaAILiteWindow(QWidget):
             self._typing_eq_size_combo_compact.lineEdit().editingFinished.connect(
                 self._on_typing_style_changed_compact
             )
+        self._typing_kind_combo_compact.currentTextChanged.connect(
+            self._on_typing_generation_mode_changed_compact
+        )
         self._image_mode_combo_compact.currentTextChanged.connect(self._on_image_mode_changed_compact)
         self._typing_style_bar_compact.hide()
         # ???? ???????? ??(pill) ????
@@ -2295,6 +2468,7 @@ class NovaAILiteWindow(QWidget):
             "QPushButton:pressed { background-color: #4338ca; }"
             "QPushButton:disabled { background-color: #c7c7cc; color: #f0f0f0; }"
         )
+        self._sync_typing_generation_mode_controls(source="", mode_key=self._typing_generation_mode)
         self._sync_image_mode_controls(source="", mode_key=self._image_mode)
 
         self.code_view = QTextEdit()
@@ -2357,19 +2531,79 @@ class NovaAILiteWindow(QWidget):
         order_layout.addWidget(list_stack_container, 1)
         self._order_list_stack = list_stack
 
+        self._chat_file_panel = QFrame()
+        self._chat_file_panel.setObjectName("chatFilePanel")
+        self._chat_file_panel.setFixedWidth(270)
+        self._chat_file_panel.setStyleSheet(
+            "QFrame#chatFilePanel { background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 20px; }"
+            "QLabel#chatFilePanelTitle { color: #111827; font-size: 13px; font-weight: 700; background: transparent; }"
+            "QLabel#chatFilePanelHint { color: #6b7280; font-size: 11px; background: transparent; }"
+            "QListWidget#chatFileList { background: transparent; border: none; padding: 0px; }"
+            "QListWidget#chatFileList::item { border: none; padding: 0px; margin: 0 0 8px 0; }"
+        )
+        _chat_file_panel_lay = QVBoxLayout(self._chat_file_panel)
+        _chat_file_panel_lay.setContentsMargins(14, 14, 14, 14)
+        _chat_file_panel_lay.setSpacing(10)
+        self._chat_file_panel_title = QLabel("첨부 파일")
+        self._chat_file_panel_title.setObjectName("chatFilePanelTitle")
+        _chat_file_panel_lay.addWidget(self._chat_file_panel_title)
+        self._chat_file_panel_hint = QLabel("이미지나 PDF를 드래그하거나 + 버튼으로 추가")
+        self._chat_file_panel_hint.setObjectName("chatFilePanelHint")
+        self._chat_file_panel_hint.setWordWrap(True)
+        _chat_file_panel_lay.addWidget(self._chat_file_panel_hint)
+        _chat_file_panel_stack_host = QWidget()
+        _chat_file_panel_stack_host.setStyleSheet("background: transparent; border: none;")
+        self._chat_file_panel_stack = QStackedLayout(_chat_file_panel_stack_host)
+        self._chat_file_panel_stack.setContentsMargins(0, 0, 0, 0)
+        self._chat_file_empty_placeholder = DropPlaceholder()
+        self._chat_file_empty_placeholder.setMinimumHeight(220)
+        self._chat_file_empty_placeholder.clicked.connect(self.on_upload_image)
+        self._chat_file_empty_placeholder.filesDropped.connect(self._on_files_dropped)
+        self._chat_file_list = OrderListWidget()
+        self._chat_file_list.setObjectName("chatFileList")
+        self._chat_file_list.setSelectionMode(QListWidget.SelectionMode.NoSelection)
+        self._chat_file_list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._chat_file_list.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
+        self._chat_file_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._chat_file_list.setDragDropMode(QListWidget.DragDropMode.NoDragDrop)
+        self._chat_file_list.setDragEnabled(False)
+        self._chat_file_list.setAcceptDrops(True)
+        self._chat_file_list.setDropIndicatorShown(False)
+        self._chat_file_list.filesDropped.connect(self._on_files_dropped)
+        self._chat_file_panel_stack.addWidget(self._chat_file_empty_placeholder)
+        self._chat_file_panel_stack.addWidget(self._chat_file_list)
+        _chat_file_panel_lay.addWidget(_chat_file_panel_stack_host, 1)
+
         self._chat_container = QFrame()
         self._chat_container.setObjectName("chatContainer")
         self._chat_container.setStyleSheet(
             "QFrame#chatContainer { background: transparent; border: none; }"
-            "QListWidget#chatThread { background: transparent; border: none; border-radius: 0px;"
-            "  padding: 0px; font-size: 12px; color: #111827; }"
-            "QListWidget#chatThread::item { border: none; padding: 6px 8px; margin: 2px 0; }"
-            "QLineEdit#chatInput { background: #ffffff; border: 1px solid #d1d5db; border-radius: 8px;"
-            "  padding: 6px 10px; font-size: 12px; color: #111827; }"
-            "QPushButton#chatSendBtn { background-color: #6366f1; color: #ffffff; border: none;"
-            "  border-radius: 8px; padding: 6px 14px; font-size: 12px; font-weight: 600; }"
+            "QListWidget#chatThread { background: transparent; border: none; padding: 10px 0 4px 0;"
+            "  font-size: 12px; color: #111827; outline: 0; }"
+            "QListWidget#chatThread::item { border: none; padding: 0px; margin: 0px; }"
+            "QTextEdit#chatInput { background: transparent; border: none; padding: 0px;"
+            "  font-size: 15px; color: #111827; selection-background-color: #c7d2fe; }"
+            "QTextEdit#chatInput:focus { border: none; }"
+            "QFrame#chatComposer { background-color: #f3f4f6; border: none;"
+            "  border-radius: 26px; }"
+            "QPushButton#chatAttachBtn { background: transparent; border: none; border-radius: 18px; padding: 0px; }"
+            "QPushButton#chatAttachBtn:hover { background-color: #e5e7eb; }"
+            "QPushButton#chatVoiceBtn { background-color: #f5f3ff; color: #7c3aed; border: 1px solid #c4b5fd;"
+            "  border-radius: 18px; padding: 0 12px; font-size: 12px; font-weight: 700; text-align: center; }"
+            "QPushButton#chatVoiceBtn:hover { background-color: #ede9fe; border-color: #a78bfa; }"
+            "QPushButton#chatVoiceBtn:pressed { background-color: #ddd6fe; }"
+            "QPushButton#chatVoiceBtn:disabled { background-color: #f5f3ff; color: #a78bfa; border-color: #ddd6fe; }"
+            "QFrame#chatVoicePreview { background-color: #faf5ff; border: 1px solid #ddd6fe; border-radius: 12px; }"
+            "QLabel#chatVoicePreviewLabel { color: #6d28d9; font-size: 11px; font-weight: 600; background: transparent; }"
+            "QPushButton#chatSendBtn { background-color: #6366f1; color: white; border: none;"
+            "  border-radius: 10px; padding: 0 12px; font-size: 13px; font-weight: 600; }"
             "QPushButton#chatSendBtn:hover { background-color: #4f46e5; }"
+            "QPushButton#chatSendBtn:pressed { background-color: #4338ca; }"
             "QPushButton#chatSendBtn:disabled { background-color: #c7c7cc; color: #f0f0f0; }"
+            "QScrollBar:vertical { background: transparent; width: 8px; margin: 4px 0 4px 0; }"
+            "QScrollBar::handle:vertical { background: #d4d4d8; border-radius: 4px; min-height: 24px; }"
+            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }"
+            "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }"
         )
         _chat_lay = QVBoxLayout(self._chat_container)
         _chat_lay.setContentsMargins(0, 0, 0, 0)
@@ -2381,41 +2615,104 @@ class NovaAILiteWindow(QWidget):
         self._chat_thread.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
         self._chat_thread.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._chat_thread.setWordWrap(True)
+        self._chat_thread.setSpacing(8)
         _chat_lay.addWidget(self._chat_thread, 1)
 
-        _chat_input_row = QHBoxLayout()
-        _chat_input_row.setContentsMargins(0, 0, 0, 0)
-        _chat_input_row.setSpacing(0)
-        self._chat_input = QLineEdit()
+        self._chat_composer = QFrame()
+        self._chat_composer.setObjectName("chatComposer")
+        _chat_input_wrap = QVBoxLayout(self._chat_composer)
+        _chat_input_wrap.setContentsMargins(16, 8, 16, 8)
+        _chat_input_wrap.setSpacing(6)
+        _chat_meta_row = QHBoxLayout()
+        _chat_meta_row.setContentsMargins(0, 0, 0, 0)
+        _chat_meta_row.setSpacing(6)
+        _chat_meta_row.addWidget(self._chat_filename_chip, 0, Qt.AlignmentFlag.AlignLeft)
+        _chat_meta_row.addWidget(self._chat_page_badge, 0, Qt.AlignmentFlag.AlignLeft)
+        _chat_meta_row.addStretch(1)
+        _chat_input_wrap.addLayout(_chat_meta_row)
+        self._chat_attachment_scroll = QScrollArea()
+        self._chat_attachment_scroll.setObjectName("chatAttachmentScroll")
+        self._chat_attachment_scroll.setWidgetResizable(True)
+        self._chat_attachment_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._chat_attachment_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._chat_attachment_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._chat_attachment_scroll.setVisible(False)
+        self._chat_attachment_scroll.setFixedHeight(76)
+        self._chat_attachment_scroll.setStyleSheet(
+            "QScrollArea#chatAttachmentScroll { background: transparent; border: none; }"
+            "QScrollBar:horizontal { background: transparent; height: 8px; margin: 4px 10px 0 10px; }"
+            "QScrollBar::handle:horizontal { background: #d4d4d8; border-radius: 4px; min-width: 24px; }"
+            "QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0px; }"
+            "QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: transparent; }"
+        )
+        self._chat_attachment_strip = QWidget()
+        self._chat_attachment_strip.setStyleSheet("background: transparent; border: none;")
+        self._chat_attachment_strip_layout = QHBoxLayout(self._chat_attachment_strip)
+        self._chat_attachment_strip_layout.setContentsMargins(0, 0, 0, 0)
+        self._chat_attachment_strip_layout.setSpacing(10)
+        self._chat_attachment_strip_layout.addStretch(1)
+        self._chat_attachment_scroll.setWidget(self._chat_attachment_strip)
+        _chat_input_wrap.addWidget(self._chat_attachment_scroll)
+        self._chat_input = ChatComposeTextEdit()
         self._chat_input.setObjectName("chatInput")
-        self._chat_input.setPlaceholderText("예: 새 파일을 열어줘")
-        _chat_input_row.addWidget(self._chat_input, 1)
-        _chat_lay.addLayout(_chat_input_row)
+        self._chat_input.setPlaceholderText("예: y=f(x) 수식과 근의 공식을 삽입해줘")
+        self._chat_input.setMinimumHeight(48)
+        self._chat_input.setMaximumHeight(100)
+        _chat_input_wrap.addWidget(self._chat_input, 1)
 
         _chat_action_row = QHBoxLayout()
         _chat_action_row.setContentsMargins(0, 0, 0, 0)
-        _chat_action_row.setSpacing(8)
-        _chat_action_row.addWidget(self._chat_filename_chip)
-        _chat_action_row.addWidget(self._chat_page_badge)
+        _chat_action_row.setSpacing(10)
+        self._chat_attach_btn = QPushButton()
+        self._chat_attach_btn.setObjectName("chatAttachBtn")
+        self._chat_attach_btn.setFixedSize(36, 36)
+        self._chat_attach_btn.setIcon(_material_icon(_MI_ADD, 26, QColor("#7c7f87")))
+        self._chat_attach_btn.setIconSize(QSize(24, 24))
+        self._chat_attach_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._chat_attach_btn.setToolTip("이미지 또는 PDF 업로드")
+        self._chat_attach_btn.clicked.connect(self.on_upload_image)
+        _chat_action_row.addWidget(self._chat_attach_btn)
+        self._chat_voice_btn = QPushButton()
+        self._chat_voice_btn.setObjectName("chatVoiceBtn")
+        self._chat_voice_btn.setFixedHeight(36)
+        self._chat_voice_btn.setMinimumWidth(108)
+        self._chat_voice_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._chat_voice_btn.setToolTip("음성 편집 시작/중지")
+        self._chat_voice_btn.setVisible(not self._hide_voice_edit_ui)
+        _chat_action_row.addWidget(self._chat_voice_btn)
+        self._chat_voice_preview = QFrame()
+        self._chat_voice_preview.setObjectName("chatVoicePreview")
+        self._chat_voice_preview.setVisible(False)
+        self._chat_voice_preview.setMinimumHeight(36)
+        self._chat_voice_preview.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        _chat_voice_preview_lay = QHBoxLayout(self._chat_voice_preview)
+        _chat_voice_preview_lay.setContentsMargins(10, 0, 10, 0)
+        _chat_voice_preview_lay.setSpacing(0)
+        self._chat_voice_preview_label = QLabel("")
+        self._chat_voice_preview_label.setObjectName("chatVoicePreviewLabel")
+        self._chat_voice_preview_label.setWordWrap(False)
+        self._chat_voice_preview_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        _chat_voice_preview_lay.addWidget(self._chat_voice_preview_label)
+        if self._hide_voice_edit_ui:
+            self._chat_voice_preview.hide()
+        _chat_action_row.addWidget(self._chat_voice_preview, 1)
         _chat_action_row.addStretch(1)
-        self._chat_send_btn = QPushButton("보내기")
+        self._chat_send_btn = QPushButton()
         self._chat_send_btn.setObjectName("chatSendBtn")
-        self._chat_send_btn.setIcon(_material_icon("\ue163", 18, QColor("#ffffff")))
+        self._chat_send_btn.setText("보내기")
+        self._chat_send_btn.setFixedHeight(36)
+        self._chat_send_btn.setIcon(_material_icon(_MI_ARROW_UP, 18, QColor("#ffffff")))
         self._chat_send_btn.setIconSize(QSize(18, 18))
         self._chat_send_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._chat_send_btn.setStyleSheet(
-            "QPushButton { background-color: #6366f1; color: white;"
-            "  border: none; border-radius: 8px; padding: 7px 12px;"
-            "  font-size: 13px; font-weight: 600; }"
-            "QPushButton:hover { background-color: #4f46e5; }"
-            "QPushButton:pressed { background-color: #4338ca; }"
-            "QPushButton:disabled { background-color: #c7c7cc; color: #f0f0f0; }"
-        )
         _chat_action_row.addWidget(self._chat_send_btn)
-        _chat_lay.addLayout(_chat_action_row)
+        _chat_input_wrap.addLayout(_chat_action_row)
+        _chat_lay.addWidget(self._chat_composer)
 
         self._chat_send_btn.clicked.connect(self._on_chat_send_clicked)
-        self._chat_input.returnPressed.connect(self._on_chat_send_clicked)
+        self._chat_input.submitted.connect(self._on_chat_send_clicked)
+        self._chat_input.filesDropped.connect(self._on_files_dropped)
+        self._chat_voice_btn.clicked.connect(self._on_chat_voice_clicked)
+        self._update_chat_voice_button()
 
         # ???? ?? ??? ??(?????? ??, ???????? ??) ????
         _hdr_top = 6
@@ -2445,16 +2742,22 @@ class NovaAILiteWindow(QWidget):
         self._menu_btn.clicked.connect(self._toggle_sidebar)
         _h_lay.addWidget(self._menu_btn)
 
-        self._header_mode_btn = QPushButton("AI 채팅 편집")
-        self._header_mode_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._header_mode_btn.setFixedHeight(30)
-        self._header_mode_btn.setStyleSheet(
-            "QPushButton { background-color: #eef2ff; color: #4f46e5; border: 1px solid #c7d2fe;"
-            "  border-radius: 8px; padding: 0 10px; font-size: 12px; font-weight: 700; }"
-            "QPushButton:hover { background-color: #e0e7ff; }"
-            "QPushButton:pressed { background-color: #c7d2fe; }"
+        _header_mode_btn_css = (
+            "QPushButton { background: transparent; color: #9ca3af; border: none;"
+            "  padding: 0 6px; font-size: 12px; font-weight: 700; }"
+            "QPushButton:hover { color: #6b7280; }"
+            "QPushButton:pressed { color: #4f46e5; }"
         )
-        self._header_mode_btn.clicked.connect(self._on_header_mode_clicked)
+        self._header_typing_btn = QPushButton("타이핑 모드")
+        self._header_typing_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._header_typing_btn.setFixedHeight(24)
+        self._header_typing_btn.setStyleSheet(_header_mode_btn_css)
+        self._header_typing_btn.clicked.connect(self._on_header_typing_clicked)
+        self._header_chat_btn = QPushButton("채팅 편집 모드")
+        self._header_chat_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._header_chat_btn.setFixedHeight(24)
+        self._header_chat_btn.setStyleSheet(_header_mode_btn_css)
+        self._header_chat_btn.clicked.connect(self._on_header_chat_clicked)
         _h_lay.addStretch(1)
         self._replay_selected_btn = QPushButton("선택 코드 재생")
         self._replay_selected_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -2469,7 +2772,9 @@ class NovaAILiteWindow(QWidget):
         self._replay_selected_btn.setVisible(False)
         _h_lay.addWidget(self._replay_selected_btn)
         _h_lay.addSpacing(6)
-        _h_lay.addWidget(self._header_mode_btn)
+        _h_lay.addWidget(self._header_typing_btn)
+        _h_lay.addSpacing(6)
+        _h_lay.addWidget(self._header_chat_btn)
         _h_lay.addSpacing(8)
 
         # Right side header area (name and plan badge).
@@ -2529,9 +2834,14 @@ class NovaAILiteWindow(QWidget):
         _typing_page_layout.addWidget(self._generated_container)
 
         self._chat_page = QWidget()
+        self._chat_page.setObjectName("chatPage")
+        self._chat_page.setStyleSheet(
+            "QWidget#chatPage { background-color: #ffffff; border-radius: 28px; }"
+        )
         _chat_page_layout = QVBoxLayout(self._chat_page)
-        _chat_page_layout.setContentsMargins(0, 0, 0, 0)
-        _chat_page_layout.setSpacing(6)
+        _chat_page_layout.setContentsMargins(10, 8, 10, 8)
+        _chat_page_layout.setSpacing(10)
+        self._chat_file_panel.setVisible(False)
         _chat_page_layout.addWidget(self._chat_container, 1)
 
         self._content_stack_container = QWidget()
@@ -2542,7 +2852,9 @@ class NovaAILiteWindow(QWidget):
         self._content_stack.addWidget(self._chat_page)
         layout.addWidget(self._content_stack_container, 1)
         self._main_mode = "typing"
+        self._typing_generation_mode = "problem"
         self._set_main_mode("typing")
+        self._refresh_typing_mode_labels()
 
         self.btn_ai_type.clicked.connect(self.on_ai_type_run)
         self._code_type_btn.clicked.connect(self._on_code_type_clicked)
@@ -2578,9 +2890,11 @@ class NovaAILiteWindow(QWidget):
         self._ai_error_messages: dict[int, str] = {}
         # Animate "????? status in the list.
         self._status_anim_timer = QTimer(self)
-        self._status_anim_timer.setInterval(50)
+        self._status_anim_timer.setInterval(120)
         self._status_anim_timer.timeout.connect(self._tick_status_animation)
-        self._status_anim_timer.start()
+        self._voice_poll_timer = QTimer(self)
+        self._voice_poll_timer.setInterval(250)
+        self._voice_poll_timer.timeout.connect(self._poll_voice_segment)
 
         # Capture ESC globally to stop typing even during long operations.
         app = QApplication.instance()
@@ -2802,11 +3116,98 @@ class NovaAILiteWindow(QWidget):
         else:
             self._on_login_clicked()
 
-    def _on_header_mode_clicked(self) -> None:
-        if getattr(self, "_main_mode", "typing") == "typing":
-            self._set_main_mode("chat")
-        else:
-            self._set_main_mode("typing")
+    def _on_header_typing_clicked(self) -> None:
+        self._set_main_mode("typing")
+
+    def _on_header_chat_clicked(self) -> None:
+        self._set_main_mode("chat")
+
+    def _header_mode_button_style(self, *, active: bool) -> str:
+        if active:
+            return (
+                "QPushButton { background: transparent; color: #6366f1; border: none;"
+                "  padding: 0 6px; font-size: 12px; font-weight: 800; }"
+                "QPushButton:hover { color: #4f46e5; }"
+                "QPushButton:pressed { color: #4338ca; }"
+            )
+        return (
+            "QPushButton { background: transparent; color: #9ca3af; border: none;"
+            "  padding: 0 6px; font-size: 12px; font-weight: 700; }"
+            "QPushButton:hover { color: #6b7280; }"
+            "QPushButton:pressed { color: #6366f1; }"
+        )
+
+    def _refresh_header_mode_buttons(self) -> None:
+        if (
+            not hasattr(self, "_header_typing_btn")
+            or not hasattr(self, "_header_chat_btn")
+        ):
+            return
+        typing_active = getattr(self, "_main_mode", "typing") == "typing"
+        chat_active = getattr(self, "_main_mode", "typing") == "chat"
+        self._header_typing_btn.setStyleSheet(self._header_mode_button_style(active=typing_active))
+        self._header_chat_btn.setStyleSheet(self._header_mode_button_style(active=chat_active))
+
+    def _refresh_typing_mode_labels(self) -> None:
+        mode = getattr(self, "_typing_generation_mode", "problem")
+        count = len(getattr(self, "selected_images", []) or [])
+        if hasattr(self, "_generated_code_label"):
+            label_map = {
+                "problem": "생성 문제 코드",
+                "explanation": "생성 해설 코드",
+                "problem_and_explanation": "생성 문제+해설 코드",
+            }
+            self._generated_code_label.setText(label_map.get(mode, "생성 코드"))
+        if hasattr(self, "order_title"):
+            prefix_map = {
+                "problem": "문제 타이핑 순서",
+                "explanation": "해설 타이핑 순서",
+                "problem_and_explanation": "문제+해설 타이핑 순서",
+            }
+            prefix = prefix_map.get(mode, "타이핑 순서")
+            if count > 0:
+                self.order_title.setText(f"{prefix}: {count}개 선택됨")
+            else:
+                self.order_title.setText(f"{prefix}: (없음)")
+        self._refresh_header_mode_buttons()
+
+    @staticmethod
+    def _typing_generation_mode_text(mode_key: str) -> str:
+        mapping = {
+            "problem": "문제만 타이핑하기",
+            "explanation": "해설만 타이핑하기",
+            "problem_and_explanation": "문제+해설 타이핑하기",
+        }
+        return mapping.get(mode_key, mapping["problem"])
+
+    @staticmethod
+    def _typing_generation_mode_key_from_text(text: str) -> str:
+        mapping = {
+            "문제만 타이핑하기": "problem",
+            "해설만 타이핑하기": "explanation",
+            "문제+해설 타이핑하기": "problem_and_explanation",
+        }
+        return mapping.get((text or "").strip(), "problem")
+
+    def _sync_typing_generation_mode_controls(self, *, source: str, mode_key: str) -> None:
+        mode_text = self._typing_generation_mode_text(mode_key)
+        if source != "main" and hasattr(self, "_typing_kind_combo"):
+            blocked = self._typing_kind_combo.blockSignals(True)
+            self._typing_kind_combo.setCurrentText(mode_text)
+            self._typing_kind_combo.blockSignals(blocked)
+        if source != "compact" and hasattr(self, "_typing_kind_combo_compact"):
+            blocked = self._typing_kind_combo_compact.blockSignals(True)
+            self._typing_kind_combo_compact.setCurrentText(mode_text)
+            self._typing_kind_combo_compact.blockSignals(blocked)
+
+    def _set_typing_generation_mode(self, mode: str) -> None:
+        normalized = (mode or "").strip().lower()
+        if normalized not in {"problem", "explanation", "problem_and_explanation"}:
+            normalized = "problem"
+        next_mode = normalized
+        self._typing_generation_mode = next_mode
+        self._sync_typing_generation_mode_controls(source="", mode_key=next_mode)
+        self._refresh_typing_mode_labels()
 
     def _set_main_mode(self, mode: str) -> None:
         next_mode = "chat" if mode == "chat" else "typing"
@@ -2816,15 +3217,20 @@ class NovaAILiteWindow(QWidget):
 
         if next_mode == "chat":
             self._content_stack.setCurrentWidget(self._chat_page)
-            self._header_mode_btn.setText("AI 타이핑 이동하기")
-            self._header_mode_btn.setToolTip("자동 타이핑 화면으로 이동")
+            if hasattr(self, "_header_typing_btn"):
+                self._header_typing_btn.setToolTip("타이핑 화면을 엽니다.")
+            if hasattr(self, "_header_chat_btn"):
+                self._header_chat_btn.setToolTip("채팅 편집 화면을 엽니다.")
             if hasattr(self, "_chat_input"):
                 self._chat_input.setFocus()
         else:
             self._content_stack.setCurrentWidget(self._typing_page)
-            self._header_mode_btn.setText("AI 채팅 편집")
-            self._header_mode_btn.setToolTip("AI 채팅 화면으로 이동")
+            if hasattr(self, "_header_typing_btn"):
+                self._header_typing_btn.setToolTip("타이핑 화면을 엽니다.")
+            if hasattr(self, "_header_chat_btn"):
+                self._header_chat_btn.setToolTip("채팅 편집 화면을 엽니다.")
 
+        self._refresh_header_mode_buttons()
         self._update_typing_style_bar_mode()
 
     # ???? Usage popup helpers ????????????????????????????????????????????????????????
@@ -2857,6 +3263,7 @@ class NovaAILiteWindow(QWidget):
         if hasattr(self, "_header_bar"):
             self._header_bar.setGeometry(0, 6, self.width(), 48)
             self._header_bar.raise_()
+        self._refresh_chat_message_widths()
         if hasattr(self, "_header_user_btn") and hasattr(self, "_header_user_area"):
             self._header_user_btn.setGeometry(
                 0, 0, self._header_user_area.width(), self._header_user_area.height()
@@ -2866,6 +3273,23 @@ class NovaAILiteWindow(QWidget):
             self._sidebar_overlay.setGeometry(0, 0, self.width(), self.height())
         if hasattr(self, "_sidebar") and self._sidebar.isVisible():
             self._sidebar.setGeometry(0, 0, 300, self.height())
+
+    def _chat_message_max_width(self) -> int:
+        if hasattr(self, "_chat_thread") and self._chat_thread.viewport() is not None:
+            viewport_width = max(240, self._chat_thread.viewport().width())
+            return min(420, max(220, int(viewport_width * 0.72)))
+        return 360
+
+    def _refresh_chat_message_widths(self) -> None:
+        if not hasattr(self, "_chat_thread"):
+            return
+        max_width = self._chat_message_max_width()
+        for idx in range(self._chat_thread.count()):
+            item = self._chat_thread.item(idx)
+            widget = self._chat_thread.itemWidget(item)
+            if isinstance(widget, ChatMessageWidget):
+                widget.set_max_width(max_width)
+                item.setSizeHint(widget.sizeHint())
 
     def _on_sidebar_menu(self, menu_id: str) -> None:
         self._close_sidebar()
@@ -2923,10 +3347,40 @@ class NovaAILiteWindow(QWidget):
 
     def _tick_status_animation(self) -> None:
         try:
+            if not self._should_run_order_animation():
+                if self._status_anim_timer.isActive():
+                    self._status_anim_timer.stop()
+                return
             self._order_delegate.advance()
             self.order_list.viewport().update()
         except Exception:
             pass
+
+    def _should_run_order_animation(self) -> bool:
+        animating_statuses = {"생성중...", "타이핑중..."}
+        return any(status in animating_statuses for status in self._gen_statuses)
+
+    def _sync_order_animation_timer(self) -> None:
+        should_run = self._should_run_order_animation()
+        if should_run and not self._status_anim_timer.isActive():
+            self._status_anim_timer.start()
+        elif not should_run and self._status_anim_timer.isActive():
+            self._status_anim_timer.stop()
+
+    def _refresh_order_status_items(self) -> None:
+        if self.order_list.count() != len(self.selected_images):
+            self._render_order_list()
+            return
+        for idx, path in enumerate(self.selected_images):
+            item = self.order_list.item(idx)
+            if item is None:
+                self._render_order_list()
+                return
+            name = os.path.basename(path)
+            status = self._gen_statuses[idx] if idx < len(self._gen_statuses) else "대기중"
+            item.setText(f"{idx + 1}. {name} - {status}")
+            item.setData(Qt.ItemDataRole.UserRole, path)
+        self._sync_order_animation_timer()
 
     def _connect(self) -> HwpController:
         controller = HwpController()
@@ -3064,58 +3518,454 @@ class NovaAILiteWindow(QWidget):
             "Images (*.png *.jpg *.jpeg *.bmp *.gif *.webp *.pdf);;All Files (*)",
         )
         if file_paths:
-            self._set_selected_images(file_paths)
+            self._add_selected_images(file_paths)
 
     def _on_files_dropped(self, file_paths: list[str]) -> None:
         if file_paths:
-            self._set_selected_images(file_paths)
+            self._add_selected_images(file_paths)
+
+    @staticmethod
+    def _should_animate_chat_status(message: str) -> bool:
+        normalized = (message or "").strip()
+        if not normalized:
+            return False
+        if normalized.endswith("..."):
+            return True
+        return any(
+            token in normalized
+            for token in (
+                "해석중",
+                "입력하는 중",
+                "적용하는 중",
+                "반영합니다...",
+            )
+        )
+
+    @staticmethod
+    def _is_default_chat_completion_reply(message: str) -> bool:
+        normalized = re.sub(r"\s+", " ", str(message or "")).strip()
+        return normalized in {
+            "",
+            "감지된 한글 문서에 요청하신 내용을 입력합니다.",
+            "감지된 한글 문서에 입력을 완료했습니다.",
+            "처리를 완료했습니다.",
+        }
+
+    def _append_chat_message_widget(self, role: str, text: str) -> tuple[QListWidgetItem, ChatMessageWidget] | tuple[None, None]:
+        message = (text or "").strip()
+        if not message or not hasattr(self, "_chat_thread"):
+            return None, None
+        item = QListWidgetItem()
+        item.setFlags(Qt.ItemFlag.NoItemFlags)
+        widget = ChatMessageWidget(role, message, self._chat_message_max_width(), self._chat_thread)
+        item.setSizeHint(widget.sizeHint())
+        self._chat_thread.addItem(item)
+        self._chat_thread.setItemWidget(item, widget)
+        self._chat_thread.scrollToBottom()
+        return item, widget
+
+    def _begin_chat_pipeline_status(self, text: str) -> None:
+        item, widget = self._append_chat_message_widget("status", text)
+        if isinstance(widget, ChatMessageWidget):
+            widget.set_status_animating(self._should_animate_chat_status(text))
+        self._chat_pipeline_status_item = item
+        self._chat_pipeline_status_widget = widget if isinstance(widget, ChatMessageWidget) else None
+
+    def _update_chat_pipeline_status(self, text: str, *, finished: bool = False) -> None:
+        if not isinstance(self._chat_pipeline_status_widget, ChatMessageWidget) or self._chat_pipeline_status_item is None:
+            self._begin_chat_pipeline_status(text)
+            return
+        self._chat_pipeline_status_widget.set_text(text)
+        self._chat_pipeline_status_widget.set_status_animating(
+            False if finished else self._should_animate_chat_status(text)
+        )
+        self._chat_pipeline_status_item.setSizeHint(self._chat_pipeline_status_widget.sizeHint())
+        self._chat_thread.scrollToBottom()
+
+    def _clear_chat_pipeline_status(self) -> None:
+        self._chat_pipeline_status_item = None
+        self._chat_pipeline_status_widget = None
 
     def _append_chat_message(self, role: str, text: str) -> None:
         message = (text or "").strip()
         if not message:
             return
-        if not hasattr(self, "_chat_thread"):
-            return
-        prefix = "나" if role == "user" else ("AI" if role == "assistant" else "시스템")
-        item = QListWidgetItem(f"{prefix}: {message}")
-        if role == "user":
-            item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            item.setForeground(QColor("#1d4ed8"))
-            item.setBackground(QColor("#dbeafe"))
-        elif role == "assistant":
-            item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-            item.setForeground(QColor("#111827"))
-            item.setBackground(QColor("#f3f4f6"))
-        else:
-            item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            item.setForeground(QColor("#6b7280"))
-            item.setBackground(QColor("#eef2ff"))
-        self._chat_thread.addItem(item)
-        self._chat_thread.scrollToBottom()
+        if role != "status":
+            self._clear_chat_pipeline_status()
+        item, widget = self._append_chat_message_widget(role, message)
+        if role == "status" and isinstance(widget, ChatMessageWidget):
+            widget.set_status_animating(self._should_animate_chat_status(message))
 
-    def _set_chat_busy(self, busy: bool) -> None:
-        self._chat_send_btn.setEnabled(not busy)
-        self._chat_input.setEnabled(not busy)
-        if busy:
-            self._chat_input.setPlaceholderText("AI가 편집 요청을 처리중입니다...")
-        else:
-            self._chat_input.setPlaceholderText("예: 새 파일을 열어줘")
+    def _is_chat_pipeline_busy(self) -> bool:
+        return bool(
+            (self._chat_worker and self._chat_worker.isRunning())
+            or self._chat_typing_pending
+        )
 
-    def _on_chat_send_clicked(self) -> None:
-        if self._chat_worker and self._chat_worker.isRunning():
-            return
-        message = self._chat_input.text().strip()
-        if not message:
-            return
-        self._append_chat_message("user", message)
-        self._append_chat_message("status", "AI가 해석중...")
-        self._chat_input.clear()
+    def _start_chat_worker(self, message: str) -> None:
+        self._begin_chat_pipeline_status("AI가 해석중...")
         self._set_chat_busy(True)
         current_filename = self._current_detected_filename() or ""
-        self._chat_worker = ChatWorker(message, current_filename)
+        self._chat_worker = ChatWorker(message, current_filename, attachment_paths=self.selected_images)
         self._chat_worker.finished.connect(self._on_chat_worker_finished)
         self._chat_worker.error.connect(self._on_chat_worker_error)
         self._chat_worker.start()
+
+    def _submit_chat_message(self, message: str, *, from_voice: bool = False) -> None:
+        normalized = (message or "").strip()
+        if not normalized:
+            return
+        self._append_chat_message("user", normalized)
+        if from_voice and self._is_chat_pipeline_busy():
+            self._queued_chat_messages.append(normalized)
+            self._append_chat_message("status", "이전 요청 처리 후 음성 명령을 이어서 반영합니다...")
+            return
+        if self._is_chat_pipeline_busy():
+            self._queued_chat_messages.append(normalized)
+            self._append_chat_message("status", "이전 요청 처리 후 이어서 반영합니다...")
+            return
+        self._start_chat_worker(normalized)
+
+    def _drain_queued_chat_messages(self) -> None:
+        if self._is_chat_pipeline_busy() or not self._queued_chat_messages:
+            return
+        next_message = self._queued_chat_messages.pop(0).strip()
+        if next_message:
+            self._start_chat_worker(next_message)
+
+    def _set_chat_busy(self, busy: bool) -> None:
+        self._chat_send_btn.setEnabled(not busy)
+        if hasattr(self, "_chat_attach_btn"):
+            self._chat_attach_btn.setEnabled(not busy)
+        self._chat_input.setReadOnly(busy)
+        if busy:
+            self._chat_input.setPlaceholderText("AI가 편집 요청을 처리하는 중입니다...")
+        else:
+            self._chat_input.setPlaceholderText("예: y=f(x) 수식과 근의 공식을 삽입해줘")
+
+    def _on_chat_send_clicked(self) -> None:
+        message = self._chat_input.toPlainText().strip()
+        if not message:
+            return
+        self._chat_input.clear()
+        self._submit_chat_message(message)
+
+    def _update_chat_voice_button(self) -> None:
+        if not hasattr(self, "_chat_voice_btn"):
+            return
+        if self._hide_voice_edit_ui:
+            self._chat_voice_btn.hide()
+            return
+        if self._voice_session_active:
+            self._chat_voice_btn.setText("음성 편집중")
+            self._chat_voice_btn.setIcon(_material_icon(_MI_MIC, 20, QColor("#ffffff")))
+            self._chat_voice_btn.setIconSize(QSize(18, 18))
+            self._chat_voice_btn.setStyleSheet(
+                "QPushButton#chatVoiceBtn { background-color: #7c3aed; color: #ffffff; border: 1px solid #7c3aed;"
+                "  border-radius: 18px; padding: 0 12px; font-size: 12px; font-weight: 700; text-align: center; }"
+                "QPushButton#chatVoiceBtn:hover { background-color: #6d28d9; border-color: #6d28d9; }"
+                "QPushButton#chatVoiceBtn:pressed { background-color: #5b21b6; }"
+            )
+        else:
+            self._chat_voice_btn.setText("음성 편집")
+            self._chat_voice_btn.setIcon(_material_icon(_MI_MIC, 20, QColor("#7c3aed")))
+            self._chat_voice_btn.setIconSize(QSize(18, 18))
+            self._chat_voice_btn.setStyleSheet(
+                "QPushButton#chatVoiceBtn { background-color: #f5f3ff; color: #7c3aed; border: 1px solid #c4b5fd;"
+                "  border-radius: 18px; padding: 0 12px; font-size: 12px; font-weight: 700; text-align: center; }"
+                "QPushButton#chatVoiceBtn:hover { background-color: #ede9fe; border-color: #a78bfa; }"
+                "QPushButton#chatVoiceBtn:pressed { background-color: #ddd6fe; }"
+            )
+
+    @staticmethod
+    def _truncate_voice_preview(text: str, max_chars: int = 60) -> str:
+        normalized = re.sub(r"\s+", " ", str(text or "")).strip()
+        if len(normalized) <= max_chars:
+            return normalized
+        return normalized[: max_chars - 1].rstrip() + "…"
+
+    def _update_voice_preview(self) -> None:
+        if not hasattr(self, "_chat_voice_preview"):
+            return
+        if self._hide_voice_edit_ui:
+            self._chat_voice_preview.hide()
+            self._chat_voice_preview_label.setText("")
+            return
+        show_preview = bool(self._voice_session_active or self._voice_preview_text or self._voice_preview_status)
+        self._chat_voice_preview.setVisible(show_preview)
+        if not show_preview:
+            self._chat_voice_preview_label.setText("")
+            return
+
+        status = self._voice_preview_status.strip()
+        preview = self._truncate_voice_preview(self._voice_preview_text)
+        if status and preview:
+            self._chat_voice_preview_label.setText(f"{status}  {preview}")
+        elif status:
+            self._chat_voice_preview_label.setText(status)
+        else:
+            self._chat_voice_preview_label.setText(preview)
+
+    def _set_voice_preview(self, *, status: str | None = None, text: str | None = None) -> None:
+        if status is not None:
+            self._voice_preview_status = status
+        if text is not None:
+            self._voice_preview_text = text
+        self._update_voice_preview()
+
+    def _voice_bytes_per_ms(self) -> float:
+        return 32.0
+
+    def _append_voice_pcm_chunk(self, chunk: bytes) -> None:
+        if not chunk:
+            return
+        with self._voice_audio_lock:
+            self._voice_pcm_buffer.extend(chunk)
+        if self._pcm_chunk_has_voice(chunk):
+            self._voice_detected_speech = True
+            self._voice_last_active_at = time.time()
+
+    def _voice_buffer_duration_ms(self) -> float:
+        with self._voice_audio_lock:
+            return len(self._voice_pcm_buffer) / self._voice_bytes_per_ms()
+
+    def _take_voice_pcm_buffer(self) -> bytes:
+        with self._voice_audio_lock:
+            pcm_data = bytes(self._voice_pcm_buffer)
+            self._voice_pcm_buffer.clear()
+        return pcm_data
+
+    def _clear_voice_pcm_buffer(self) -> None:
+        with self._voice_audio_lock:
+            self._voice_pcm_buffer.clear()
+
+    def _on_sounddevice_audio_callback(self, indata, frames, time_info, status) -> None:  # type: ignore[no-untyped-def]
+        try:
+            chunk = bytes(indata)
+        except Exception:
+            chunk = b""
+        self._append_voice_pcm_chunk(chunk)
+
+    def _pcm_chunk_has_voice(self, pcm_data: bytes) -> bool:
+        if not pcm_data:
+            return False
+        usable = len(pcm_data) - (len(pcm_data) % 2)
+        if usable <= 0:
+            return False
+        view = memoryview(pcm_data[:usable]).cast("h")
+        if not view:
+            return False
+        sample_step = max(1, len(view) // 240)
+        peak = max(abs(int(view[idx])) for idx in range(0, len(view), sample_step))
+        return peak >= 900
+
+    def _write_voice_wav_file(self, pcm_data: bytes) -> str:
+        out_dir = Path(tempfile.gettempdir()) / "nova_ai" / "voice_segments"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        self._voice_chunk_counter += 1
+        wav_path = out_dir / f"voice_{int(time.time() * 1000)}_{self._voice_chunk_counter}.wav"
+        with wave.open(str(wav_path), "wb") as wav_file:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(16000)
+            wav_file.writeframes(pcm_data)
+        return str(wav_path)
+
+    def _cleanup_voice_file(self, path: str) -> None:
+        try:
+            if path and os.path.exists(path):
+                os.remove(path)
+        except Exception:
+            pass
+
+    def _start_voice_session(self) -> None:
+        if self._voice_session_active:
+            return
+        self._voice_audio_backend = ""
+        self._voice_audio_source = None
+        self._voice_audio_device = None
+        self._voice_sd_stream = None
+
+        start_error = ""
+        try:
+            import sounddevice as sd  # type: ignore
+
+            self._voice_sd_stream = sd.RawInputStream(
+                samplerate=16000,
+                channels=1,
+                dtype="int16",
+                callback=self._on_sounddevice_audio_callback,
+            )
+            self._voice_sd_stream.start()
+            self._voice_audio_backend = "sounddevice"
+        except Exception as exc:
+            start_error = str(exc)
+            self._voice_sd_stream = None
+
+        if not self._voice_audio_backend:
+            audio_input = QMediaDevices.defaultAudioInput()
+            if audio_input.isNull():
+                QMessageBox.warning(self, "알림", "사용 가능한 마이크를 찾지 못했습니다.")
+                return
+
+            audio_format = QAudioFormat()
+            audio_format.setSampleRate(16000)
+            audio_format.setChannelCount(1)
+            audio_format.setSampleFormat(QAudioFormat.SampleFormat.Int16)
+
+            try:
+                self._voice_audio_source = QAudioSource(audio_input, audio_format, self)
+                self._voice_audio_device = self._voice_audio_source.start()
+            except Exception as exc:
+                self._voice_audio_source = None
+                self._voice_audio_device = None
+                QMessageBox.warning(self, "알림", f"마이크를 시작하지 못했습니다: {start_error or exc}")
+                return
+
+            if self._voice_audio_device is None:
+                QMessageBox.warning(self, "알림", "마이크 입력 장치를 열지 못했습니다.")
+                self._voice_audio_source = None
+                return
+            self._voice_audio_backend = "qt"
+
+        self._clear_voice_pcm_buffer()
+        self._voice_last_active_at = 0.0
+        self._voice_segment_started_at = time.time()
+        self._voice_detected_speech = False
+        self._voice_preview_text = ""
+        self._set_voice_preview(status="듣는 중...", text="")
+        self._voice_session_active = True
+        if self._voice_audio_backend == "qt" and self._voice_audio_device is not None:
+            self._voice_audio_device.readyRead.connect(self._on_voice_audio_ready_read)
+        self._voice_poll_timer.start()
+        self._update_chat_voice_button()
+        self._append_chat_message("status", "음성 편집을 시작했습니다. 말씀하시면 실시간으로 편집 요청을 반영합니다.")
+
+    def _stop_voice_session(self) -> None:
+        was_active = self._voice_session_active
+        self._voice_session_active = False
+        self._voice_poll_timer.stop()
+        self._flush_voice_segment(force=True)
+        if self._voice_sd_stream is not None:
+            try:
+                self._voice_sd_stream.stop()
+                self._voice_sd_stream.close()
+            except Exception:
+                pass
+        if self._voice_audio_source is not None:
+            try:
+                self._voice_audio_source.stop()
+            except Exception:
+                pass
+        self._voice_sd_stream = None
+        self._voice_audio_source = None
+        self._voice_audio_device = None
+        self._voice_audio_backend = ""
+        self._clear_voice_pcm_buffer()
+        self._voice_detected_speech = False
+        self._voice_last_active_at = 0.0
+        self._voice_segment_started_at = 0.0
+        self._voice_preview_status = ""
+        self._voice_preview_text = ""
+        self._update_chat_voice_button()
+        self._update_voice_preview()
+        if was_active:
+            self._append_chat_message("status", "음성 편집을 종료했습니다.")
+
+    def _on_chat_voice_clicked(self) -> None:
+        if self._voice_session_active:
+            self._stop_voice_session()
+        else:
+            self._start_voice_session()
+
+    def _on_voice_audio_ready_read(self) -> None:
+        if not self._voice_session_active or self._voice_audio_device is None:
+            return
+        try:
+            raw = self._voice_audio_device.readAll()
+            chunk = bytes(raw.data()) if hasattr(raw, "data") else bytes(raw)
+        except Exception:
+            chunk = b""
+        self._append_voice_pcm_chunk(chunk)
+        if chunk and self._voice_detected_speech:
+            self._set_voice_preview(status="듣는 중...", text=self._voice_preview_text)
+
+    def _poll_voice_segment(self) -> None:
+        if not self._voice_session_active:
+            return
+        if self._voice_transcription_worker and self._voice_transcription_worker.isRunning():
+            self._set_voice_preview(status="인식 중...", text=self._voice_preview_text)
+            return
+        if self._voice_detected_speech:
+            self._set_voice_preview(status="듣는 중...", text=self._voice_preview_text)
+        else:
+            self._set_voice_preview(status="대기 중...", text=self._voice_preview_text)
+        duration_ms = self._voice_buffer_duration_ms()
+        if duration_ms < 1200 or not self._voice_detected_speech:
+            return
+        now = time.time()
+        silence_sec = (now - self._voice_last_active_at) if self._voice_last_active_at else 0.0
+        if duration_ms >= 2500 or silence_sec >= 0.7:
+            self._flush_voice_segment(force=False)
+
+    def _flush_voice_segment(self, force: bool) -> None:
+        if self._voice_transcription_worker and self._voice_transcription_worker.isRunning():
+            return
+        duration_ms = self._voice_buffer_duration_ms()
+        if duration_ms <= 0:
+            return
+        if not self._voice_detected_speech:
+            if force:
+                self._clear_voice_pcm_buffer()
+            return
+        if not force and duration_ms < 1200:
+            return
+        pcm_data = self._take_voice_pcm_buffer()
+        self._voice_detected_speech = False
+        self._voice_last_active_at = 0.0
+        self._voice_segment_started_at = time.time()
+        self._set_voice_preview(status="인식 중...", text=self._voice_preview_text)
+        wav_path = self._write_voice_wav_file(pcm_data)
+        worker = VoiceTranscriptionWorker(wav_path, parent=self)
+        worker.transcription_finished.connect(self._on_voice_transcription_finished)
+        worker.transcription_error.connect(self._on_voice_transcription_error)
+        worker.finished.connect(self._on_voice_transcription_thread_finished)
+        self._voice_transcription_worker = worker
+        worker.start()
+
+    def _on_voice_transcription_finished(self, transcript: str, wav_path: str) -> None:
+        self._cleanup_voice_file(wav_path)
+        normalized = re.sub(r"\s+", " ", str(transcript or "")).strip()
+        if not normalized:
+            self._set_voice_preview(status="듣는 중...", text=self._voice_preview_text)
+            return
+        merged_preview = f"{self._voice_preview_text} {normalized}".strip()
+        self._set_voice_preview(status="미리보기", text=merged_preview)
+        self._submit_chat_message(normalized, from_voice=True)
+
+    def _on_voice_transcription_error(self, message: str, wav_path: str) -> None:
+        self._cleanup_voice_file(wav_path)
+        clean = _normalize_runtime_error_message(message)
+        self._set_voice_preview(status="오류", text=clean)
+        self._append_chat_message("assistant", f"음성 인식 중 오류가 발생했습니다: {clean}")
+
+    def _on_voice_transcription_thread_finished(self) -> None:
+        worker = self.sender()
+        if isinstance(worker, QThread):
+            worker.deleteLater()
+        if worker is self._voice_transcription_worker:
+            self._voice_transcription_worker = None
+
+    def closeEvent(self, event) -> None:  # type: ignore[override]
+        try:
+            if self._voice_session_active:
+                self._stop_voice_session()
+            worker = self._voice_transcription_worker
+            if worker is not None and worker.isRunning():
+                worker.wait(5000)
+        except Exception:
+            pass
+        super().closeEvent(event)
 
     def _execute_chat_actions(self, actions: list[dict[str, str]]) -> list[str]:
         logs: list[str] = []
@@ -3140,31 +3990,53 @@ class NovaAILiteWindow(QWidget):
         self._chat_worker = None
         reply = ""
         actions: list[dict[str, str]] = []
+        script = ""
         if isinstance(payload, dict):
             reply = str(payload.get("reply") or "").strip()
             raw_actions = payload.get("actions")
             if isinstance(raw_actions, list):
                 actions = [a for a in raw_actions if isinstance(a, dict)]
+            script = str(payload.get("script") or "").strip()
         if actions:
-            self._append_chat_message("status", "적용하는 중...")
+            self._update_chat_pipeline_status("적용하는 중...")
         action_logs = self._execute_chat_actions(actions)
         for log in action_logs:
-            self._append_chat_message("status", log)
+            self._update_chat_pipeline_status(log)
+        if script:
+            self._ensure_typing_worker()
+            self._chat_typing_pending = True
+            self._chat_pending_reply = reply or ""
+            queue_target = ""
+            if not any(str(action.get("name") or "") == "open_new_file" for action in actions):
+                queue_target = self._current_detected_filename()
+            self._update_chat_pipeline_status("감지된 한글 문서에 입력하는 중...")
+            self._typing_worker.enqueue(-2, script, queue_target or None)
+            return
         if not reply:
             reply = "처리를 완료했습니다."
         self._append_chat_message("assistant", reply)
         self._set_chat_busy(False)
+        self._drain_queued_chat_messages()
 
     def _on_chat_worker_error(self, message: str) -> None:
+        self._chat_typing_pending = False
+        self._chat_pending_reply = ""
         self._set_chat_busy(False)
         self._chat_worker = None
+        self._update_chat_pipeline_status("요청 처리 중 오류가 발생했습니다.", finished=True)
         self._append_chat_message("assistant", f"요청 처리 중 오류가 발생했습니다: {message}")
+        self._drain_queued_chat_messages()
 
     def on_ai_run(self) -> None:
         self._start_ai_run(auto_type=False)
 
     def on_ai_type_run(self) -> None:
-        if self._image_mode == "ai_generate":
+        generation_mode = getattr(self, "_typing_generation_mode", "problem")
+        if generation_mode == "explanation":
+            self._set_typing_status("해설 생성중...")
+        elif generation_mode == "problem_and_explanation":
+            self._set_typing_status("문제+해설 생성중...")
+        elif self._image_mode == "ai_generate":
             self._set_typing_status("AI 코드/이미지 생성중...")
         elif self._image_mode == "no_image":
             self._set_typing_status("AI 코드 생성중...(이미지 없음)")
@@ -3215,6 +4087,7 @@ class NovaAILiteWindow(QWidget):
         self._ai_worker = AIWorker(
             self.selected_images,
             image_mode=self._image_mode,
+            generation_mode=self._typing_generation_mode,
         )
         self._ai_worker.finished.connect(self._on_ai_finished)
         self._ai_worker.error.connect(self._on_ai_error)
@@ -3236,18 +4109,51 @@ class NovaAILiteWindow(QWidget):
 
     def _render_order_list(self) -> None:
         self.order_list.clear()
+        self._chat_file_list.clear()
+        if hasattr(self, "_chat_attachment_strip_layout"):
+            while self._chat_attachment_strip_layout.count():
+                item = self._chat_attachment_strip_layout.takeAt(0)
+                widget = item.widget()
+                if widget is not None:
+                    widget.deleteLater()
         if not self.selected_images:
-            self.order_title.setText("")
+            self._refresh_typing_mode_labels()
+            if hasattr(self, "_chat_attachment_scroll"):
+                self._chat_attachment_scroll.setVisible(False)
+            self._update_order_list_visibility()
             self._update_replay_button_visibility()
             return
-        self.order_title.setText("\uD0C0\uC774\uD551 \uC21C\uC11C:")
+        self._refresh_typing_mode_labels()
         for idx, path in enumerate(self.selected_images):
             name = os.path.basename(path)
             status = self._gen_statuses[idx] if idx < len(self._gen_statuses) else "\uB300\uAE30\uC911"
             item = QListWidgetItem(f"{idx + 1}. {name} - {status}")
             item.setData(Qt.ItemDataRole.UserRole, path)
             self.order_list.addItem(item)
+            chat_item = QListWidgetItem()
+            chat_item.setData(Qt.ItemDataRole.UserRole, path)
+            chat_card = ChatAttachmentCard(path, removable=self._is_order_editable(), parent=self._chat_file_list)
+            chat_card.remove_clicked.connect(self._on_chat_attachment_remove_clicked)
+            chat_item.setSizeHint(chat_card.sizeHint())
+            self._chat_file_list.addItem(chat_item)
+            self._chat_file_list.setItemWidget(chat_item, chat_card)
+            if hasattr(self, "_chat_attachment_strip_layout"):
+                inline_card = ChatAttachmentCard(
+                    path,
+                    removable=self._is_order_editable(),
+                    parent=self._chat_attachment_strip,
+                    compact=True,
+                )
+                inline_card.setFixedWidth(188)
+                inline_card.remove_clicked.connect(self._on_chat_attachment_remove_clicked)
+                self._chat_attachment_strip_layout.addWidget(inline_card, 0, Qt.AlignmentFlag.AlignLeft)
+        if hasattr(self, "_chat_attachment_strip_layout"):
+            self._chat_attachment_strip_layout.addStretch(1)
+        if hasattr(self, "_chat_attachment_scroll"):
+            self._chat_attachment_scroll.setVisible(True)
+        self._update_order_list_visibility()
         self._update_replay_button_visibility()
+        self._sync_order_animation_timer()
 
     def _on_ai_progress(self, idx: int, status: str) -> None:
         if idx < 0:
@@ -3261,7 +4167,7 @@ class NovaAILiteWindow(QWidget):
             normalized_status = f"\uC624\uB958({clean_message})"
             self._ai_error_messages[idx] = clean_message or "\uC54C \uC218 \uC5C6\uB294 \uC624\uB958"
         self._gen_statuses[idx] = normalized_status
-        self._render_order_list()
+        self._refresh_order_status_items()
 
     def _run_typing(self) -> None:
         # Deprecated: typing now runs in a worker thread to allow ESC cancellation.
@@ -3327,7 +4233,7 @@ class NovaAILiteWindow(QWidget):
                     self._skipped_indexes.add(idx)
                     if idx < len(self._gen_statuses):
                         self._gen_statuses[idx] = "\uAC74\uB108\uB700(\uCF54\uB4DC \uC5C6\uC74C)"
-                    self._render_order_list()
+                    self._refresh_order_status_items()
                 self._next_auto_type_index += 1
                 continue
 
@@ -3340,7 +4246,7 @@ class NovaAILiteWindow(QWidget):
             self._auto_type_pending_idx = idx
             if idx < len(self._gen_statuses):
                 self._gen_statuses[idx] = "\uD0C0\uC774\uD551\uC911..."
-            self._render_order_list()
+            self._refresh_order_status_items()
             self._set_typing_status("\uD0C0\uC774\uD551 \uC9C4\uD589\uC911...")
             target_filename = self._current_detected_filename()
             # Pass original image path so insert_cropped_image can crop from it
@@ -3489,7 +4395,8 @@ class NovaAILiteWindow(QWidget):
         mapping = {
             "no_image": "이미지 없이 생성하기",
             "crop": "이미지 크롭해서 생성하기",
-            "ai_generate": "AI 이미지 생성하기",
+            # Hide AI mode from UI for now; keep backend key support.
+            "ai_generate": "이미지 크롭해서 생성하기",
         }
         return mapping.get(mode_key, mapping["crop"])
 
@@ -3526,6 +4433,22 @@ class NovaAILiteWindow(QWidget):
         key = self._image_mode_key_from_text(self._image_mode_combo_compact.currentText())
         self._image_mode = key
         self._sync_image_mode_controls(source="compact", mode_key=key)
+
+    def _on_typing_generation_mode_changed(self) -> None:
+        if not hasattr(self, "_typing_kind_combo"):
+            return
+        key = self._typing_generation_mode_key_from_text(self._typing_kind_combo.currentText())
+        self._set_typing_generation_mode(key)
+        self._sync_typing_generation_mode_controls(source="main", mode_key=key)
+
+    def _on_typing_generation_mode_changed_compact(self) -> None:
+        if not hasattr(self, "_typing_kind_combo_compact"):
+            return
+        key = self._typing_generation_mode_key_from_text(
+            self._typing_kind_combo_compact.currentText()
+        )
+        self._set_typing_generation_mode(key)
+        self._sync_typing_generation_mode_controls(source="compact", mode_key=key)
 
     def _update_typing_style_bar_mode(self) -> None:
         if not hasattr(self, "_typing_style_bar") or not hasattr(self, "_typing_style_bar_compact"):
@@ -3617,13 +4540,25 @@ class NovaAILiteWindow(QWidget):
     def _on_typing_item_started(self, idx: int) -> None:
         if idx >= 0 and idx < len(self._gen_statuses):
             self._gen_statuses[idx] = "\uD0C0\uC774\uD551\uC911..."
-            self._render_order_list()
+            self._refresh_order_status_items()
         self._set_typing_status("\uD0C0\uC774\uD551 \uC9C4\uD589\uC911...")
 
     def _on_typing_item_finished(self, idx: int) -> None:
+        if idx == -2 and self._chat_typing_pending:
+            self._chat_typing_pending = False
+            reply = self._chat_pending_reply or ""
+            self._chat_pending_reply = ""
+            self._update_chat_pipeline_status("감지된 한글 문서에 요청하신 내용을 입력합니다.", finished=True)
+            if not self._is_default_chat_completion_reply(reply):
+                self._append_chat_message("assistant", reply)
+            self._set_chat_busy(False)
+            self._drain_queued_chat_messages()
+            if not self._auto_type_after_ai and self._auto_type_pending_idx is None:
+                self._set_typing_status("\uD0C0\uC774\uD551 \uC644\uB8CC")
+            return
         if idx >= 0 and idx < len(self._gen_statuses):
             self._gen_statuses[idx] = "\uD0C0\uC774\uD551 \uC644\uB8CC"
-            self._render_order_list()
+            self._refresh_order_status_items()
         if idx >= 0 and self._auto_type_pending_idx == idx:
             self._auto_type_pending_idx = None
             self._auto_type_has_inserted_any = True
@@ -3639,23 +4574,40 @@ class NovaAILiteWindow(QWidget):
 
     def _on_typing_cancelled(self) -> None:
         # Stop auto-type chain, keep generated code for manual re-run.
+        if self._chat_typing_pending:
+            self._chat_typing_pending = False
+            self._chat_pending_reply = ""
+            self._set_chat_busy(False)
+            self._update_chat_pipeline_status("\uD55C\uAE00 \uBB38\uC11C \uC785\uB825\uC774 \uCDE8\uC18C\uB418\uC5C8\uC2B5\uB2C8\uB2E4.", finished=True)
+            self._drain_queued_chat_messages()
         pending_idx = self._auto_type_pending_idx
         self._auto_type_after_ai = False
         self._auto_type_pending_idx = None
         if pending_idx is not None and 0 <= pending_idx < len(self._gen_statuses):
             self._gen_statuses[pending_idx] = "\uCDE8\uC18C\uB428"
-            self._render_order_list()
+            self._refresh_order_status_items()
         self._set_typing_status("")
         QMessageBox.information(self, "\uC54C\uB9BC", "\uD0C0\uC774\uD551\uC774 \uCDE8\uC18C\uB418\uC5C8\uC2B5\uB2C8\uB2E4.")
 
     def _on_typing_error(self, message: str) -> None:
         clean_message = _normalize_runtime_error_message(message)
+        if self._chat_typing_pending:
+            self._chat_typing_pending = False
+            self._chat_pending_reply = ""
+            self._set_chat_busy(False)
+            self._update_chat_pipeline_status("\uD55C\uAE00 \uBB38\uC11C \uC785\uB825 \uC911 \uC624\uB958\uAC00 \uBC1C\uC0DD\uD588\uC2B5\uB2C8\uB2E4.", finished=True)
+            self._append_chat_message(
+                "assistant",
+                f"\uD55C\uAE00 \uBB38\uC11C \uC785\uB825 \uC911 \uC624\uB958\uAC00 \uBC1C\uC0DD\uD588\uC2B5\uB2C8\uB2E4: {clean_message}",
+            )
+            self._drain_queued_chat_messages()
+            return
         pending_idx = self._auto_type_pending_idx
         self._auto_type_after_ai = False
         self._auto_type_pending_idx = None
         if pending_idx is not None and 0 <= pending_idx < len(self._gen_statuses):
             self._gen_statuses[pending_idx] = f"\uC624\uB958({clean_message})"
-            self._render_order_list()
+            self._refresh_order_status_items()
         self._set_typing_status("")
         QMessageBox.critical(self, "\uD0C0\uC774\uD551 \uC624\uB958", clean_message)
 
@@ -3698,6 +4650,33 @@ class NovaAILiteWindow(QWidget):
         new_paths.append(path)
         self._set_selected_images(new_paths)
         return len(self.selected_images) > before_count
+
+    def _should_restore_hwp_after_click(self, obj: object) -> bool:
+        current_mode = getattr(self, "_main_mode", "typing")
+        if current_mode not in {"typing", "chat"}:
+            return False
+        if QApplication.activeModalWidget() is not None:
+            return False
+        if not isinstance(obj, QWidget):
+            return False
+        if not (obj is self or self.isAncestorOf(obj)):
+            return False
+        if isinstance(obj, (QTextEdit, QLineEdit)):
+            return False
+        if current_mode == "chat" and not isinstance(obj, QPushButton):
+            return False
+        return True
+
+    def _restore_hwp_caret_visibility(self) -> None:
+        target_filename = (
+            self._current_detected_filename()
+            or HwpController.get_last_detected_filename()
+            or None
+        )
+        try:
+            HwpController.focus_target_window(target_filename)
+        except Exception:
+            pass
 
     def eventFilter(self, obj, event):  # type: ignore[override]
         try:
@@ -3849,6 +4828,9 @@ class NovaAILiteWindow(QWidget):
             QMessageBox.information(self, "\uC54C\uB9BC", "\uC0DD\uC131 \uC911\uC5D0\uB294 \uD56D\uBAA9\uC744 \uC0AD\uC81C\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.")
             return
         idx = self.order_list.row(item)
+        self._remove_selected_file_at(idx)
+
+    def _remove_selected_file_at(self, idx: int) -> None:
         if idx < 0 or idx >= len(self.selected_images):
             return
         self.selected_images.pop(idx)
@@ -3857,6 +4839,16 @@ class NovaAILiteWindow(QWidget):
         if idx < len(self._gen_statuses):
             self._gen_statuses.pop(idx)
         self._render_order_list()
+
+    def _on_chat_attachment_remove_clicked(self, path: str) -> None:
+        if not self._is_order_editable():
+            QMessageBox.information(self, "알림", "생성 중에는 항목을 삭제할 수 없습니다.")
+            return
+        try:
+            idx = self.selected_images.index(path)
+        except ValueError:
+            return
+        self._remove_selected_file_at(idx)
 
     def _set_selected_images(self, file_paths: list[str]) -> None:
         next_images = [path for path in file_paths if path]
@@ -3874,20 +4866,18 @@ class NovaAILiteWindow(QWidget):
         self._update_send_button_state()
         if not self.selected_images:
             self.order_list.clear()
+            self._chat_file_list.clear()
             self._gen_statuses = []
             self._generated_codes_by_index = []
             self._current_code_index = -1
             self._current_code_path = None
             self._set_code_view_text("")
             self._update_code_type_button_state()
+            self._refresh_typing_mode_labels()
             self._update_order_list_visibility()
             self._update_replay_button_visibility()
             return
-        order_lines = [
-            f"{idx + 1}. {os.path.basename(path)}"
-            for idx, path in enumerate(self.selected_images)
-        ]
-        self.order_title.setText("\uD0C0\uC774\uD551 \uC21C\uC11C:\n" + "\n".join(order_lines))
+        self._refresh_typing_mode_labels()
         self._generated_codes_by_index = [""] * len(self.selected_images)
         self._gen_statuses = ["\uB300\uAE30\uC911"] * len(self.selected_images)
         self._render_order_list()
@@ -3897,6 +4887,22 @@ class NovaAILiteWindow(QWidget):
         self._update_code_type_button_state()
         self._update_order_list_visibility()
         self._update_replay_button_visibility()
+
+    def _add_selected_images(self, file_paths: list[str]) -> None:
+        supported_exts = {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp", ".pdf"}
+        next_images: list[str] = []
+        seen: set[str] = set()
+        for path in (file_paths or []):
+            normalized = str(path or "").strip()
+            if not normalized or normalized in seen:
+                continue
+            if not os.path.isfile(normalized):
+                continue
+            if Path(normalized).suffix.lower() not in supported_exts:
+                continue
+            next_images.append(normalized)
+            seen.add(normalized)
+        self._set_selected_images(next_images)
 
     def _set_order_editable(self, enabled: bool) -> None:
         if enabled:
@@ -3909,6 +4915,8 @@ class NovaAILiteWindow(QWidget):
             self.order_list.setDragEnabled(False)
             self.order_list.setAcceptDrops(False)
             self.order_list.setDropIndicatorShown(False)
+        if self.selected_images:
+            self._render_order_list()
 
     def _is_order_editable(self) -> bool:
         return self.order_list.dragDropMode() != QListWidget.DragDropMode.NoDragDrop
@@ -3916,8 +4924,10 @@ class NovaAILiteWindow(QWidget):
     def _update_order_list_visibility(self) -> None:
         if not self.selected_images:
             self._order_list_stack.setCurrentWidget(self._empty_placeholder)
+            self._chat_file_panel_stack.setCurrentWidget(self._chat_file_empty_placeholder)
         else:
             self._order_list_stack.setCurrentWidget(self.order_list)
+            self._chat_file_panel_stack.setCurrentWidget(self._chat_file_list)
 
     def _set_typing_status(self, text: str) -> None:
         self.typing_status_label.setText(text)
@@ -4101,7 +5111,7 @@ class NovaAILiteWindow(QWidget):
             return
         file_paths = [url.toLocalFile() for url in urls if url.toLocalFile()]
         if file_paths:
-            self._set_selected_images(file_paths)
+            self._add_selected_images(file_paths)
 
 
 def _is_rpc_unavailable_message(message: str) -> bool:
@@ -4220,6 +5230,8 @@ class TypingWorker(QThread):
 
         controller: HwpController | None = None
         runner: ScriptRunner | None = None
+        last_resolved_target: str | None = None
+        last_style_snapshot: tuple[str, float, str, float] | None = None
         try:
             while True:
                 if self._cancel.is_set():
@@ -4258,25 +5270,32 @@ class TypingWorker(QThread):
                     if controller is None:
                         controller = HwpController()
                         controller.connect()
-                        controller.activate_target_window(resolved_target)
                         t_font, t_size, e_font, e_size = self._snapshot_typing_styles()
+                        style_snapshot = (t_font, t_size, e_font, e_size)
+                        controller.activate_target_window(resolved_target)
                         controller.configure_typing_styles(
                             text_font_name=t_font,
                             text_font_size_pt=t_size,
                             eq_font_name=e_font,
                             eq_font_size_pt=e_size,
                         )
+                        last_resolved_target = resolved_target
+                        last_style_snapshot = style_snapshot
                         runner = ScriptRunner(controller)
                     else:
-                        # Always refresh the active document before typing.
-                        controller.activate_target_window(resolved_target)
                         t_font, t_size, e_font, e_size = self._snapshot_typing_styles()
-                        controller.configure_typing_styles(
-                            text_font_name=t_font,
-                            text_font_size_pt=t_size,
-                            eq_font_name=e_font,
-                            eq_font_size_pt=e_size,
-                        )
+                        style_snapshot = (t_font, t_size, e_font, e_size)
+                        if resolved_target != last_resolved_target:
+                            controller.activate_target_window(resolved_target)
+                            last_resolved_target = resolved_target
+                        if style_snapshot != last_style_snapshot:
+                            controller.configure_typing_styles(
+                                text_font_name=t_font,
+                                text_font_size_pt=t_size,
+                                eq_font_name=e_font,
+                                eq_font_size_pt=e_size,
+                            )
+                            last_style_snapshot = style_snapshot
 
                     self.item_started.emit(idx)
                     assert runner is not None
@@ -4292,12 +5311,15 @@ class TypingWorker(QThread):
                             controller.connect()
                             controller.activate_target_window(resolved_target)
                             t_font, t_size, e_font, e_size = self._snapshot_typing_styles()
+                            style_snapshot = (t_font, t_size, e_font, e_size)
                             controller.configure_typing_styles(
                                 text_font_name=t_font,
                                 text_font_size_pt=t_size,
                                 eq_font_name=e_font,
                                 eq_font_size_pt=e_size,
                             )
+                            last_resolved_target = resolved_target
+                            last_style_snapshot = style_snapshot
                             runner = ScriptRunner(controller)
                             runner.run(script, cancel_check=self._cancel.is_set, source_image_path=source_image_path)
                         except Exception as retry_exc:
@@ -4314,12 +5336,15 @@ class TypingWorker(QThread):
                             controller.connect()
                             controller.activate_target_window(resolved_target)
                             t_font, t_size, e_font, e_size = self._snapshot_typing_styles()
+                            style_snapshot = (t_font, t_size, e_font, e_size)
                             controller.configure_typing_styles(
                                 text_font_name=t_font,
                                 text_font_size_pt=t_size,
                                 eq_font_name=e_font,
                                 eq_font_size_pt=e_size,
                             )
+                            last_resolved_target = resolved_target
+                            last_style_snapshot = style_snapshot
                             runner = ScriptRunner(controller)
                             runner.run(script, cancel_check=self._cancel.is_set, source_image_path=source_image_path)
                         except Exception as retry_exc:
@@ -4422,6 +5447,78 @@ class DropPlaceholder(QWidget):
                 event.acceptProposedAction()
                 return
         super().dropEvent(event)
+
+
+class ChatAttachmentCard(QFrame):
+    remove_clicked = Signal(str)
+
+    def __init__(self, path: str, removable: bool = True, parent=None, compact: bool = False) -> None:
+        super().__init__(parent)
+        self._path = path
+        ext = Path(path).suffix.lower()
+        is_pdf = ext == ".pdf"
+        badge_text = "PDF" if is_pdf else "IMG"
+        badge_bg = "#fee2e2" if is_pdf else "#dbeafe"
+        badge_fg = "#dc2626" if is_pdf else "#2563eb"
+        file_type = "pdf 파일" if is_pdf else "이미지 파일"
+        radius = 12 if compact else 14
+        badge_size = 34 if compact else 44
+        badge_radius = 10 if compact else 12
+        name_font_size = 11 if compact else 13
+        type_font_size = 10 if compact else 11
+        remove_btn_size = 20 if compact else 24
+        remove_icon_size = 12 if compact else 14
+        layout_margins = (10, 8, 8, 8) if compact else (12, 10, 10, 10)
+        layout_spacing = 8 if compact else 10
+
+        self.setStyleSheet(
+            f"QFrame {{ background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: {radius}px; }}"
+        )
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(*layout_margins)
+        layout.setSpacing(layout_spacing)
+
+        badge = QLabel(badge_text)
+        badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        badge.setFixedSize(badge_size, badge_size)
+        badge.setStyleSheet(
+            f"background-color: {badge_bg}; color: {badge_fg}; border-radius: {badge_radius}px; "
+            f"font-size: {name_font_size}px; font-weight: 700;"
+        )
+        layout.addWidget(badge, 0, Qt.AlignmentFlag.AlignTop)
+
+        text_col = QVBoxLayout()
+        text_col.setContentsMargins(0, 0, 0, 0)
+        text_col.setSpacing(2 if compact else 3)
+        name_label = QLabel(os.path.basename(path))
+        name_label.setWordWrap(not compact)
+        name_label.setStyleSheet(
+            f"color: #111827; font-size: {name_font_size}px; font-weight: 700; background: transparent; border: none;"
+        )
+        type_label = QLabel(file_type)
+        type_label.setStyleSheet(
+            f"color: #6b7280; font-size: {type_font_size}px; font-weight: 500; background: transparent; border: none;"
+        )
+        text_col.addWidget(name_label)
+        text_col.addWidget(type_label)
+        text_col.addStretch(1)
+        layout.addLayout(text_col, 1)
+
+        remove_btn = QPushButton()
+        remove_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        remove_btn.setFixedSize(remove_btn_size, remove_btn_size)
+        remove_btn.setEnabled(removable)
+        remove_btn.setIcon(_material_icon(_MI_CLOSE, 16, QColor("#9ca3af")))
+        remove_btn.setIconSize(QSize(remove_icon_size, remove_icon_size))
+        remove_btn.setStyleSheet(
+            "QPushButton { background-color: transparent; border: none; border-radius: 12px; }"
+            "QPushButton:hover { background-color: #f3f4f6; }"
+            "QPushButton:disabled { background-color: transparent; }"
+        )
+        remove_btn.clicked.connect(lambda: self.remove_clicked.emit(self._path))
+        layout.addWidget(remove_btn, 0, Qt.AlignmentFlag.AlignTop)
 
 
 class OrderListDelegate(QStyledItemDelegate):

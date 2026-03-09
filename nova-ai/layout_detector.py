@@ -45,7 +45,7 @@ def detect_container(image_path: str) -> ContainerDetection:
     - Compute border strength along the rectangle perimeter.
     - Detect '<보기>' text using pytesseract word boxes; tolerate spaced '< 보 기 >'.
     - Decision:
-        - If view text is found: header.hwp
+        - If explicit '<보기>' text is found AND it belongs to the detected box: header.hwp
         - Else if rectangle exists and border strong: box.hwp
         - Else if rectangle exists and border weak: box_white.hwp
         - Else: template=None (no container)
@@ -59,26 +59,20 @@ def detect_container(image_path: str) -> ContainerDetection:
     _debug(f"Rectangle detected: {rect}, border_score: {border_score:.3f}")
 
     template: Optional[ContainerTemplate] = None
-    # If OCR fails to read '<보기>' (common when border breaks), infer from border gap pattern.
-    if (not has_view_text) and rect is not None:
-        try:
-            if _infer_view_from_border_gap(image_path, rect):
-                has_view_text = True
-        except Exception:
-            pass
-
-    if has_view_text:
+    explicit_view_box = bool(has_view_text and rect is not None and _view_text_matches_rect(view_bbox, rect))
+    if explicit_view_box:
         template = "header.hwp"
     elif rect is not None:
         template = "box.hwp" if border_score >= 0.35 else "box_white.hwp"
 
-    # If view text exists but we also have a rectangle, prefer the rectangle as the rect.
-    # If view text exists but no rectangle, keep rect=None and still use header.hwp.
-    _ = view_bbox  # currently unused but kept for future refinements
+    _debug(
+        "Template decision: "
+        f"explicit_view_box={explicit_view_box}, has_view_text={has_view_text}, rect={rect}, template={template}"
+    )
     return ContainerDetection(
         template=template,
         rect=rect,
-        has_view_text=has_view_text,
+        has_view_text=explicit_view_box,
         border_score=float(border_score),
     )
 
@@ -324,70 +318,35 @@ def _border_score_on_rect(edges, rect: Tuple[int, int, int, int]) -> float:
     return max(0.0, min(1.0, edge_pixels / total_pixels))
 
 
-def _infer_view_from_border_gap(image_path: str, rect: Tuple[int, int, int, int]) -> bool:
+def _view_text_matches_rect(
+    view_bbox: Optional[Tuple[int, int, int, int]],
+    rect: Tuple[int, int, int, int],
+) -> bool:
     """
-    Heuristic for '<보기>' header when OCR misses it:
-    - In many test sheets, the top border is "broken" around the centered header text.
-    - We detect a strong top border on the left/right thirds with a weak middle third.
+    Require explicit '<보기>' text to be located near the top area of the same box.
+    When OCR only gives a global string hit (bbox=None), reject it to avoid false
+    positives on plain problems that merely mention '보기' in the body text.
     """
-    try:
-        import cv2  # type: ignore[import-not-found]
-        import numpy as np  # type: ignore[import-not-found]
-    except Exception:
+    if view_bbox is None:
         return False
 
-    img = cv2.imread(image_path)
-    if img is None:
-        return False
-    h, w = img.shape[:2]
-    if h < 10 or w < 10:
+    vx, vy, vw, vh = view_bbox
+    rx, ry, rw, rh = rect
+    if rw <= 0 or rh <= 0 or vw <= 0 or vh <= 0:
         return False
 
-    x, y, ww, hh = rect
-    x0 = max(0, x)
-    x1 = min(w, x + ww)
-    y0 = max(0, y)
-    if x1 - x0 < 60:
+    view_cx = vx + (vw / 2.0)
+    view_top = vy
+    rect_left = rx
+    rect_right = rx + rw
+    rect_top = ry
+    rect_header_bottom = ry + max(18.0, rh * 0.28)
+
+    if not (rect_left <= view_cx <= rect_right):
         return False
-
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    bw = cv2.adaptiveThreshold(
-        gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 21, 10
-    )
-    hk = max(30, w // 25)
-    h_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (hk, 1))
-    horizontal = cv2.erode(bw, h_kernel, iterations=1)
-    horizontal = cv2.dilate(horizontal, h_kernel, iterations=1)
-
-    seg_w = (x1 - x0) // 3
-    if seg_w <= 0:
+    if not (rect_top - max(8.0, rh * 0.08) <= view_top <= rect_header_bottom):
         return False
-
-    # Search a small vertical window below y0 to find the best "top border" band.
-    band = 3
-    max_side_avg = 0.0
-    best_mid_ratio = 1.0
-    search_h = min(24, max(6, hh // 6))
-    for dy in range(0, search_h):
-        yy = min(h - 1, y0 + dy)
-        top_band = horizontal[max(0, yy - band) : min(h, yy + band), x0:x1]
-        if top_band.size <= 0:
-            continue
-        left = top_band[:, 0:seg_w]
-        mid = top_band[:, seg_w : 2 * seg_w]
-        right = top_band[:, 2 * seg_w : (3 * seg_w)]
-        left_score = float(np.count_nonzero(left)) / max(1.0, float(left.size))
-        mid_score = float(np.count_nonzero(mid)) / max(1.0, float(mid.size))
-        right_score = float(np.count_nonzero(right)) / max(1.0, float(right.size))
-        side_avg = (left_score + right_score) / 2.0
-        if side_avg > max_side_avg:
-            max_side_avg = side_avg
-            best_mid_ratio = (mid_score / side_avg) if side_avg > 1e-6 else 1.0
-
-    if max_side_avg < 0.12:
-        return False
-    # Middle must be significantly weaker than sides
-    return best_mid_ratio < 0.45
+    return True
 
 
 def crop_inside_rect(image_path: str, rect: Tuple[int, int, int, int], *, inset: int = 4) -> Optional["object"]:

@@ -1,8 +1,8 @@
-; Nova AI Lite - Inno Setup Script
+; Nova AI - Inno Setup Script
 ; 이 스크립트를 사용하려면 Inno Setup 6를 설치하세요: https://jrsoftware.org/isinfo.php
 ;
 ; 사용법:
-;   1. PyInstaller로 먼저 빌드: pyinstaller "Nova AI Lite_installer.spec"
+;   1. PyInstaller로 먼저 빌드: pyinstaller "NovaAI.spec"
 ;   2. Inno Setup Compiler에서 이 파일을 열고 컴파일
 ;   또는: iscc installer.iss
 
@@ -31,21 +31,20 @@ PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 ; 출력 설정
 OutputDir=output
-OutputBaseFilename=NovaAI_Setup_{#MyAppVersion}_pabicon2
+OutputBaseFilename=NovaAI_Setup_{#MyAppVersion}
 ; 압축 설정
 Compression=lzma2/ultra64
 SolidCompression=yes
 ; UI 설정
 WizardStyle=modern
+SetupIconFile=pabicon789.ico
+WizardImageFile=wizard_image.png
+WizardSmallImageFile=wizard_small.png
 ; 언어 설정
 ShowLanguageDialog=auto
 ; 설치 전 라이선스/정보 페이지 (선택사항 - 필요시 주석 해제)
 ; LicenseFile=LICENSE.txt
 ; InfoBeforeFile=INSTALL_NOTE.txt
-; 아이콘 / 설치 마법사 이미지
-SetupIconFile=pabicon789.ico
-WizardImageFile=wizard_image.png
-WizardSmallImageFile=wizard_small.png
 UninstallDisplayIcon={app}\{#MyAppExeName}
 ; 64비트 설정
 ArchitecturesAllowed=x64compatible
@@ -62,9 +61,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 ; PyInstaller로 빌드된 모든 파일 포함
 Source: "{#BuildDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-; 폰트/환경설정/아이콘 파일
-Source: "fonts\*"; DestDir: "{app}\fonts"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: ".env"; DestDir: "{app}"; Flags: ignoreversion
+; 배포용 환경 변수 예시 파일
+Source: ".env.example"; DestDir: "{app}"; Flags: ignoreversion
 Source: "pabicon789.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "pabicon789.png"; DestDir: "{app}"; Flags: ignoreversion
 
@@ -78,33 +76,6 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
 [Code]
-var
-  DefaultWizardBitmapTop: Integer;
-
-procedure ApplyWizardImageLayout(CurPageID: Integer);
-begin
-  { Add right margin for the small top-right image. }
-  WizardForm.WizardSmallBitmapImage.Left :=
-    WizardForm.ClientWidth - WizardForm.WizardSmallBitmapImage.Width - ScaleX(18);
-
-  { Place the large wizard image near top only on the finished page. }
-  if CurPageID = wpFinished then
-    WizardForm.WizardBitmapImage.Top := WizardForm.InnerNotebook.Top + ScaleY(10)
-  else
-    WizardForm.WizardBitmapImage.Top := DefaultWizardBitmapTop;
-end;
-
-procedure InitializeWizard();
-begin
-  DefaultWizardBitmapTop := WizardForm.WizardBitmapImage.Top;
-  ApplyWizardImageLayout(wpWelcome);
-end;
-
-procedure CurPageChanged(CurPageID: Integer);
-begin
-  ApplyWizardImageLayout(CurPageID);
-end;
-
 // 설치 후 .env 파일이 없으면 .env.example을 .env로 복사
 procedure CurStepChanged(CurStep: TSetupStep);
 var

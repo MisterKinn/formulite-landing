@@ -21,5 +21,21 @@ def get_image_instructions_prompt() -> str:
     return _read_prompt("image_instructions_prompt.txt")
 
 
+def get_chat_hwp_actions_prompt() -> str:
+    return _read_prompt("chat_hwp_actions_prompt.txt")
+
+
+def get_chat_actiontable_prompt() -> str:
+    return _read_prompt("chat_actiontable_prompt.txt")
+
+
 def get_image_generation_prompt() -> str:
     return _read_prompt("image-prompt.txt")
+
+
+def get_solve_algorithm_prompt() -> str:
+    return _read_prompt("solve_algorithm.txt")
+
+
+def get_solve_prompt() -> str:
+    return _read_prompt("solve_prompt.txt")

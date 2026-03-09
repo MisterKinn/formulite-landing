@@ -3,7 +3,7 @@ chcp 65001 >nul
 setlocal enabledelayedexpansion
 
 echo ============================================
-echo   Nova AI Lite - 인스톨러 빌드 스크립트
+echo   Nova AI - 인스톨러 빌드 스크립트
 echo ============================================
 echo.
 
@@ -11,13 +11,17 @@ echo.
 :: 1단계: 기존 빌드 정리
 :: ──────────────────────────────────────────────
 echo [1/3] 기존 빌드 파일 정리 중...
-if exist "dist\Nova AI Lite" (
-    rmdir /s /q "dist\Nova AI Lite"
-    echo   - dist\Nova AI Lite 폴더 삭제 완료
+if exist "dist\Nova AI" (
+    rmdir /s /q "dist\Nova AI"
+    echo   - dist\Nova AI 폴더 삭제 완료
 )
-if exist "build\Nova AI Lite" (
-    rmdir /s /q "build\Nova AI Lite"
-    echo   - build\Nova AI Lite 폴더 삭제 완료
+if exist "build\Nova AI" (
+    rmdir /s /q "build\Nova AI"
+    echo   - build\Nova AI 폴더 삭제 완료
+)
+if exist "build\NovaAI" (
+    rmdir /s /q "build\NovaAI"
+    echo   - build\NovaAI 폴더 삭제 완료
 )
 echo.
 
@@ -28,7 +32,7 @@ echo [2/3] PyInstaller로 앱 빌드 중...
 echo   (시간이 다소 걸릴 수 있습니다)
 echo.
 
-pyinstaller "Nova AI Lite_installer.spec" --noconfirm
+pyinstaller "NovaAI.spec" --noconfirm
 if errorlevel 1 (
     echo.
     echo ❌ PyInstaller 빌드 실패!
@@ -38,7 +42,7 @@ if errorlevel 1 (
 )
 
 :: 빌드 결과 확인
-if not exist "dist\Nova AI Lite\Nova AI Lite.exe" (
+if not exist "dist\Nova AI\Nova AI.exe" (
     echo.
     echo ❌ 빌드된 EXE 파일을 찾을 수 없습니다!
     pause
@@ -80,7 +84,7 @@ if "!ISCC!"=="" (
     echo ⚠️  Inno Setup을 찾을 수 없습니다!
     echo.
     echo   PyInstaller 빌드는 완료되었습니다:
-    echo     dist\Nova AI Lite\Nova AI Lite.exe
+    echo     dist\Nova AI\Nova AI.exe
     echo.
     echo   인스톨러를 만들려면 Inno Setup 6을 설치하세요:
     echo     https://jrsoftware.org/isdl.php
@@ -106,7 +110,7 @@ echo   ✅ 인스톨러 빌드 완료!
 echo ============================================
 echo.
 echo   인스톨러 위치:
-echo     output\NovaAILite_Setup_1.0.0.exe
+echo     output\NovaAI_Setup_1.0.0.exe
 echo.
 echo   배포 시 이 파일을 사용자에게 전달하세요.
 echo ============================================

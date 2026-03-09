@@ -18,7 +18,7 @@ function isEditablePlan(value: unknown): value is EditablePlan {
 
 /**
  * PATCH /api/admin/users/[userId]
- * Updates user's plan and/or remaining AI usage for current cycle/day.
+ * Updates user's plan and/or remaining AI usage for current billing cycle.
  * Body: { remainingUsage?: number, plan?: "free" | "go" | "plus" | "pro" }
  */
 export async function PATCH(
@@ -121,9 +121,9 @@ export async function PATCH(
                 plan: requestedPlan || userData.subscription?.plan || effectivePlan,
             },
             usage: {
-                today: nextUsage,
+                cycleUsed: nextUsage,
                 limit: usageLimit,
-                remaining: Math.max(0, usageLimit - nextUsage),
+                cycleRemaining: Math.max(0, usageLimit - nextUsage),
             },
         });
     } catch (error) {

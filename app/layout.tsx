@@ -1,21 +1,10 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import { AuthProvider } from "../context/AuthContext";
 import { Analytics } from "@vercel/analytics/next";
 
 // Global styles
 import "./style.css";
 import "./mobile.css";
-
-const geistSans = Geist({
-    variable: "--font-geist-sans",
-    subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-    variable: "--font-geist-mono",
-    subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
     title: "NOVA AI - 한글 문서 자동화의 새로운 표준",
@@ -65,10 +54,7 @@ export default function RootLayout({
                     content="width=device-width, initial-scale=1, maximum-scale=5, viewport-fit=cover"
                 />
             </head>
-            <body
-                className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-                style={{ padding: 0, margin: 0 }}
-            >
+            <body className="antialiased" style={{ padding: 0, margin: 0 }}>
                 <AuthProvider>{children}</AuthProvider>
                 <Analytics />
             </body>
