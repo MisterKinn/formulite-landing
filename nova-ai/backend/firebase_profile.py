@@ -765,7 +765,7 @@ def force_refresh_usage() -> int:
     return 0
 
 
-def increment_ai_usage(uid: str) -> bool:
+def increment_ai_usage(uid: str, amount: int = 1) -> bool:
     """
     Atomically increment aiCallUsage field in Firestore.
     Called each time user makes an AI request.
@@ -773,26 +773,38 @@ def increment_ai_usage(uid: str) -> bool:
     """
     if not uid:
         return False
+    try:
+        amount = max(1, int(amount))
+    except Exception:
+        amount = 1
     if _is_admin_unlimited_user(uid):
         # Do not consume quota for admin unlimited account.
         return True
 
     # 1) Canonical source: website usage API (same logic as web app)
-    web_result = _increment_usage_via_web(uid)
-    if web_result is not None:
+    web_result = None
+    remaining_amount = amount
+    for _ in range(amount):
+        web_result = _increment_usage_via_web(uid)
+        if web_result is None:
+            break
+        remaining_amount -= 1
+        if not bool(web_result.get("canUse")):
+            return False
+    if remaining_amount <= 0:
         return bool(web_result.get("canUse"))
 
     # 2) Fallback Firestore/local
     if not REQUESTS_AVAILABLE:
         # Local fallback
-        return _increment_local_usage()
+        return _increment_local_usage(remaining_amount)
     if not FIREBASE_CONFIG.get("projectId"):
-        return _increment_local_usage()
+        return _increment_local_usage(remaining_amount)
     
     auth_token, auth_mode = _resolve_firestore_auth_token()
     if not auth_token:
         # Fallback to local tracking
-        return _increment_local_usage()
+        return _increment_local_usage(remaining_amount)
     
     try:
         project_id = FIREBASE_CONFIG["projectId"]
@@ -813,7 +825,7 @@ def increment_ai_usage(uid: str) -> bool:
                 current_usage = int(val)
             
             # Update with incremented value
-            new_usage = current_usage + 1
+            new_usage = current_usage + remaining_amount
             update_url = f"{doc_url}?updateMask.fieldPaths=aiCallUsage"
             payload = {
                 "fields": {
@@ -830,7 +842,7 @@ def increment_ai_usage(uid: str) -> bool:
                 return True
             else:
                 print(f"Usage update failed: {update_response.status_code}")
-                return _increment_local_usage()
+                return _increment_local_usage(remaining_amount)
         
         elif status_code == 404:
             # Document doesn't exist, create it
@@ -838,7 +850,7 @@ def increment_ai_usage(uid: str) -> bool:
             payload = {
                 "fields": {
                     "uid": {"stringValue": uid},
-                    "aiCallUsage": {"integerValue": "1"}
+                    "aiCallUsage": {"integerValue": str(remaining_amount)}
                 }
             }
             create_response = requests.post(create_url, headers=headers, json=payload, timeout=10)
@@ -848,7 +860,7 @@ def increment_ai_usage(uid: str) -> bool:
             # User token may be expired/invalid. Retry once with admin token.
             admin_token = _get_admin_access_token()
             if not admin_token:
-                return _increment_local_usage()
+                return _increment_local_usage(remaining_amount)
             headers["Authorization"] = f"Bearer {admin_token}"
             retry_status, retry_doc, retry_doc_url = _fetch_firestore_user_doc(project_id, uid, headers)
             if retry_status == 200 and retry_doc and retry_doc_url:
@@ -858,7 +870,7 @@ def increment_ai_usage(uid: str) -> bool:
                 if "aiCallUsage" in fields:
                     val = fields["aiCallUsage"].get("integerValue", 0)
                     current_usage = int(val)
-                new_usage = current_usage + 1
+                new_usage = current_usage + remaining_amount
                 update_url = f"{retry_doc_url}?updateMask.fieldPaths=aiCallUsage"
                 payload = {
                     "fields": {
@@ -870,17 +882,21 @@ def increment_ai_usage(uid: str) -> bool:
                     _firebase_cache["usage"] = new_usage
                     _firebase_cache["last_refresh"] = time.time()
                     return True
-            return _increment_local_usage()
+            return _increment_local_usage(remaining_amount)
         else:
-            return _increment_local_usage()
+            return _increment_local_usage(remaining_amount)
             
     except Exception as e:
         print(f"Firebase usage increment error: {e}")
-        return _increment_local_usage()
+        return _increment_local_usage(remaining_amount)
 
 
-def _increment_local_usage() -> bool:
+def _increment_local_usage(amount: int = 1) -> bool:
     """Increment usage in local tracking file (fallback)."""
+    try:
+        amount = max(1, int(amount))
+    except Exception:
+        amount = 1
     local = _get_local_usage()
     today = datetime.now().strftime("%Y-%m-%d")
     
@@ -888,7 +904,7 @@ def _increment_local_usage() -> bool:
     if local.get("date") != today:
         local = {"date": today, "usage": 0}
     
-    local["usage"] = local.get("usage", 0) + 1
+    local["usage"] = local.get("usage", 0) + amount
     _save_local_usage(local)
     return True
 
@@ -910,18 +926,22 @@ def get_remaining_usage(uid: str, tier: str = "free") -> int:
     return max(0, int(limit) - int(current_usage))
 
 
-def check_usage_limit(uid: str, tier: str = "Free") -> bool:
+def check_usage_limit(uid: str, tier: str = "Free", amount: int = 1) -> bool:
     """
     Check if user has remaining AI calls.
     Returns True if user can make more calls.
     """
+    try:
+        amount = max(1, int(amount))
+    except Exception:
+        amount = 1
     if _is_admin_unlimited_user(uid):
         return True
 
     web_usage = _fetch_usage_status_from_web(uid)
     if web_usage is not None:
-        return bool(web_usage.get("canUse", False))
-    return get_remaining_usage(uid, _normalize_plan_tier(tier, "free")) > 0
+        return int(web_usage.get("remaining", 0)) >= amount
+    return get_remaining_usage(uid, _normalize_plan_tier(tier, "free")) >= amount
 
 
 def get_plan_limit(tier: str) -> int:

@@ -258,6 +258,9 @@ export function Navbar() {
                     <a href="/#pricing" className="nav-link">
                         {"\uC694\uAE08\uC81C"}
                     </a>
+                    <a href="/notices" className="nav-link">
+                        {"\uACF5\uC9C0\uC0AC\uD56D"}
+                    </a>
                     <a href="/download" className="nav-download-gradient">
                         {"\uC9C0\uAE08 \uB2E4\uC6B4\uB85C\uB4DC"}
                     </a>

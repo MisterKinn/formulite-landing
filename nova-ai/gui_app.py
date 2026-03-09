@@ -616,12 +616,15 @@ class AIWorker(QThread):
                 user = get_stored_user() or {}
                 uid = str(user.get("uid") or "")
                 tier = str(user.get("plan") or user.get("tier") or "free")
+                generation_mode = getattr(self, "_generation_mode", "problem")
+                usage_cost = 2 if generation_mode == "problem_and_explanation" else 1
 
-                # ????? 1??? ??? ????1??? ???.
-                if uid and not check_usage_limit(uid, tier):
+                if uid and not check_usage_limit(uid, tier, amount=usage_cost):
                     limit = get_plan_limit(tier)
+                    remaining = get_remaining_usage(uid, tier)
                     raise AIClientError(
-                        f"\uC0AC\uC6A9 \uD55C\uB3C4\uC5D0 \uB3C4\uB2EC\uD588\uC2B5\uB2C8\uB2E4 ({limit}/{limit}).\n"
+                        f"현재 모드 실행에 필요한 크레딧이 부족합니다. "
+                        f"(필요: {usage_cost}, 남음: {remaining}, 한도: {limit})\n"
                         f"\uD604\uC7AC \uD50C\uB79C: {tier}\n"
                         "nova-ai.work\uC5D0\uC11C \uD50C\uB79C\uC744 \uC5C5\uADF8\uB808\uC774\uB4DC\uD574\uC8FC\uC138\uC694."
                     )
@@ -669,7 +672,7 @@ class AIWorker(QThread):
                     ocr_text_full = ""
 
                 def _append_explanation_if_needed(problem_code: str) -> str:
-                    mode = getattr(self, "_generation_mode", "problem")
+                    mode = generation_mode
                     if mode not in {"explanation", "problem_and_explanation"}:
                         return (problem_code or "").strip()
                     _log(f"[{idx}] Calling GPT explanation flow...")
@@ -695,10 +698,10 @@ class AIWorker(QThread):
                         ).strip()
                     return problem_clean or explanation_clean
 
-                if self._generation_mode == "explanation":
+                if generation_mode == "explanation":
                     final_code = _append_explanation_if_needed("")
                     if uid and final_code.strip():
-                        increment_ai_usage(uid)
+                        increment_ai_usage(uid, amount=usage_cost)
                     return final_code
 
                 # 2) Detect container + split generation when possible
@@ -835,7 +838,7 @@ class AIWorker(QThread):
                     )
                     combined = _append_explanation_if_needed(combined)
                     if uid and combined.strip():
-                        increment_ai_usage(uid)
+                        increment_ai_usage(uid, amount=usage_cost)
                     return combined
 
                 if det.template and not det.rect:
@@ -865,7 +868,7 @@ class AIWorker(QThread):
                     )
                     combined = _append_explanation_if_needed(combined)
                     if uid and combined.strip():
-                        increment_ai_usage(uid)
+                        increment_ai_usage(uid, amount=usage_cost)
                     return combined
 
                 # No container detected: default behavior
@@ -886,7 +889,7 @@ class AIWorker(QThread):
                 )
                 final_code = _append_explanation_if_needed(final_code)
                 if uid and final_code.strip():
-                    increment_ai_usage(uid)
+                    increment_ai_usage(uid, amount=usage_cost)
                 return final_code
 
             # By default, submit all selected images concurrently so AI code
@@ -2068,9 +2071,13 @@ class NovaAILiteWindow(QWidget):
         self._typing_kind_combo.setObjectName("typingFontCombo")
         self._typing_kind_combo.setEditable(False)
         self._typing_kind_combo.addItems(
-            ["문제만 타이핑하기", "해설만 타이핑하기", "문제+해설 타이핑하기"]
+            [
+                self._typing_generation_mode_text("problem"),
+                self._typing_generation_mode_text("explanation"),
+                self._typing_generation_mode_text("problem_and_explanation"),
+            ]
         )
-        self._typing_kind_combo.setFixedWidth(220)
+        self._typing_kind_combo.setFixedWidth(260)
         _kind_row.addWidget(self._typing_kind_combo)
         _kind_row.addStretch(1)
         _ts_root.addWidget(self._typing_kind_row_widget)
@@ -2217,9 +2224,13 @@ class NovaAILiteWindow(QWidget):
         self._typing_kind_combo_compact.setObjectName("typingFontCombo")
         self._typing_kind_combo_compact.setEditable(False)
         self._typing_kind_combo_compact.addItems(
-            ["문제만 타이핑하기", "해설만 타이핑하기", "문제+해설 타이핑하기"]
+            [
+                self._typing_generation_mode_text("problem"),
+                self._typing_generation_mode_text("explanation"),
+                self._typing_generation_mode_text("problem_and_explanation"),
+            ]
         )
-        self._typing_kind_combo_compact.setMinimumWidth(140)
+        self._typing_kind_combo_compact.setMinimumWidth(190)
         _kind_row_c.addWidget(self._typing_kind_combo_compact, 1)
         _tsc_v.addWidget(self._typing_kind_row_widget_compact)
 
@@ -3174,20 +3185,22 @@ class NovaAILiteWindow(QWidget):
     @staticmethod
     def _typing_generation_mode_text(mode_key: str) -> str:
         mapping = {
-            "problem": "문제만 타이핑하기",
-            "explanation": "해설만 타이핑하기",
-            "problem_and_explanation": "문제+해설 타이핑하기",
+            "problem": "문제만 타이핑하기 (1크레딧)",
+            "explanation": "해설만 타이핑하기 (1크레딧)",
+            "problem_and_explanation": "문제+해설 타이핑하기 (2크레딧)",
         }
         return mapping.get(mode_key, mapping["problem"])
 
     @staticmethod
     def _typing_generation_mode_key_from_text(text: str) -> str:
-        mapping = {
-            "문제만 타이핑하기": "problem",
-            "해설만 타이핑하기": "explanation",
-            "문제+해설 타이핑하기": "problem_and_explanation",
-        }
-        return mapping.get((text or "").strip(), "problem")
+        normalized = (text or "").strip()
+        if normalized.startswith("문제+해설 타이핑하기"):
+            return "problem_and_explanation"
+        if normalized.startswith("해설만 타이핑하기"):
+            return "explanation"
+        if normalized.startswith("문제만 타이핑하기"):
+            return "problem"
+        return "problem"
 
     def _sync_typing_generation_mode_controls(self, *, source: str, mode_key: str) -> None:
         mode_text = self._typing_generation_mode_text(mode_key)

@@ -1,4 +1,4 @@
-﻿# LitePro - Image Instructions Prompt
+# LitePro - Image Instructions Prompt
 # Image-specific guidance to improve accuracy.
 # Covers all CSAT (수능) subjects with subject-specific formatting rules.
 
@@ -20,6 +20,33 @@ Read the image carefully and extract EVERYTHING.
 TEXT FONT POLICY (ALL SUBJECTS):
 - All plain text entered with insert_text() must use font: '신명 중명조'.
 - Keep math equations in equation rendering rules (HancomEQN / HYhwpEQ paths) as-is.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🧭 SECTION 0.5: RULE PRECEDENCE / CONFLICT RESOLUTION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+This prompt contains shared rules, routing rules, and subject-specific exceptions.
+To avoid conflicts, ALWAYS resolve instructions in the following priority order:
+
+1) SECTION 0 core OCR rules
+2) SECTION 1 / 1.5 routing rules (`SUBJECT`, `FORMAT_TYPE`)
+3) SECTION 1.6 plain-format rules when `FORMAT_TYPE = "plain"`
+4) SECTION 2 common exam rules when `FORMAT_TYPE = "exam"`
+5) SECTION 3~8 subject-specific overrides for the detected subject
+6) SECTION 4-2 math syntax rules for any math equation rendering
+7) Any later rule explicitly marked CRITICAL overrides an earlier generic note/example
+
+Interpretation rules:
+- If `FORMAT_TYPE = "plain"`, DO NOT apply exam-only layout rules from SECTION 2 or subject examples that depend on templates/placeholders/choice formatting.
+- If a subject-specific section conflicts with SECTION 2, the subject-specific section wins for that subject only.
+- If an example conflicts with an explicit rule sentence, follow the explicit rule sentence.
+- Examples are illustrative, not authoritative, unless they are the only rule given for that pattern.
+
+Maintenance rules for this file:
+- Put shared formatting rules in SECTION 2 only.
+- Put subject exceptions only inside the relevant subject section.
+- Do not restate a shared rule inside a subject section unless the subject changes the default behavior.
+- When adding a new exception, write "Exception to SECTION 2" so the override is traceable.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🔍 SECTION 1: SUBJECT AUTO-DETECTION
@@ -133,6 +160,36 @@ FORMAT_TYPE = "plain"일 때 적용되는 규칙.
   insert_equation('{LEFT | d _{2} - d _{1} RIGHT |} over {sqrt {a ^{2} + b ^{2} + c ^{2}}}')
   insert_enter()
 
+📌 1.6-4A. 직접 입력 요청 (채팅/텍스트 명령) 처리:
+─────────────────────────────
+- 이미지가 없어도 사용자가 채팅으로 "문서에 입력해줘", "수식을 삽입해줘", "타이핑해줘"라고 요청할 수 있다.
+- 이 경우에도 설명문 없이 실행 가능한 Python 코드만 반환한다.
+- 일반 문장은 insert_text()를 사용한다.
+- 수식/공식은 반드시 insert_equation()으로 정확히 작성한다.
+- insert_latex_equation()은 사용하지 않는다.
+- 모든 수식은 아래 SECTION 4-2의 HwpEqn 문법을 그대로 따른다.
+- 사용자의 요청이 특정 수식 하나를 입력하는 것이라면, 불필요한 설명 텍스트를 추가하지 말고 수식 코드만 반환한다.
+
+직접 입력 요청 예시:
+
+사용자 요청: y=f(x) 수식을 입력해줘
+출력:
+  insert_equation('y = f LEFT ( x RIGHT )')
+
+사용자 요청: 근의 공식을 입력해줘
+출력:
+  insert_equation('x = {- b +- sqrt {b ^{2} - 4ac}} over {2a}')
+
+사용자 요청: 판별식을 입력해줘
+출력:
+  insert_equation('b ^{2} - 4ac')
+
+사용자 요청: y=f(x)와 근의 공식을 차례로 입력해줘
+출력:
+  insert_equation('y = f LEFT ( x RIGHT )')
+  insert_enter()
+  insert_equation('x = {- b +- sqrt {b ^{2} - 4ac}} over {2a}')
+
 📌 1.6-5. 풀이/설명 특수 패턴:
 ─────────────────────────────
 - "이다.", "이므로", "에서", "따라서" 같은 서술형 연결어가 수식 뒤에 오면:
@@ -243,33 +300,31 @@ insert_text('이다.')
 - If a score like [2점]/[3점]/[4점] appears at the end of a line,
   insert exactly ONE space before the score.
 
-📝 CHOICES LINE (MULTIPLE CHOICE — ALL SUBJECTS):
+📝 CHOICES LINE (MULTIPLE CHOICE — DEFAULT EXAM RULE):
+- Default exam behavior across subjects: output all 5 choices on ONE line.
 - When entering choices, type ①②③④⑤ as plain text (insert_text), not equations.
-- If all 5 choices are on ONE line, use justify alignment:
+- If all 5 choices visually belong on one line, use justify alignment:
   set_align_justify_next_line()
   insert_text('①') + insert_space() + ... + insert_text('②') + ...
-- If the problem is English and choices are vertically listed, put each choice on its own line:
-  insert_enter() between each choice line for clean vertical layout.
 - Always insert ONE space after ①/②/③/④/⑤ before the value or text (never 붙여쓰기).
-- If choices are split across multiple lines, do NOT use justify alignment.
-- Insert one empty line before the choices line (leave a blank line):
+- Insert one empty line before the choices block:
   insert_enter() to move to the next line, then insert_enter() again to leave one empty line.
 - For the choices line, do NOT add leading spaces before ①.
 - Always start with insert_text('①'), not insert_text('  ①').
-- CRITICAL: Choices must be HORIZONTAL, not vertical.
-- DO NOT insert insert_enter() between choices.
-- Output all 5 choices on ONE line with spacing between each choice.
-- Example (single line):
+- If choices are split across multiple lines, do NOT use justify alignment.
+- Exception to SECTION 2: if a subject-specific section explicitly allows vertical choices
+  (currently English long choices), keep the original vertical layout and insert_enter() between choices.
+- Never force very long choices into one line if that would damage readability or visibly change the source layout.
+- Example (horizontal default):
   set_align_justify_next_line()
   insert_text('① 6    ② 9    ③ 12    ④ 15    ⑤ 18')
 
 📦 TEMPLATE + PLACEHOLDER RULE (@@@ / ### / &&&):
 - If you detect a container, DO NOT draw it manually. Insert the matching HWP template first:
   - If the container header has explicit "<보기>" text (including spaced variant like "<보 기>"): insert_template('header.hwp')
-  - If there is a bordered container WITHOUT "<보기>" text: insert_template('box.hwp')
+  - If the content is a long reading passage / passage-style text area (especially Korean or English passages): prefer insert_template('box_white.hwp')
+  - If there is a bordered source/data/condition/material box WITHOUT "<보기>": insert_template('box.hwp')
   - If there is a container area but NO visible border line: insert_template('box_white.hwp')
-  - For English reading passages with no visible border around the passage, use box_white.hwp.
-  - For 국어 reading passages (지문) in a bordered area, use box_white.hwp.
 - STRICT TRIGGER for header.hwp (must satisfy):
   1) The literal angle-bracket header is visible in the image: "<보기>" or "<보 기>".
   2) The header text is inside/at the top of that same box region.
@@ -281,26 +336,34 @@ insert_text('이다.')
 - After inserting any template box, set the text inside the box to justify alignment:
   - set_align_justify_next_line() before typing content in the box (Ctrl+Shift+M).
 - Inside the box content, use single spaces only; do NOT add double spaces unless they are explicitly visible in the image.
-- After inserting the template, you MUST type by replacing placeholders:
-  - focus_placeholder('@@@')  -> type ALL non-box content (problem statement, etc.)
-  - focus_placeholder('###')  -> type ONLY the content inside the container
-  - focus_placeholder('&&&')  -> type choices AFTER the container (header.hwp, box.hwp, box_white.hwp)
-- IMPORTANT: call focus_placeholder('###') immediately BEFORE typing box content.
-  Do NOT place focus_placeholder('###') at the end.
-- focus_placeholder(...) deletes the marker text and leaves the cursor there. Then type normally.
+- `header.hwp` contains a `###` placeholder inside the row-2 body cell of the <보기> table.
+- Placeholder ownership in the standard template flow:
+  - `@@@` = content above the main box body
+  - `###` = content inside the current box body
+  - `&&&` = content below the box after exiting it
+- After `insert_template(...)`, move to the placeholder needed for that template stage immediately.
+- Do NOT jump between placeholders unless that template's flow explicitly requires it.
+- For `header.hwp`, the algorithm is:
+  1) call `insert_template('header.hwp')` exactly where the <보기> box should appear
+  2) immediately call `focus_placeholder('###')`
+  3) type the <보기> content inside the box
+  4) call `exit_box()` when the <보기> content ends
+  5) continue typing outside the box
+- Therefore, for `header.hwp`:
+  - DO NOT use `focus_placeholder('@@@')`
+  - DO NOT use `focus_placeholder('&&&')`
+  - DO use `focus_placeholder('###')` for the box body
+- `focus_placeholder(...)` remains valid for placeholder-based templates.
 - When entering multiple problems in sequence, NEVER call focus_placeholder(...) unless you just inserted a new template.
   If you are already typing below, just continue with insert_enter() and text.
 
 📌 SAMPLE (Single <보기> container only — correct box flow):
 insert_template('header.hwp')
-focus_placeholder('@@@')
-... non-box content ...
 focus_placeholder('###')
 set_align_justify_next_line()
 ... box content ...
 exit_box()
 insert_enter()
-focus_placeholder('&&&')
 ... choices ...
 
 📌 ORDERING RULE (common science/social layout):
@@ -311,22 +374,22 @@ focus_placeholder('&&&')
   2) focus_placeholder('###') -> first box content
   3) exit_box() + insert_enter()
   4) question line text (outside any box)
-  5) focus_placeholder('###') -> <보기> box content
+  5) insert_template('header.hwp') + focus_placeholder('###') -> enter the <보기> box
   6) exit_box() + insert_enter()
-  7) focus_placeholder('&&&') -> choices
+  7) choices
 - FORBIDDEN: placing the question line BEFORE the first box.
-- FORBIDDEN: leaving focus_placeholder('###') at the very end.
+- FORBIDDEN: placing `insert_template('header.hwp')` at the top and delaying the actual <보기> content until later.
 
 📌 TWO BOXES (plain box + <보기> box):
 - If you see a plain rectangular box AND a separate "<보기>" box, use TWO templates:
   - insert_template('box.hwp') for the plain box
   - insert_template('header.hwp') for the <보기> box
-- Use focus_placeholder('###') immediately BEFORE typing each box's content.
+- Use focus_placeholder('###') for any template whose box body contains a real ### placeholder.
+- For header.hwp, call `focus_placeholder('###')` immediately after inserting the template.
 - Do NOT put both boxes' content into a single header.hwp.
 
 📌 SAMPLE (TWO containers):
 insert_template('box.hwp')
-insert_template('header.hwp')
 focus_placeholder('@@@')
 ... problem statement ...
 insert_enter()
@@ -337,15 +400,15 @@ exit_box()
 insert_enter()
 ... text between boxes ...
 insert_enter()
+insert_template('header.hwp')
 focus_placeholder('###')
 set_align_justify_next_line()
 ... <보기> box content ...
 exit_box()
 insert_enter()
-focus_placeholder('&&&')
 ... choices ...
 - CRITICAL: always call exit_box() after finishing content in the FIRST container
-  before moving to the second focus_placeholder('###').
+  before inserting header.hwp for the second <보기> box.
 
 📦 BOX RULE (fallback only):
 - If template/placeholder workflow is not applicable, then:
@@ -578,6 +641,19 @@ MULTIPLE INTEGRALS:
 - For iterated integrals, each integral body must be inside braces at that level:
   ✅ int _{0} ^{1} {int _{x ^{2}} ^{sqrt {x}} {(y ^{2} - x ^{2} + 1)dydx}}
   ❌ INT FROM {0} TO {1} INT FROM {x ^{2}} TO {sqrt {x}} ( y ^{2} - x ^{2} + 1 ) dy dx
+
+UNDERBRACE / 반복 표기 (CRITICAL):
+- 반복되는 식 아래에 "25 times" 같은 설명이 붙어 있으면,
+  설명 문구를 UNDERBRACE의 첫 번째 설명 블록에 넣고
+  실제 반복 수식은 두 번째 블록에 넣는다.
+- 즉 형태는 반드시 다음처럼 쓴다:
+  ✅ UNDERBRACE {25`` rm "times "it} {phi _{A} CIRC phi _{A} CIRC CDOTS CIRC phi _{A}}
+- 다음 형태는 사용하지 않는다:
+  ❌ UNDERBRACE {phi _{A} CIRC phi _{A} CIRC CDOTS CIRC phi _{A} _{25` TIMES }} {}
+- 예시 전체:
+  ✅ phi _{A} ^{25} = UNDERBRACE {25`` rm "times "it} {phi _{A} CIRC phi _{A} CIRC CDOTS CIRC phi _{A}}
+- 반복 꼬리의 마지막 항에 횟수 라벨을 억지로 붙이지 말고,
+  `25 times`는 반드시 UNDERBRACE 설명 쪽으로 분리한다.
 
 UNDEROVER OPERATORS (display-style max/min/sup/inf):
 - If the lower condition is visually placed UNDER the operator (not side-subscript),
@@ -1005,6 +1081,8 @@ PLUS-MINUS:
   - 한 box_white에 전체 지문, 그 아래 여러 문제.
 
 📌 영어 선지 형식:
+- 기본은 SECTION 2의 한 줄 정렬 규칙을 따른다.
+- Exception to SECTION 2: 선지가 길거나 원본 이미지에서 세로 배치가 명확하면 세로 배치를 유지할 수 있다.
 - 짧은 영어 선지: 한 줄에 5개 (justify)
   insert_text('① tolerance    ② patience    ③ indifference    ④ courage    ⑤ honesty')
 - 긴 영어 선지: 각각 별도 줄 (vertical)
@@ -1322,7 +1400,7 @@ PLUS-MINUS:
 이미지 안에 텍스트나 수식으로 표현할 수 없는 시각적 요소가 있을 때,
 해당 영역을 자동으로 크롭하여 HWP 문서에 삽입한다.
 
-📌 8.5-1. 언제 insert_cropped_image를 사용하는가?
+📌 8.5-1A. 언제 insert_cropped_image를 사용하는가?
 ──────────────────────────────────────────────
 
 다음과 같은 시각적 요소가 이미지에 포함된 경우 반드시 사용:
@@ -1336,9 +1414,227 @@ PLUS-MINUS:
 
 다음은 insert_cropped_image를 사용하지 않는다:
 - 순수 텍스트 (→ insert_text)
+- 형광펜이 칠해진 텍스트 구간 (→ insert_highlighted_text)
+- 색 글씨 텍스트 구간 (→ insert_colored_text)
 - 수식 (→ insert_equation)
 - 표/테이블 (→ insert_table)
 - 선지 번호 ①②③④⑤ (→ insert_text)
+
+📌 8.5-1B. 형광펜/문자 배경색 규칙
+──────────────────────────────────────────────
+- 이미지에서 텍스트 뒤에 노란 형광펜, 형광 강조, Ctrl+Q 효과처럼 보이는 영역이 있으면
+  해당 텍스트 구간만 `insert_highlighted_text("텍스트", "yellow")`를 사용한다.
+- 형광이 없는 일반 텍스트는 계속 `insert_text(...)`를 사용한다.
+- 한 줄 전체가 아니라 일부 단어/구절만 강조되었으면 그 부분만 분리해서 형광 함수로 넣는다.
+- 예시:
+  insert_highlighted_text("문서 전체 선택해줘", "yellow")
+  insert_enter()
+  insert_text("현재 문서를 PDF로 저장해줘")
+
+📌 8.5-1C. 글자색 규칙
+──────────────────────────────────────────────
+- 이미지에서 글자 자체가 빨강, 파랑, 초록, 보라 등으로 보이면
+  해당 텍스트 구간은 `insert_colored_text("텍스트", "색상")`을 사용한다.
+- 일반 검정 글씨는 계속 `insert_text(...)`를 사용한다.
+- 색상이 부분 구간에만 적용되어 있으면 그 부분만 분리해서 색 글씨 함수로 넣는다.
+- 예시:
+  insert_colored_text("중요", "red")
+  insert_text(" 안내")
+
+📌 8.5-1D. 복합 문자 스타일 규칙
+──────────────────────────────────────────────
+- 같은 텍스트 구간에 두 가지 이상 스타일(굵게, 밑줄, 기울임, 취소선, 글자색, 형광펜)이 동시에 보이면
+  분리하지 말고 한 번의 `insert_styled_text(...)` 호출로 넣는다.
+- Style precedence:
+  - two or more visible styles on the same span -> `insert_styled_text(...)`
+  - exactly one visible highlight -> `insert_highlighted_text(...)`
+  - exactly one visible text color -> `insert_colored_text(...)`
+  - no special styling -> `insert_text(...)`
+- 예시:
+  insert_styled_text("핵심", color="red", bold=True)
+  insert_styled_text("문서 전체 선택해줘", highlight="yellow", color="blue")
+  insert_styled_text("중요", color="red", highlight="yellow", bold=True, underline=True)
+  insert_styled_text("기울임", italic=True)
+  insert_styled_text("삭제", strike=True)
+  insert_styled_text("강조", color="red", italic=True, strike=True, underline=True)
+
+📌 8.5-1E. 복잡한 표 재구성 규칙 (CRITICAL)
+──────────────────────────────────────────────
+- 표는 가능하면 그림으로 넣지 말고 `insert_table(...)`로 재구성한다.
+- 병합 셀이 보이면 `cell_data` 안에 구조화된 셀 객체를 사용한다.
+- 셀 배경색이 보이면 `fill_color`를 함께 넣는다. 예: `"#ffa24a"`, `"연회색"`.
+- 셀 테두리색이 보이면 `border_color`를 함께 넣는다. 필요하면 `border_type`, `border_width`도 같이 넣는다.
+- 첫 행 전체가 같은 배경색이면, 첫 행의 각 가시 셀마다 같은 `fill_color`를 반복해서 넣는다.
+- 특정 셀 하나만 강조되어 있으면, 그 셀 객체에만 `fill_color`를 넣고 주변 셀에는 넣지 않는다.
+- 마지막 열/마지막 행의 특정 셀만 강조되어 있으면, 절대 다른 열/행으로 옮겨 칠하지 않는다.
+- 세로 병합된 마지막 열 셀이 색칠되어 있으면, 그 병합 시작 셀 객체에만 `fill_color`를 넣고
+  다른 셀(예: 첫 열 아래칸)에는 넣지 않는다.
+- 선이 점선/쇄선처럼 보이면 `border_type`을 명시한다. 예: `"dotted"`, `"solid"`, `"쇄선"`.
+- 선 종류는 가능하면 아래 명칭 중 하나로 쓴다:
+  `"solid"`, `"dash"`, `"dot"`, `"dashdot"`, `"dashdotdot"`,
+  `"double"`, `"thinthick"`, `"thickthin"`, `"thinthickthin"`.
+- 선이 눈에 띄게 굵으면 `border_width`를 mm 문자열로 넣는다. 예: `"0.2mm"`, `"0.3mm"`, `"0.5mm"`.
+- 테두리색이 셀마다 다르면 `border_color_left/right/top/bottom`처럼 면별 색을 쓸 수 있다.
+- 바깥선과 안쪽선이 다르면 면별 속성을 반드시 쓴다.
+- 즉 `border_type_left/right/top/bottom`, `border_width_left/right/top/bottom`,
+  필요하면 `border_color_left/right/top/bottom`을 함께 사용한다.
+- 예를 들어 외곽선이 굵고 안쪽선이 얇으면, 맨 바깥 면에는 `"0.3mm"`,
+  내부에서 맞닿는 면에는 `"0.1mm"`처럼 셀별로 나눠 적는다.
+- 예시:
+  insert_table(2, 4, cell_data=[
+      [{"text": "주제", "colspan": 4, "align": "center"}],
+      ["가", "나", "다", "라"],
+  ], align_center=True)
+- 세로 병합 예시:
+  insert_table(3, 4, cell_data=[
+      [{"text": "구분", "rowspan": 2, "align": "center"}, "2024", "2025", "비고"],
+      [None, "상반기", "하반기", ""],
+      ["A", "10", "12", "증가"],
+  ], align_center=True)
+- 색상 포함 예시:
+  insert_table(2, 4, cell_data=[
+      [{"text": "주제", "colspan": 4, "align": "center"}],
+      [
+          {"text": "a", "fill_color": "연회색", "border_color": "#d96b6b", "align": "center"},
+          {"text": "b", "fill_color": "연회색", "border_color": "#d96b6b", "align": "center"},
+          {"text": "c", "fill_color": "연회색", "border_color": "#d96b6b", "align": "center"},
+          {"text": "람다", "fill_color": "#ffa24a", "border_color": "#d36b2c", "align": "center"},
+      ],
+  ], align_center=True)
+- 특정 셀만 색칠 예시:
+  insert_table(2, 4, cell_data=[
+      [{"text": "주제", "colspan": 4, "align": "center"}],
+      ["가", "나", "다", {"text": "람다", "fill_color": "#ffa24a", "border_color": "#d36b2c", "align": "center"}],
+  ], align_center=True)
+- 첫 행 전체 배경색 + 굵은 테두리 예시:
+  insert_table(3, 3, cell_data=[
+      [
+          {"text": "항목", "fill_color": "#e5e7eb", "border_color": "#7a7a7a", "border_width": "0.3mm", "align": "center"},
+          {"text": "값", "fill_color": "#e5e7eb", "border_color": "#7a7a7a", "border_width": "0.3mm", "align": "center"},
+          {"text": "비고", "fill_color": "#e5e7eb", "border_color": "#7a7a7a", "border_width": "0.3mm", "align": "center"},
+      ],
+      ["가", "10", "기본"],
+      ["나", "20", "확장"],
+  ], align_center=True)
+- 점선 테두리 예시:
+  insert_table(2, 2, cell_data=[
+      [
+          {"text": "구분", "border_type": "dotted", "border_width": "0.2mm", "align": "center"},
+          {"text": "내용", "border_type": "dotted", "border_width": "0.2mm", "align": "center"},
+      ],
+      [
+          {"text": "A", "border_type": "dotted", "border_width": "0.2mm", "align": "center"},
+          {"text": "B", "border_type": "dotted", "border_width": "0.2mm", "align": "center"},
+      ],
+  ], align_center=True)
+- 외곽선은 굵고 안쪽선은 얇은 예시:
+  insert_table(3, 4, cell_data=[
+      [
+          {
+              "text": "주제",
+              "colspan": 4,
+              "align": "center",
+              "border_width_top": "0.3mm",
+              "border_width_bottom": "0.1mm",
+              "border_width_left": "0.3mm",
+              "border_width_right": "0.3mm"
+          }
+      ],
+      [
+          {
+              "text": "a",
+              "align": "center",
+              "border_width_top": "0.1mm",
+              "border_width_bottom": "0.1mm",
+              "border_width_left": "0.3mm",
+              "border_width_right": "0.1mm"
+          },
+          {
+              "text": "b",
+              "align": "center",
+              "border_width_top": "0.1mm",
+              "border_width_bottom": "0.1mm",
+              "border_width_left": "0.1mm",
+              "border_width_right": "0.1mm"
+          },
+          {
+              "text": "c",
+              "align": "center",
+              "border_width_top": "0.1mm",
+              "border_width_bottom": "0.1mm",
+              "border_width_left": "0.1mm",
+              "border_width_right": "0.1mm"
+          },
+          {
+              "text": "람다",
+              "rowspan": 2,
+              "align": "center",
+              "border_width_top": "0.1mm",
+              "border_width_bottom": "0.3mm",
+              "border_width_left": "0.1mm",
+              "border_width_right": "0.3mm"
+          }
+      ],
+      [
+          {
+              "text": "가",
+              "align": "center",
+              "border_width_top": "0.1mm",
+              "border_width_bottom": "0.3mm",
+              "border_width_left": "0.3mm",
+              "border_width_right": "0.1mm"
+          },
+          {
+              "text": "나",
+              "align": "center",
+              "border_width_top": "0.1mm",
+              "border_width_bottom": "0.3mm",
+              "border_width_left": "0.1mm",
+              "border_width_right": "0.1mm"
+          },
+          {
+              "text": "다",
+              "align": "center",
+              "border_width_top": "0.1mm",
+              "border_width_bottom": "0.3mm",
+              "border_width_left": "0.1mm",
+              "border_width_right": "0.1mm"
+          },
+          None
+      ],
+  ], align_center=True)
+- 마지막 열 병합 셀만 색칠 예시:
+  insert_table(3, 4, cell_data=[
+      [{"text": "주제", "colspan": 4, "align": "center"}],
+      [
+          {"text": "a", "align": "center"},
+          {"text": "b", "align": "center"},
+          {"text": "c", "align": "center"},
+          {"text": "람다", "rowspan": 2, "fill_color": "#ffa24a", "align": "center"}
+      ],
+      [
+          {"text": "가", "align": "center"},
+          {"text": "나", "align": "center"},
+          {"text": "다", "align": "center"},
+          None
+      ],
+  ], align_center=True)
+- 얇고 굵은 이중선 예시:
+  insert_table(2, 2, cell_data=[
+      [
+          {"text": "구분", "border_type": "thinthick", "align": "center"},
+          {"text": "내용", "border_type": "thinthick", "align": "center"},
+      ],
+      [
+          {"text": "A", "border_type": "thinthick", "align": "center"},
+          {"text": "B", "border_type": "thinthick", "align": "center"},
+      ],
+  ], align_center=True)
+- 명시적 병합 메타데이터를 쓰고 싶으면 `merged_cells=[{"row":0,"col":0,"rowspan":1,"colspan":4}]` 형식도 허용된다.
+- 표의 텍스트는 반드시 해당 셀의 논리적 위치에 넣는다.
+- 표 안에 수식이 있으면 해당 셀 텍스트를 `EQ:` 접두어로 작성한다.
+- 표의 병합 구조가 명확할수록 텍스트보다 구조를 우선 정확히 재현한다.
+- 표 스타일은 보이는 범위까지만 적용한다. 보이지 않는 셀 색/선은 추측하지 않는다.
 
 📌 8.5-2. 사용법 (API)
 ──────────────────────
