@@ -1,0 +1,982 @@
+/* ========================================
+   프로필 페이지 - 모던 다크 디자인
+   ======================================== */
+
+/* 컨테이너 */
+.profile-container {
+    min-height: 100vh;
+    min-height: 100dvh;
+    background: #000;
+    padding-top: 80px;
+    padding-bottom: 120px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    position: relative;
+}
+
+.profile-layout {
+    display: flex;
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+    padding: 0 var(--padding-x-mobile);
+    align-items: flex-start;
+}
+
+@media (min-width: 768px) {
+    .profile-layout {
+        padding: 0 var(--padding-x-tablet);
+    }
+}
+
+@media (min-width: 1280px) {
+    .profile-layout {
+        padding: 0 var(--padding-x);
+    }
+}
+
+/* ========================================
+   사이드바
+   ======================================== */
+.profile-sidebar {
+    width: 220px;
+    flex-shrink: 0;
+    padding: 1rem 1.5rem 2rem 0;
+    position: sticky;
+    top: 80px;
+    height: auto;
+    max-height: calc(100vh - 80px);
+    overflow-y: auto;
+}
+
+.profile-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.profile-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    border: none;
+    background: transparent;
+    color: #888;
+    font-size: 0.9375rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    text-align: left;
+    width: 100%;
+}
+
+.profile-nav-item:hover {
+    background: #111;
+    color: #ccc;
+}
+
+.profile-nav-item.active {
+    background: #161616;
+    color: #fff;
+}
+
+.profile-nav-item svg {
+    flex-shrink: 0;
+    opacity: 0.7;
+}
+
+.profile-nav-item.active svg {
+    opacity: 1;
+}
+
+/* ========================================
+   메인 콘텐츠
+   ======================================== */
+.profile-main {
+    flex: 1;
+    padding: 2.5rem 0 4rem 2rem;
+    max-width: none;
+    min-width: 0;
+    overflow-x: hidden;
+}
+
+/* 섹션 헤더 */
+.profile-section-header {
+    margin-bottom: 2rem;
+    padding-bottom: 0;
+    border-bottom: none;
+}
+
+.profile-title {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: #fff;
+    margin: 0 0 6px 0;
+    letter-spacing: -0.02em;
+}
+
+.profile-subtitle {
+    font-size: 0.9375rem;
+    color: #666;
+    margin: 0;
+}
+
+/* ========================================
+   폼 & 섹션
+   ======================================== */
+.profile-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+.profile-section {
+    padding: 1.5rem 0;
+    border-bottom: 1px solid #1a1a1a;
+}
+
+.profile-section:last-of-type {
+    border-bottom: none;
+}
+
+.profile-section-title {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #555;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin: 0 0 1.25rem 0;
+}
+
+/* ========================================
+   아바타 영역
+   ======================================== */
+.profile-avatar-area {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+}
+
+.profile-avatar-wrapper {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 2px solid #222;
+    flex-shrink: 0;
+}
+
+.profile-avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.profile-avatar-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #161616;
+    color: #666;
+    font-size: 1.75rem;
+    font-weight: 600;
+}
+
+.profile-avatar-actions {
+    display: flex;
+    gap: 0.75rem;
+}
+
+/* ========================================
+   입력 필드
+   ======================================== */
+.profile-field {
+    margin-bottom: 1.5rem;
+}
+
+.profile-label {
+    display: block;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #999;
+    margin-bottom: 0.5rem;
+}
+
+.profile-input {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    font-size: 0.9375rem;
+    color: #fff;
+    background: #0a0a0a;
+    border: 1px solid #222;
+    border-radius: 10px;
+    outline: none;
+    transition: border-color 0.15s ease;
+}
+
+.profile-input:focus {
+    border-color: #444;
+}
+
+.profile-input::placeholder {
+    color: #555;
+}
+
+.profile-input-disabled {
+    background: #0a0a0a;
+    color: #555;
+    cursor: not-allowed;
+}
+
+.profile-hint {
+    font-size: 0.8125rem;
+    color: #555;
+    margin-top: 0.5rem;
+}
+
+/* ========================================
+   현재 플랜 카드
+   ======================================== */
+.current-plan-card {
+    background: #0e0e0e;
+    border: 1px solid #1c1c1c;
+    border-radius: 14px;
+    padding: 24px;
+    margin-top: 0;
+}
+
+/* Payment tab: remove card container, keep line separators */
+.payment-flat-section {
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    padding: 1.25rem 0;
+}
+
+.payment-flat-section + .payment-flat-section {
+    border-top: 1px solid #1a1a1a;
+}
+
+.current-plan-header {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 24px;
+    align-items: center;
+}
+
+.current-plan-left {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.current-plan-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.current-plan-icon,
+.current-plan-icon.free,
+.current-plan-icon.basic {
+    background: #1a1a1a;
+    color: #888;
+}
+
+.current-plan-icon.plus {
+    background: #0c1529;
+    color: #5b8def;
+}
+
+.current-plan-icon.pro {
+    background: #1c1206;
+    color: #e8a040;
+}
+
+.current-plan-icon.usage {
+    background: #1a1a1a;
+    color: #888;
+}
+
+.current-plan-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.current-plan-name {
+    font-weight: 600;
+    font-size: 1rem;
+    color: #fff;
+}
+
+.current-plan-desc {
+    font-size: 0.8125rem;
+    color: #666;
+    display: block;
+}
+
+.current-plan-center {
+    display: flex;
+    gap: 32px;
+    align-items: center;
+    justify-content: center;
+}
+
+.current-plan-center-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.current-plan-center-item .label {
+    font-size: 0.75rem;
+    color: #555;
+    letter-spacing: 0.01em;
+}
+
+.current-plan-center-item .value {
+    font-weight: 700;
+    color: #fff;
+    font-size: 1rem;
+    line-height: 1.2;
+}
+
+.current-plan-right {
+    display: flex;
+    gap: 0.5rem;
+}
+
+/* 구독 취소 버튼 */
+.current-plan-cancel-btn {
+    font-size: 0.8125rem;
+    color: #ef4444;
+    background: none;
+    border: none;
+    cursor: pointer;
+}
+
+.current-plan-cancel-outline {
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: 1px solid #3a1515;
+    color: #ef4444;
+    background: transparent;
+    font-weight: 600;
+    font-size: 0.8125rem;
+    transition: all 0.15s ease;
+}
+
+.current-plan-cancel-outline:hover:not(:disabled) {
+    background: #1f0808;
+    border-color: #ef4444;
+}
+
+.current-plan-cancel-outline:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+/* Hide meta (moved to header center) */
+.current-plan-meta {
+    display: none;
+}
+
+/* Mobile dates component */
+.current-plan-dates-mobile {
+    display: none;
+}
+
+/* ========================================
+   설정 아이템
+   ======================================== */
+.profile-setting-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 0;
+}
+
+.profile-setting-item:first-child {
+    padding-top: 0;
+}
+
+.profile-setting-item:last-child {
+    padding-bottom: 0;
+}
+
+.profile-setting-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.profile-setting-label {
+    font-size: 0.9375rem;
+    font-weight: 500;
+    color: #eee;
+}
+
+.profile-setting-desc {
+    font-size: 0.8125rem;
+    color: #555;
+}
+
+/* ========================================
+   위험 영역
+   ======================================== */
+.danger-zone {
+    margin-top: 1.5rem;
+    padding: 1.25rem 1.5rem;
+    border: 1px solid #2d1111;
+    background: #110808;
+    border-radius: 12px;
+}
+
+.danger-title {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: #ef4444;
+    margin: 0 0 0.75rem 0;
+}
+
+.danger-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.danger-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.danger-label {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: #eee;
+}
+
+.danger-desc {
+    font-size: 0.8125rem;
+    color: #666;
+}
+
+.danger-btn {
+    background: transparent;
+    color: #ef4444;
+    border: 1px solid #3a1515;
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+}
+
+.danger-btn:hover:not(:disabled) {
+    background: #1f0808;
+    border-color: #ef4444;
+}
+
+.danger-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* ========================================
+   버튼 공통
+   ======================================== */
+.profile-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 8px 18px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    border-radius: 10px;
+    border: none;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    text-decoration: none;
+}
+
+.profile-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.profile-btn-primary {
+    background: #fff;
+    color: #000;
+}
+
+.profile-btn-primary:hover:not(:disabled) {
+    background: #e5e5e5;
+}
+
+.profile-btn-secondary {
+    background: #161616;
+    color: #ccc;
+    border: 1px solid #262626;
+}
+
+.profile-btn-secondary:hover:not(:disabled) {
+    background: #1e1e1e;
+    border-color: #333;
+}
+
+.profile-btn-ghost {
+    background: transparent;
+    color: #888;
+}
+
+.profile-btn-ghost:hover:not(:disabled) {
+    color: #ccc;
+    background: #111;
+}
+
+.profile-btn-danger {
+    background: transparent;
+    color: #ef4444;
+    border: 1px solid #3a1515;
+}
+
+.profile-btn-danger:hover:not(:disabled) {
+    background: #1f0808;
+    border-color: #ef4444;
+}
+
+.profile-btn-danger-outline {
+    background: transparent;
+    color: #ef4444;
+    border: 1px solid #3a1515;
+}
+
+.profile-btn-danger-outline:hover:not(:disabled) {
+    background: #1f0808;
+    border-color: #ef4444;
+}
+
+.profile-btn-danger-outline:disabled {
+    opacity: 0.4;
+    border-color: #333;
+    color: #666;
+}
+
+/* 저장 버튼 */
+.profile-actions {
+    padding-top: 1.5rem;
+}
+
+.profile-btn-save {
+    width: 100%;
+    padding: 12px 1.5rem;
+    font-size: 0.9375rem;
+    border-radius: 10px;
+}
+
+/* ========================================
+   알림 메시지
+   ======================================== */
+.profile-alert {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 12px 16px;
+    border-radius: 10px;
+    font-size: 0.875rem;
+    margin-top: 1rem;
+}
+
+.profile-alert-error {
+    background: #110808;
+    color: #ef4444;
+    border: 1px solid #2d1111;
+}
+
+.profile-alert-success {
+    background: #081108;
+    color: #4ade80;
+    border: 1px solid #112d11;
+}
+
+/* ========================================
+   요금제 섹션 (프라이싱 embed)
+   ======================================== */
+.profile-section--main-pricing {
+    padding: 0;
+    border-bottom: none;
+    width: 100%;
+}
+
+.profile-section--main-pricing .pricing-section {
+    padding: 2rem 0 0 0;
+    background: transparent;
+    scroll-margin-top: 0;
+}
+
+.profile-section--main-pricing .pricing-title,
+.profile-section--main-pricing .pricing-subtitle {
+    display: none;
+}
+
+.profile-section--main-pricing .pricing-header {
+    padding-bottom: 0;
+    margin-bottom: 0;
+}
+
+.profile-section--main-pricing .pricing-billing-toggle {
+    margin-top: 0;
+    margin-bottom: 1.25rem;
+}
+
+.profile-section--main-pricing .pricing-cards-wrapper {
+    max-width: 100%;
+}
+
+/* ========================================
+   모바일 탑 탭
+   ======================================== */
+.profile-top-nav {
+    display: none !important;
+}
+
+/* ========================================
+   반응형 - 태블릿 (1024px 이하)
+   ======================================== */
+@media (max-width: 1024px) {
+    .profile-layout {
+        flex-direction: column;
+    }
+
+    .profile-sidebar {
+        width: 100%;
+        height: auto;
+        position: relative;
+        top: 0;
+        padding: 1rem 0;
+        border-right: none;
+        border-bottom: 1px solid #1a1a1a;
+    }
+
+    .profile-nav {
+        flex-direction: row;
+        gap: 0.5rem;
+    }
+
+    .profile-nav-item {
+        flex: 1;
+        justify-content: center;
+        padding: 10px 14px;
+    }
+
+    .profile-main {
+        padding: 2rem 0;
+        max-width: 100%;
+    }
+
+    .profile-label {
+        display: block;
+        font-size: 0.875rem;
+        font-weight: 500;
+        color: #999;
+    }
+}
+
+/* ========================================
+   반응형 - 모바일 (640px 이하)
+   ======================================== */
+@media (max-width: 640px) {
+    .profile-container {
+        padding-top: 60px;
+        padding-bottom: max(120px, env(safe-area-inset-bottom, 0px) + 100px);
+    }
+
+    .profile-layout {
+        padding: 0 !important;
+    }
+
+    .desktop-navbar {
+        display: block !important;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 60;
+    }
+
+    .mobile-sidebar-container {
+        display: block;
+    }
+
+    .profile-sidebar {
+        display: none;
+    }
+
+    /* Top nav tabs for mobile */
+    .profile-top-nav {
+        display: flex !important;
+        gap: 6px;
+        align-items: center;
+        justify-content: center;
+        margin-top: 4rem;
+        margin-bottom: 0.5rem;
+        padding: 0 1rem;
+    }
+
+    .profile-top-nav .profile-nav-item {
+        flex: 1;
+        justify-content: center;
+        white-space: nowrap;
+        border: 1px solid #222;
+        padding: 8px 12px;
+        font-size: 0.8125rem;
+    }
+
+    .profile-top-nav .profile-nav-item span {
+        display: inline-block !important;
+        font-size: 0.8125rem;
+        font-weight: 600;
+        margin-left: 4px;
+    }
+
+    .profile-top-nav .profile-nav-item.active {
+        background: #fff;
+        color: #000;
+        border-color: #fff;
+    }
+
+    .profile-top-nav .profile-nav-item.active svg {
+        stroke: #000;
+    }
+
+    /* Main content */
+    .profile-main {
+        width: 88% !important;
+        max-width: 560px !important;
+        margin: 0 auto !important;
+        padding: 0 !important;
+    }
+
+    .profile-section-header {
+        margin-bottom: 1.25rem;
+    }
+
+    .profile-title {
+        font-size: 1.25rem;
+    }
+
+    .profile-subtitle {
+        font-size: 0.875rem;
+    }
+
+    /* Avatar */
+    .profile-avatar-area {
+        flex-direction: column;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .profile-avatar-wrapper {
+        width: 72px;
+        height: 72px;
+    }
+
+    .profile-avatar-actions {
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+
+    /* Form fields */
+    .profile-section {
+        padding: 1rem 0;
+    }
+
+    .profile-field {
+        width: 100%;
+    }
+
+    .profile-input {
+        font-size: 1rem;
+    }
+
+    /* Settings */
+    .profile-setting-item {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.75rem;
+    }
+
+    .profile-setting-item .profile-btn {
+        width: 100%;
+    }
+
+    /* Plan card */
+    .current-plan-card {
+        padding: 20px 16px;
+    }
+
+    .current-plan-header {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .current-plan-left {
+        justify-content: center;
+        width: 100%;
+    }
+
+    .current-plan-center {
+        display: none !important;
+    }
+
+    .current-plan-right {
+        display: none !important;
+    }
+
+    /* Mobile dates row */
+    .current-plan-dates-mobile {
+        display: flex !important;
+        flex-direction: row;
+        gap: 8px;
+        align-items: flex-end;
+        justify-content: center;
+        width: 100%;
+        margin-top: 16px;
+        padding: 0 8px;
+    }
+
+    .current-plan-dates-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+        flex: 0 0 auto;
+    }
+
+    .current-plan-dates-item .label {
+        font-size: 0.6875rem !important;
+        color: #555 !important;
+    }
+
+    .current-plan-dates-item .value {
+        font-size: 0.875rem !important;
+        font-weight: 700 !important;
+        color: #fff !important;
+    }
+
+    .current-plan-dates-mobile .current-plan-cancel-btn-mobile {
+        display: inline-flex !important;
+        font-size: 0.75rem;
+        padding: 6px 10px;
+        flex: 0 0 auto;
+    }
+
+    .current-plan-cancel-btn-mobile {
+        background: transparent;
+        border: 1px solid #3a1515;
+        color: #ef4444;
+        padding: 6px 10px;
+        border-radius: 6px;
+        font-size: 0.75rem;
+        cursor: pointer;
+        transition: all 0.15s ease;
+    }
+
+    .current-plan-cancel-btn-mobile:hover:not(:disabled) {
+        background: #1f0808;
+    }
+
+    .current-plan-cancel-btn-mobile:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+    }
+
+    /* Danger zone */
+    .danger-zone {
+        margin-top: 1rem;
+        padding: 1rem;
+    }
+
+    .danger-row {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.75rem;
+    }
+
+    .danger-btn {
+        width: 100%;
+        text-align: center;
+    }
+
+    /* Save button */
+    .profile-btn-save {
+        width: 100%;
+        margin: 0.5rem 0;
+    }
+
+    /* Alert */
+    .profile-alert {
+        padding: 10px 12px;
+        font-size: 0.8125rem;
+    }
+
+    /* Pricing section */
+    .profile-form {
+        width: 100%;
+        padding: 0;
+    }
+}
+
+/* ========================================
+   반응형 - 아주 작은 화면 (380px 이하)
+   ======================================== */
+@media (max-width: 380px) {
+    .profile-main {
+        width: 92% !important;
+    }
+
+    .profile-top-nav {
+        gap: 4px;
+    }
+
+    .profile-top-nav .profile-nav-item {
+        padding: 6px 8px;
+        font-size: 0.75rem;
+    }
+
+    .profile-top-nav .profile-nav-item span {
+        font-size: 0.75rem;
+    }
+}
+
+/* ========================================
+   Desktop overrides (641px 이상)
+   ======================================== */
+@media (min-width: 641px) {
+    .profile-top-nav {
+        display: none !important;
+    }
+
+    .current-plan-dates-mobile,
+    .current-plan-cancel-btn-mobile,
+    .current-plan-cancel-mobile-wrap {
+        display: none !important;
+    }
+}

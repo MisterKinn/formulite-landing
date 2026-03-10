@@ -1,0 +1,12 @@
+.next
+node_modules
+.env.local
+.env
+.vercel
+*.tsbuildinfo
+nova-ai-*-firebase-adminsdk-*.json
+assets
+.venv
+nova-ai/.venv
+nova-ai/output
+*.exe

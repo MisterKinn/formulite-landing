@@ -1,0 +1,480 @@
+/* Download Page - Apple-inspired Minimal Design */
+
+.download-page {
+    min-height: 100vh;
+    background: #000;
+}
+
+.download-main {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 0 2rem 6rem 2rem;
+}
+
+/* Hero Section */
+.download-hero {
+    text-align: center;
+    padding-top: 8rem;
+    padding-bottom: 4rem;
+}
+
+.download-hero-badge {
+    display: inline-block;
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    font-size: 0.875rem;
+    font-weight: 600;
+    padding: 0.5rem 1.25rem;
+    border-radius: 100px;
+    margin-bottom: 1.5rem;
+    letter-spacing: 0.02em;
+}
+
+.download-hero-title {
+    font-size: 4rem;
+    font-weight: 700;
+    color: #fff;
+    line-height: 1.1;
+    margin: 0 0 1.5rem 0;
+    letter-spacing: -0.03em;
+}
+
+.download-hero-highlight {
+    background: linear-gradient(135deg, #fff 0%, rgba(255, 255, 255, 0.6) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.download-hero-desc {
+    font-size: 1.25rem;
+    color: rgba(255, 255, 255, 0.6);
+    line-height: 1.7;
+    margin: 0;
+    font-weight: 400;
+}
+
+/* Platform Cards */
+.download-platforms {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+    max-width: 700px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.download-platforms.single-platform {
+    grid-template-columns: minmax(280px, 420px);
+    justify-content: center;
+}
+
+.download-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 1.25rem;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 1.25rem;
+    padding: 2.5rem 2rem 2rem 2rem;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.download-card:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.15);
+    transform: translateY(-4px);
+}
+
+.download-card-icon {
+    flex-shrink: 0;
+    width: 80px;
+    height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.download-card-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.download-card-title {
+    font-size: 1.375rem;
+    font-weight: 600;
+    color: #fff;
+    margin: 0;
+}
+
+.download-card-desc {
+    font-size: 0.9rem;
+    color: rgba(255, 255, 255, 0.5);
+    margin: 0;
+}
+
+.download-card-size {
+    font-size: 0.85rem;
+    color: rgba(255, 255, 255, 0.35);
+    display: block;
+}
+
+.download-card-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 50%;
+    color: #fff;
+    transition: all 0.3s ease;
+    text-decoration: none;
+    margin-top: 0.5rem;
+}
+
+.download-card-button:hover {
+    background: #fff;
+    color: #000;
+    transform: scale(1.1);
+}
+
+.download-card:hover .download-card-button {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.download-card:hover .download-card-button:hover {
+    background: #fff;
+    color: #000;
+}
+
+.download-card-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+}
+
+.download-card-button--lite {
+    width: auto;
+    min-width: 80px;
+    height: 40px;
+    border-radius: 999px;
+    padding: 0 1rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
+
+/* Version Info */
+.download-version {
+    text-align: center;
+    color: rgba(255, 255, 255, 0.4);
+    font-size: 0.875rem;
+    margin-bottom: 5rem;
+}
+
+.download-version-divider {
+    margin: 0 0.5rem;
+}
+
+/* Installation Steps */
+.download-steps {
+    margin-bottom: 5rem;
+}
+
+.download-steps-title {
+    font-size: 2rem;
+    font-weight: 600;
+    color: #fff;
+    text-align: center;
+    margin: 5rem 0 1rem 0;
+    letter-spacing: -0.02em;
+}
+
+.download-steps-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2rem;
+}
+
+.download-step {
+    text-align: center;
+    padding: 2rem;
+}
+
+.download-step-number {
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 50%;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #fff;
+    margin: 0 auto 1.25rem auto;
+}
+
+.download-step-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: #fff;
+    margin: 0 0 0.5rem 0;
+}
+
+.download-step-desc {
+    font-size: 0.9375rem;
+    color: rgba(255, 255, 255, 0.5);
+    line-height: 1.6;
+    margin: 0;
+}
+
+/* Installation Guide - Carousel */
+.download-guide {
+    margin-bottom: 5rem;
+}
+
+.download-guide-title {
+    font-size: 2rem;
+    font-weight: 600;
+    color: #fff;
+    text-align: center;
+    margin: 5rem 0 2rem 0;
+    letter-spacing: -0.02em;
+}
+
+.download-guide-carousel {
+    max-width: 1320px;
+    margin: 0 auto;
+}
+
+.download-guide-viewport {
+    width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-radius: 1rem;
+    cursor: grab;
+    touch-action: pan-x;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.download-guide-viewport::-webkit-scrollbar {
+    display: none;
+}
+
+.download-guide-viewport.is-dragging {
+    cursor: grabbing;
+}
+
+.download-guide-track {
+    display: flex;
+    gap: 1rem;
+    user-select: none;
+}
+
+.download-guide-slide {
+    flex: 0 0 calc((100% - 1rem) / 2);
+    flex-shrink: 0;
+    scroll-snap-align: start;
+}
+
+.download-guide-image-wrapper {
+    position: relative;
+    width: 100%;
+    border-radius: 1rem;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.download-guide-image-label {
+    position: absolute;
+    top: 0.75rem;
+    left: 0.75rem;
+    z-index: 2;
+    padding: 0.3rem 0.6rem;
+    border-radius: 999px;
+    background: #fff;
+    color: #111;
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+}
+
+.download-guide-image {
+    width: 100%;
+    height: auto;
+    display: block;
+    pointer-events: none;
+    -webkit-user-drag: none;
+}
+
+.download-guide-dots {
+    display: flex;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-top: 1.5rem;
+}
+
+.download-guide-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255, 255, 255, 0.2);
+    cursor: pointer;
+    padding: 0;
+    transition: all 0.3s ease;
+}
+
+.download-guide-dot.active {
+    background: #fff;
+    transform: scale(1.25);
+}
+
+.download-guide-dot:hover:not(.active) {
+    background: rgba(255, 255, 255, 0.4);
+}
+
+.download-guide-counter {
+    text-align: center;
+    color: rgba(255, 255, 255, 0.4);
+    font-size: 0.875rem;
+    margin: 0.75rem 0 0 0;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Requirements Section */
+.download-requirements {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 1.5rem;
+    padding: 3rem;
+}
+
+.download-requirements-title {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: #fff;
+    text-align: center;
+    margin: 0 0 2rem 0;
+    letter-spacing: -0.02em;
+}
+
+.download-requirements-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.5rem;
+}
+
+.download-requirement-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.download-requirement-item:last-child,
+.download-requirement-item:nth-last-child(2) {
+    border-bottom: none;
+}
+
+.download-requirement-label {
+    font-size: 0.9375rem;
+    color: rgba(255, 255, 255, 0.5);
+}
+
+.download-requirement-value {
+    font-size: 0.9375rem;
+    color: #fff;
+    font-weight: 500;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .download-main {
+        padding: 0 1.5rem 4rem 1.5rem;
+    }
+
+    .download-hero {
+        padding-top: 6rem;
+        padding-bottom: 3rem;
+    }
+
+    .download-hero-title {
+        font-size: 2.5rem;
+    }
+
+    .download-hero-desc {
+        font-size: 1rem;
+    }
+
+    .download-platforms {
+        grid-template-columns: 1fr;
+        max-width: 400px;
+    }
+
+    .download-card {
+        padding: 2rem 1.5rem;
+    }
+
+    .download-card-icon {
+        width: 64px;
+        height: 64px;
+    }
+
+    .download-card-icon svg {
+        width: 56px;
+        height: 56px;
+    }
+
+    .download-guide-slide {
+        flex: 0 0 100%;
+    }
+
+    .download-requirements {
+        padding: 2rem 1.5rem;
+    }
+
+    .download-requirements-grid {
+        grid-template-columns: 1fr;
+        gap: 0;
+    }
+
+    .download-requirement-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.25rem;
+        padding: 1rem 0;
+    }
+
+    .download-requirement-item:last-child {
+        border-bottom: none;
+    }
+
+    .download-requirement-item:nth-last-child(2) {
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+}
+
+@media (max-width: 480px) {
+    .download-hero-title {
+        font-size: 2rem;
+    }
+
+    .download-hero-badge {
+        font-size: 0.8125rem;
+        padding: 0.4rem 1rem;
+    }
+}

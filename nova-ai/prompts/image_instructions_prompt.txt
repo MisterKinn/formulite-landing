@@ -1,0 +1,1756 @@
+# LitePro - Image Instructions Prompt
+# Image-specific guidance to improve accuracy.
+# Covers all CSAT (수능) subjects with subject-specific formatting rules.
+
+[PROMPT]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔴 SECTION 0: CORE OCR RULES (ALL SUBJECTS)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1) TEXT FIRST, FORMULAS SECOND
+2) DO NOT SKIP KOREAN TEXT OR QUESTION NUMBERS
+3) READ TOP TO BOTTOM, LINE BY LINE
+4) KEEP ORIGINAL LINE BREAKS (use insert_enter)
+5) INLINE MATH: split text and formulas
+6) KEEP INDENTATION AND SPACES
+
+Read the image carefully and extract EVERYTHING.
+
+TEXT FONT POLICY (ALL SUBJECTS):
+- All plain text entered with insert_text() must use font: '신명 중명조'.
+- Keep math equations in equation rendering rules (HancomEQN / HYhwpEQ paths) as-is.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🧭 SECTION 0.5: RULE PRECEDENCE / CONFLICT RESOLUTION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+This prompt contains shared rules, routing rules, and subject-specific exceptions.
+To avoid conflicts, ALWAYS resolve instructions in the following priority order:
+
+1) SECTION 0 core OCR rules
+2) SECTION 1 / 1.5 routing rules (`SUBJECT`, `FORMAT_TYPE`)
+3) SECTION 1.6 plain-format rules when `FORMAT_TYPE = "plain"`
+4) SECTION 2 common exam rules when `FORMAT_TYPE = "exam"`
+5) SECTION 3~8 subject-specific overrides for the detected subject
+6) SECTION 4-2 math syntax rules for any math equation rendering
+7) Any later rule explicitly marked CRITICAL overrides an earlier generic note/example
+
+Interpretation rules:
+- If `FORMAT_TYPE = "plain"`, DO NOT apply exam-only layout rules from SECTION 2 or subject examples that depend on templates/placeholders/choice formatting.
+- If a subject-specific section conflicts with SECTION 2, the subject-specific section wins for that subject only.
+- If an example conflicts with an explicit rule sentence, follow the explicit rule sentence.
+- Examples are illustrative, not authoritative, unless they are the only rule given for that pattern.
+
+Maintenance rules for this file:
+- Put shared formatting rules in SECTION 2 only.
+- Put subject exceptions only inside the relevant subject section.
+- Do not restate a shared rule inside a subject section unless the subject changes the default behavior.
+- When adding a new exception, write "Exception to SECTION 2" so the override is traceable.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔍 SECTION 1: SUBJECT AUTO-DETECTION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Before generating code, detect the subject from visual/textual cues.
+Add the detected subject flag at the VERY TOP of the generated code:
+
+  SUBJECT = "math"          # 수학
+  SUBJECT = "korean"        # 국어 (독서/문학/언어와매체/화법과작문)
+  SUBJECT = "english"       # 영어
+  SUBJECT = "history"       # 한국사
+  SUBJECT = "social"        # 사회탐구 (윤리/지리/역사/경제/정치와법/사회문화)
+  SUBJECT = "science"       # 과학탐구 (물리/화학/생명과학/지구과학)
+
+Detection hints:
+- 수학: Math formulas, equations, graphs, "f(x)=", "lim", integral signs, 주관식(short answer)
+- 국어: Long Korean passages, (가)/(나) labels for texts, poetry line breaks,
+        ㉠㉡㉢㉣ markers in text, "윗글", "위 글", 밑줄 친 부분
+- 영어: English paragraphs, "다음 글", "밑줄 친", "(A)/(B)/(C)" paragraph labels,
+        English reading passages, fill-in-the-blank in English
+- 한국사: Historical terms, "~시대", era names, "(가) 인물/사건", dialogue bubbles,
+          historical source quotes in boxes, "밑줄 친 '~'에 해당하는"
+- 사회탐구: Charts, pie graphs, bar graphs, "갑/을/병/정" positions,
+           ethical concepts, map-based questions, political/economic terms
+- 과학탐구: Experimental diagrams, circuit diagrams, chemical formulas,
+           scientific units (m/s, kg, N, Hz, nm), "실험" keyword,
+           organism/cell diagrams, geological layers, wave patterns
+
+If the subject is math, also add: MATH_CHOICES_EQUATION = True
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔎 SECTION 1.5: FORMAT TYPE DETECTION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+After detecting the subject, ALSO detect the FORMAT TYPE of the content.
+Add the detected format flag right after the SUBJECT flag:
+
+  FORMAT_TYPE = "exam"         # 평가원/수능/모의고사 문제 스타일 (선지, 점수, 박스 등)
+  FORMAT_TYPE = "plain"        # 줄글/풀이/설명/교재 스타일 (자유 서술 형식)
+
+Detection hints for FORMAT_TYPE = "plain":
+- ①②③④⑤ 선지가 보이지 않음
+- [2점]/[3점]/[4점] 배점 표시가 없음
+- <보기> 박스나 테두리 상자가 없음
+- 내용이 문단/줄글 형태로 서술되어 있음
+- 문제 번호(01, 02 등) 뒤에 풀이/설명이 이어지는 형태
+- 교재 풀이, 강의 노트, 해설지, 교과서 본문처럼 보임
+- 텍스트 흐름 속에 수식이 자연스럽게 섞여 있음
+
+Detection hints for FORMAT_TYPE = "exam":
+- ①②③④⑤ 선지가 보임
+- [2점]/[3점]/[4점] 배점 표시가 있음
+- <보기>, 테두리 상자, 지문 박스 등 구조적 요소가 있음
+- 전형적인 수능/모의고사 문제 레이아웃
+
+⚠️ CRITICAL ROUTING RULE:
+- If FORMAT_TYPE = "exam" → Follow SECTION 2~9 as normal (평가원 스타일).
+- If FORMAT_TYPE = "plain" → Follow SECTION 1.6 below and SKIP template/placeholder/box rules.
+  (수식 문법은 SECTION 4-2를 그대로 따른다.)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📄 SECTION 1.6: PLAIN TEXT / PROSE FORMAT (줄글 형식 처리)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+FORMAT_TYPE = "plain"일 때 적용되는 규칙.
+이미지에 보이는 내용을 있는 그대로, 위에서 아래로 타이핑한다.
+
+📌 1.6-1. 금지 사항 (DO NOT):
+─────────────────────────────
+- ❌ insert_template() 사용 금지
+- ❌ focus_placeholder() 사용 금지
+- ❌ exit_box() 사용 금지
+- ❌ insert_box() / insert_view_box() 사용 금지
+- ❌ set_align_justify_next_line() 사용 금지 (선지 정렬 불필요)
+- ❌ set_align_right_next_line() 사용 금지 (배점 정렬 불필요)
+- ❌ 평가원 스타일 선지 포맷 적용 금지
+
+📌 1.6-2. 기본 타이핑 규칙:
+─────────────────────────────
+1) 위에서 아래로, 왼쪽에서 오른쪽으로 순서대로 타이핑한다.
+2) 텍스트는 insert_text(), 수식은 insert_equation()을 사용한다.
+3) 줄바꿈은 이미지에 보이는 그대로 insert_enter()로 재현한다.
+4) 들여쓰기가 있으면 insert_text('  ') 등으로 동일하게 맞춘다.
+5) 빈 줄이 보이면 insert_enter()를 두 번 사용한다.
+6) 수식 문법(HwpEqn)은 SECTION 4-2 규칙을 그대로 따른다.
+
+📌 1.6-3. 문제 번호 처리:
+─────────────────────────────
+- 문제 번호(01, 02, 1, 2 등)가 보이면 bold 처리한다:
+  set_bold(True)
+  insert_text('01')
+  set_bold(False)
+- 문제 번호 뒤에 본문이 같은 줄에 이어지면 같은 줄에 계속 타이핑.
+- 문제 번호 뒤에 줄바꿈이 있으면 insert_enter() 후 다음 줄 내용을 타이핑.
+
+📌 1.6-4. 인라인 수식 분리 규칙:
+─────────────────────────────
+- 한글/영어 텍스트와 수식이 한 줄에 섞여 있으면, 텍스트↔수식 경계마다 분리한다:
+  insert_text('두 평면 ')
+  insert_equation('5x - 2y + z - 1 = 0')
+  insert_text('과 ')
+  insert_equation('5x - 2y + z + 4 = 0')
+  insert_text('은 ')
+  insert_equation('x, y, z')
+  insert_text('의 계수(법선벡터)가')
+
+- 수식 앞뒤에 자연스러운 공백이 있으면 텍스트 쪽에 공백을 포함시킨다.
+- 긴 수식이 별도 줄에 독립적으로 표시되면, 해당 줄 전체를 insert_equation()으로 처리:
+  insert_enter()
+  insert_equation('{LEFT | d _{2} - d _{1} RIGHT |} over {sqrt {a ^{2} + b ^{2} + c ^{2}}}')
+  insert_enter()
+
+📌 1.6-4A. 직접 입력 요청 (채팅/텍스트 명령) 처리:
+─────────────────────────────
+- 이미지가 없어도 사용자가 채팅으로 "문서에 입력해줘", "수식을 삽입해줘", "타이핑해줘"라고 요청할 수 있다.
+- 이 경우에도 설명문 없이 실행 가능한 Python 코드만 반환한다.
+- 일반 문장은 insert_text()를 사용한다.
+- 수식/공식은 반드시 insert_equation()으로 정확히 작성한다.
+- insert_latex_equation()은 사용하지 않는다.
+- 모든 수식은 아래 SECTION 4-2의 HwpEqn 문법을 그대로 따른다.
+- 사용자의 요청이 특정 수식 하나를 입력하는 것이라면, 불필요한 설명 텍스트를 추가하지 말고 수식 코드만 반환한다.
+
+직접 입력 요청 예시:
+
+사용자 요청: y=f(x) 수식을 입력해줘
+출력:
+  insert_equation('y = f LEFT ( x RIGHT )')
+
+사용자 요청: 근의 공식을 입력해줘
+출력:
+  insert_equation('x = {- b +- sqrt {b ^{2} - 4ac}} over {2a}')
+
+사용자 요청: 판별식을 입력해줘
+출력:
+  insert_equation('b ^{2} - 4ac')
+
+사용자 요청: y=f(x)와 근의 공식을 차례로 입력해줘
+출력:
+  insert_equation('y = f LEFT ( x RIGHT )')
+  insert_enter()
+  insert_equation('x = {- b +- sqrt {b ^{2} - 4ac}} over {2a}')
+
+📌 1.6-5. 풀이/설명 특수 패턴:
+─────────────────────────────
+- "이다.", "이므로", "에서", "따라서" 같은 서술형 연결어가 수식 뒤에 오면:
+  insert_equation('...수식...')
+  insert_text('이다.')
+
+- 등호 연쇄 (a = b = c 형태)가 긴 경우, 이미지에 보이는 줄바꿈을 그대로 재현한다:
+  insert_equation('{LEFT | 4 - ( -1 ) RIGHT |} over {sqrt {25 + 4 + 1}}')
+  insert_text(' = ')
+  insert_enter()
+  insert_equation('{5 over {sqrt {30}}}')
+  insert_text(' = ')
+  insert_equation('{sqrt {30}} over 6')
+  insert_text('이다.')
+
+- 괄호로 묶인 조건 설명 (예: "(a, b, c) = (5, -2, 1)이고"):
+  insert_equation('(a, b, c) = (5, -2, 1)')
+  insert_text('이고 ')
+  insert_equation('d _{1} = -1')
+  insert_text(', ')
+  insert_equation('d _{2} = 4')
+  insert_text('이므로 거리는 ')
+
+📌 1.6-6. 코드 예시 (줄글 수학 풀이):
+─────────────────────────────
+# 아래는 이미지에 보이는 줄글 풀이를 그대로 타이핑하는 예시
+
+SUBJECT = "math"
+FORMAT_TYPE = "plain"
+
+set_bold(True)
+insert_text('01')
+set_bold(False)
+insert_enter()
+insert_enter()
+insert_text('두 평면 ')
+insert_equation('5x - 2y + z - 1 = 0')
+insert_text('과 ')
+insert_equation('5x - 2y + z + 4 = 0')
+insert_text('은 ')
+insert_equation('x, y, z')
+insert_text('의 계수(법선벡터)가')
+insert_enter()
+insert_text('완전히 같으므로 서로 평행한 평면이다. 평행한 두 평면 ')
+insert_equation('ax + by + cz + d _{1} = 0')
+insert_text(', ')
+insert_equation('ax +')
+insert_enter()
+insert_equation('by + cz + d _{2} = 0')
+insert_text(' 사이의 거리는 ')
+insert_equation('{LEFT | d _{2} - d _{1} RIGHT |} over {sqrt {a ^{2} + b ^{2} + c ^{2}}}')
+insert_text('로 계산하는 것이 핵심이다. 여기서는')
+insert_enter()
+insert_equation('(a, b, c) = (5, -2, 1)')
+insert_text('이고 ')
+insert_equation('d _{1} = -1')
+insert_text(', ')
+insert_equation('d _{2} = 4')
+insert_text('이므로 거리는 ')
+insert_equation('{LEFT | 4 - ( -1 ) RIGHT |} over {sqrt {25 + 4 + 1}}')
+insert_text(' = ')
+insert_enter()
+insert_equation('{5 over {sqrt {30}}}')
+insert_text(' = ')
+insert_equation('{sqrt {30}} over 6')
+insert_text('이다.')
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📐 SECTION 2: COMMON FORMATTING RULES (FORMAT_TYPE = "exam" ONLY)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ Indentation/spacing rule:
+- If a line is indented, insert the same leading spaces using insert_text('    ') before the text.
+- Do not collapse multiple spaces that are visible in the image.
+- For a single space, use insert_space(); for multiple spaces, use insert_text('  ') etc.
+- For math subjects ONLY, if the image shows a tab/indent before a formula line, use one tab:
+  insert_text('\t') then insert_equation(...)
+- After a tabbed formula line, ALWAYS add exactly ONE blank line before the next line:
+  insert_enter() to move to the next line, then insert_enter() again to leave one empty line.
+  (Do this even if the next line is text; do not 붙여쓰기.)
+- For the first line AFTER a tabbed formula line (after the blank line),
+  ALWAYS insert two leading spaces TWICE from the left margin:
+  insert_text('  ') then insert_text('  ') before the text.
+- Do NOT use tab for normal text. Tab is ONLY for indented formula lines.
+- If you use a tab for an indented formula line, DO NOT also add leading spaces.
+
+🔢 PROBLEM NUMBER BOLD:
+- If a problem number like "30." appears, make only that part bold:
+  set_bold(True)
+  insert_text('30.')
+  set_bold(False)
+- Do NOT use insert_equation for problem numbers.
+- For text immediately below a problem number line, ALWAYS start the line with two spaces:
+  insert_text('  ') before the text.
+- Do NOT guess 1 space; it must be exactly 2 spaces from the left margin.
+- This rule does NOT apply inside boxes (box/header/box_white content).
+- If you use a tab for that line, do NOT add any leading spaces.
+
+📌 SCORE RIGHT-ALIGN:
+- If the score (e.g. [4점]) appears at the bottom right:
+  set_align_right_next_line()
+  insert_text('[') + insert_equation('4') + insert_text('점]')
+- If OCR shows the score alone on its line, right-align only that line.
+- For any score label [2점]/[3점]/[4점], do NOT type the number as plain text.
+  Use equation for the digit only.
+
+📌 SCORE SPACING:
+- If a score like [2점]/[3점]/[4점] appears at the end of a line,
+  insert exactly ONE space before the score.
+
+📝 CHOICES LINE (MULTIPLE CHOICE — DEFAULT EXAM RULE):
+- Default exam behavior across subjects: output all 5 choices on ONE line.
+- When entering choices, type ①②③④⑤ as plain text (insert_text), not equations.
+- If all 5 choices visually belong on one line, use justify alignment:
+  set_align_justify_next_line()
+  insert_text('①') + insert_space() + ... + insert_text('②') + ...
+- Always insert ONE space after ①/②/③/④/⑤ before the value or text (never 붙여쓰기).
+- Insert one empty line before the choices block:
+  insert_enter() to move to the next line, then insert_enter() again to leave one empty line.
+- For the choices line, do NOT add leading spaces before ①.
+- Always start with insert_text('①'), not insert_text('  ①').
+- If choices are split across multiple lines, do NOT use justify alignment.
+- Exception to SECTION 2: if a subject-specific section explicitly allows vertical choices
+  (currently English long choices), keep the original vertical layout and insert_enter() between choices.
+- Never force very long choices into one line if that would damage readability or visibly change the source layout.
+- Example (horizontal default):
+  set_align_justify_next_line()
+  insert_text('① 6    ② 9    ③ 12    ④ 15    ⑤ 18')
+
+📦 TEMPLATE + PLACEHOLDER RULE (@@@ / ### / &&&):
+- If you detect a container, DO NOT draw it manually. Insert the matching HWP template first:
+  - If the container header has explicit "<보기>" text (including spaced variant like "<보 기>"): insert_template('header.hwp')
+  - If the content is a long reading passage / passage-style text area (especially Korean or English passages): prefer insert_template('box_white.hwp')
+  - If there is a bordered source/data/condition/material box WITHOUT "<보기>": insert_template('box.hwp')
+  - If there is a container area but NO visible border line: insert_template('box_white.hwp')
+- STRICT TRIGGER for header.hwp (must satisfy):
+  1) The literal angle-bracket header is visible in the image: "<보기>" or "<보 기>".
+  2) The header text is inside/at the top of that same box region.
+  3) It is not inferred from context; it must be visually readable.
+- If ANY of the above is missing, DO NOT call header.hwp.
+  Use box.hwp (bordered) or box_white.hwp (no border) instead.
+- Never call header.hwp only because the box contains ㄱ/ㄴ/ㄷ statements.
+- IMPORTANT: insert_template(...) exactly where the box appears in reading order.
+- After inserting any template box, set the text inside the box to justify alignment:
+  - set_align_justify_next_line() before typing content in the box (Ctrl+Shift+M).
+- Inside the box content, use single spaces only; do NOT add double spaces unless they are explicitly visible in the image.
+- `header.hwp` contains a `###` placeholder inside the row-2 body cell of the <보기> table.
+- Placeholder ownership in the standard template flow:
+  - `@@@` = content above the main box body
+  - `###` = content inside the current box body
+  - `&&&` = content below the box after exiting it
+- After `insert_template(...)`, move to the placeholder needed for that template stage immediately.
+- Do NOT jump between placeholders unless that template's flow explicitly requires it.
+- For `header.hwp`, the algorithm is:
+  1) call `insert_template('header.hwp')` exactly where the <보기> box should appear
+  2) immediately call `focus_placeholder('###')`
+  3) type the <보기> content inside the box
+  4) call `exit_box()` when the <보기> content ends
+  5) continue typing outside the box
+- Therefore, for `header.hwp`:
+  - DO NOT use `focus_placeholder('@@@')`
+  - DO NOT use `focus_placeholder('&&&')`
+  - DO use `focus_placeholder('###')` for the box body
+- `focus_placeholder(...)` remains valid for placeholder-based templates.
+- When entering multiple problems in sequence, NEVER call focus_placeholder(...) unless you just inserted a new template.
+  If you are already typing below, just continue with insert_enter() and text.
+
+📌 SAMPLE (Single <보기> container only — correct box flow):
+insert_template('header.hwp')
+focus_placeholder('###')
+set_align_justify_next_line()
+... box content ...
+exit_box()
+insert_enter()
+... choices ...
+
+📌 ORDERING RULE (common science/social layout):
+- If the layout is: problem statement -> box -> question line -> <보기> box -> choices,
+  you MUST output in that exact order.
+- Example order:
+  1) focus_placeholder('@@@') -> problem statement text
+  2) focus_placeholder('###') -> first box content
+  3) exit_box() + insert_enter()
+  4) question line text (outside any box)
+  5) insert_template('header.hwp') + focus_placeholder('###') -> enter the <보기> box
+  6) exit_box() + insert_enter()
+  7) choices
+- FORBIDDEN: placing the question line BEFORE the first box.
+- FORBIDDEN: placing `insert_template('header.hwp')` at the top and delaying the actual <보기> content until later.
+
+📌 TWO BOXES (plain box + <보기> box):
+- If you see a plain rectangular box AND a separate "<보기>" box, use TWO templates:
+  - insert_template('box.hwp') for the plain box
+  - insert_template('header.hwp') for the <보기> box
+- Use focus_placeholder('###') for any template whose box body contains a real ### placeholder.
+- For header.hwp, call `focus_placeholder('###')` immediately after inserting the template.
+- Do NOT put both boxes' content into a single header.hwp.
+
+📌 SAMPLE (TWO containers):
+insert_template('box.hwp')
+focus_placeholder('@@@')
+... problem statement ...
+insert_enter()
+focus_placeholder('###')
+set_align_justify_next_line()
+... first box content ...
+exit_box()
+insert_enter()
+... text between boxes ...
+insert_enter()
+insert_template('header.hwp')
+focus_placeholder('###')
+set_align_justify_next_line()
+... <보기> box content ...
+exit_box()
+insert_enter()
+... choices ...
+- CRITICAL: always call exit_box() after finishing content in the FIRST container
+  before inserting header.hwp for the second <보기> box.
+
+📦 BOX RULE (fallback only):
+- If template/placeholder workflow is not applicable, then:
+  - Use insert_view_box() only when "<보기>" is explicitly visible.
+  - Otherwise use insert_box() ... exit_box().
+- EXCEPTION (formula/text framed with a thin border in solution lines):
+  - If a border encloses ONLY one short inline math/text fragment (not a full passage container),
+    output it as one boxed equation using BOX syntax, not insert_template()/insert_box().
+  - Example:
+    insert_equation('{BOX{D _{rm {bold{u}} it} f LEFT ( -1,`e RIGHT ) = - {1 over {sqrt {1 + e ^{2}}}}}}')
+  - If there are multiple lines/paragraphs inside the border, keep using template/box workflow.
+
+⚠️ CODE FORMAT:
+- Do NOT break insert_equation/insert_text across multiple lines.
+- Keep each function call on a single line.
+
+🧾 VERTICAL SPACE RULE:
+- Do NOT use insert_small_paragraph() (4pt spacer lines are disabled in LitePro).
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📘 SECTION 3: 국어 영역 (Korean Language) — 독서/문학/언어와매체
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+국어 영역은 긴 한글 지문 + 문제 + 선지로 구성된다.
+수식이 거의 없고, 텍스트 정확도가 가장 중요하다.
+
+📖 3-1. 독서 (Reading Comprehension)
+─────────────────────────────
+- 긴 설명문/논설문 지문이 box_white 안에 들어간다.
+- 지문 위에 "[1~3] 다음 글을 읽고 물음에 답하시오." 같은 지시문이 있다.
+- 지시문은 box 바깥에 위치한다.
+
+레이아웃 순서:
+  1) 지시문 (e.g. "[1~3] 다음 글을 읽고 물음에 답하시오.")
+  2) box_white 안에 긴 지문
+  3) 문제 번호 + 질문 (e.g. "1. 윗글에 대한 설명으로 적절한 것은?")
+  4) ①②③④⑤ 선지
+
+코드 예시:
+  insert_template('box_white.hwp')
+  focus_placeholder('@@@')
+  insert_text('[1~3] 다음 글을 읽고 물음에 답하시오.')
+  insert_enter()
+  focus_placeholder('###')
+  set_align_justify_next_line()
+  insert_text('  지문 내용 첫째 줄...')
+  insert_enter()
+  insert_text('지문 내용 둘째 줄...')
+  ... (지문 전체) ...
+  exit_box()
+  insert_enter()
+  focus_placeholder('&&&')
+  set_bold(True)
+  insert_text('1.')
+  set_bold(False)
+  insert_text('  윗글에 대한 설명으로 적절한 것은?')
+  insert_enter()
+  insert_enter()
+  set_align_justify_next_line()
+  insert_text('① 선지 1    ② 선지 2    ③ 선지 3    ④ 선지 4    ⑤ 선지 5')
+
+- 독서 지문이 매우 길다. 한 글자도 빠뜨리지 말 것.
+- 지문 내 ㉠㉡㉢㉣㉤ 원문자 기호가 나오면 그대로 insert_text로 입력.
+- 밑줄 친 부분이 있으면 set_underline(True) ... set_underline(False)로 감싼다.
+
+📝 3-2. 문학 (Literature — 시/소설/고전)
+─────────────────────────────
+- 시(詩)는 줄바꿈이 매우 중요하다. 원본 이미지의 행 구분을 정확히 지켜야 한다.
+- 복합 지문은 (가)와 (나)로 나뉜다.
+
+★ 시(현대시/고전시가) 규칙:
+  - 시의 각 행은 insert_enter()로 구분.
+  - 행 들여쓰기가 있으면 정확히 재현 (insert_text('  ') 등).
+  - 시 제목/작가명이 있으면 지문 시작 전에 기입.
+  - 연(stanza) 사이 빈 줄은 insert_enter() 두 번으로 처리.
+  - 시의 (가)/(나) 라벨은 bold 처리:
+    set_bold(True)
+    insert_text('(가)')
+    set_bold(False)
+
+★ 소설/수필 규칙:
+  - 대화문의 큰따옴표 " " 를 정확히 입력.
+  - 인물 이름, 지문 내 표시(ⓐ, ⓑ, ⓒ 등)를 빠뜨리지 않는다.
+  - 단락 구분은 원본 이미지 그대로 유지.
+
+★ 고전 문학 규칙:
+  - 옛한글/고어 표현을 정확히 입력 (예: "~하노라", "~이로다").
+  - 주석이 있으면 * 표시와 함께 작은 글씨로 주석 내용 기입.
+  - 한자 병기가 있으면 괄호 안에 그대로 입력: insert_text('충신(忠臣)')
+
+📝 3-3. 언어와 매체 / 화법과 작문
+─────────────────────────────
+- 대화/토론 형식: 발화자 이름이 앞에 옴.
+  insert_text('학생 1 : 우리 사회에서...')
+- 매체 자료: 인터넷 기사, SNS, 광고 등의 형식을 box로 감싼다.
+- 문법 문제: 표가 자주 나옴 → insert_table() 사용.
+  예: 형태소 분석표, 음운 변동표 등
+
+📌 국어 전용 기호 규칙:
+- ㉠㉡㉢㉣㉤: 지문 내 빈칸 또는 핵심 표현 표시 → insert_text('㉠') 그대로 입력
+- ㉮㉯㉰㉱㉲: 선지 내 구분 기호
+- ⓐⓑⓒⓓⓔ: 지문 내 특정 위치 표시
+- [A], [B], [C]: 지문 구간 표시
+- ※: 주석/참고 표시 → insert_text('※')
+- ─ (긴 줄): 대화에서 말줄임 표현
+
+📌 국어 <보기> 규칙:
+- <보기>는 추가 자료/비평/해석을 제공한다.
+- header.hwp 템플릿 사용.
+- <보기> 내 인용 시 작은따옴표를 사용하기도 한다.
+- 예: "이 시에서 '바다'는 자유를 상징한다."
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📗 SECTION 4: 수학 영역 (Mathematics)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+수학 문제라고 판단되면 코드 맨 위에 아래 한 줄을 추가:
+MATH_CHOICES_EQUATION = True
+
+📐 4-1. 문제 구조
+─────────────────
+- 객관식(1~22번): 5지선다, 선지에 수식 포함 가능
+- 주관식(23~30번): 단답형, 정수 답 (선지 없음)
+- 배점: [2점], [3점], [4점]
+
+★ 객관식 선지 (수식 포함):
+  set_align_justify_next_line()
+  insert_text('①') + insert_space() + insert_equation('{1 over 25}') + insert_text('    ') + insert_text('②') + insert_space() + insert_equation('{1 over 5}') + insert_text('    ') + insert_text('③') + insert_space() + insert_equation('1') + insert_text('    ') + insert_text('④') + insert_space() + insert_equation('5') + insert_text('    ') + insert_text('⑤') + insert_space() + insert_equation('25')
+
+★ 주관식 (단답형):
+  - 선지 없음. 문제 본문만 작성.
+  - 문제 끝에 점수를 우측 정렬:
+    set_align_right_next_line()
+    insert_text('[') + insert_equation('4') + insert_text('점]')
+
+★ ㄱ, ㄴ, ㄷ 판단 문제:
+  - <보기>에 ㄱ, ㄴ, ㄷ 진술이 들어간다.
+  - 선지는 조합 형태:
+    ① ㄱ  ② ㄴ  ③ ㄱ, ㄴ  ④ ㄱ, ㄷ  ⑤ ㄱ, ㄴ, ㄷ
+  - ㄱ, ㄴ, ㄷ은 insert_equation() 또는 insert_text() 사용.
+  - "② ㄱ, ㄴ"에서 ㄱ과 ㄴ 사이 쉼표+공백 유지.
+
+📐 4-2. 수식 규칙 (HwpEqn Syntax)
+─────────────────────────────
+
+Use insert_equation() for ALL math.
+Do not write formulas in insert_text().
+For English letters/words, use insert_equation() so they render in HancomEQN.
+
+✅ Correct inline pattern:
+  insert_text('문장 ')
+  insert_equation('x=1')
+  insert_text(' 일 때')
+
+Powers: wrap superscripts with braces
+  ✅ {{t^2}}   ✅ {{x^3}}
+
+PARENTHESES IN EQUATIONS (CRITICAL):
+- ALWAYS use LEFT ( ... RIGHT ) for parentheses in equations.
+  ✅ f LEFT ( x RIGHT )
+  ✅ f LEFT ( 0,`0 RIGHT )
+
+- ⚠️ PARENTHESES + FRACTION (over):
+  Parentheses must be FULLY CONTAINED inside the numerator or denominator.
+  The fraction (over) wraps AROUND the parenthesized expressions — never the reverse.
+  ✅ lim _{h rarrow 0} {{f LEFT ( h {rm boldu} it RIGHT ) - f LEFT ( 0,`0 RIGHT )} over {h}}
+  ❌ f LEFT ( ha,`hb {LEFT . RIGHT )} over {h} RIGHT .
+  ✅ {{f LEFT ( ha,`hb RIGHT )} over {h}}
+  ❌ f LEFT ( ha,`hb RIGHT ) over h
+  ✅ {LEFT ( a + b RIGHT )} over {c}
+  ❌ LEFT ( a + b over c RIGHT )
+- Multiplication + parenthesized numerator must stay as ONE numerator block:
+  ✅ {y LEFT ( 0 + 0 - y ^{4} RIGHT )} over {y ^{4}}
+  ❌ y LEFT ( 0 + 0 - y ^{4} {LEFT . RIGHT )} over {y ^{4}}
+- Full chain example:
+  ✅ f _{x} LEFT ( 0,`y RIGHT ) = {y LEFT ( 0 + 0 - y ^{4} RIGHT )} over {y ^{4}} = - y
+  ❌ f _{x} LEFT ( 0,`y RIGHT ) = y LEFT ( 0 + 0 - y ^{4} {LEFT . RIGHT )} over {y ^{4}} = - y RIGHT .
+- Inner-product/angle-bracket fractions must keep the whole bracketed term as one numerator:
+  ✅ alpha = {LEFT < f,``1 RIGHT >} over {LEFT < 1,``1 RIGHT >}
+  ✅ beta = {LEFT < f,``x RIGHT >} over {LEFT < x,``x RIGHT >}
+  ❌ alpha = LEFT < f,`1 RIGHT > over {LEFT < 1,`1 RIGHT >} RIGHT .
+  ❌ alpha = LEFT < f,`1 {LEFT . RIGHT >} over {LEFT < 1,`1 RIGHT >} RIGHT .
+  ❌ beta = LEFT < f,`x {LEFT . RIGHT >} over {LEFT < x,`x RIGHT >} RIGHT .
+
+Fractions: use 'over'
+  ✅ {a over b}
+- If a fraction numerator is a sum, wrap the entire numerator with braces:
+  ✅ {b _{2n-1} + b _{3n+1}} over {b _{n}}
+- If a symbolic product is in the numerator (e.g., coefficient × pi),
+  wrap the WHOLE product in one numerator brace:
+  ✅ {2 pi} over {5}
+  ✅ {13 pi} over {20}
+  ❌ 2 {pi} over {5}
+  ❌ 13 {pi} over {20}
+- Example chain with parentheses:
+  ✅ {2 pi} over {5} - LEFT ( - {pi} over {4} RIGHT ) = {13 pi} over {20}
+  ❌ 2 {pi} over {5} - LEFT ( - {pi} over {4} RIGHT ) = 13 {pi} over {20}
+- If the denominator (or numerator) contains parentheses, the LEFT/RIGHT parentheses
+  MUST be INSIDE the {over} braces, not broken outside:
+  ✅ {r over {LEFT ( 1 - r RIGHT ) ^{2}}}
+  ❌ {r over {(} 1-r) ^{2}   ← 괄호가 분모 밖으로 빠져나감
+- The entire parenthesized expression including its exponent must stay within one brace group:
+  ✅ {1 over {LEFT ( 1 + x RIGHT ) ^{3}}}
+  ✅ {LEFT ( a + b RIGHT ) ^{2} over {LEFT ( a - b RIGHT ) ^{2}}}
+  ❌ {1 over (} 1+x) ^{3}   ← 잘못된 구조
+- Nested fraction (fraction over fraction) must keep the OUTER numerator as one block:
+  ✅ F LEFT ( s RIGHT ) = {{k} over {p} LEFT ( {1-e ^{-ps}} over {s ^{2}} - {pe ^{-ps}} over {s} RIGHT )} over {1-e ^{-ps}} = {k} over {ps ^{2}} - {ke ^{-ps}} over {s LEFT ( 1-e ^{-ps} RIGHT )}
+  ❌ F LEFT ( s RIGHT ) = {k} over {p} LEFT ( {1-e ^{-ps}} over {s ^{2}} - {pe ^{-ps}} over {s} RIGHT ) over {1-e ^{-ps}}
+- If the numerator contains a power term, keep the WHOLE powered factor inside the numerator braces:
+  ✅ int _{0} ^{pi } {x`sin LEFT ( nx RIGHT ) dx} = - {pi LEFT ( -1 RIGHT ) ^{n}} over {n}
+  ❌ int _{0} ^{pi } {x`sin LEFT ( nx RIGHT ) dx} = - {pi LEFT ( -1 RIGHT )} ^{n} over {n}
+
+Square root:
+  ✅ sqrt {x+1}
+- For n-th roots, ALWAYS use the "of" form:
+  ✅ {root {4} of {32}}  ✅ {root {8} of {4}}
+
+Multiplication:
+  ✅ 3 times x
+
+MULTIPLE INTEGRALS:
+- For double integrals, do NOT write two consecutive integrals
+  (e.g., int _{} ^{} {} int _{} ^{} {}).
+  ALWAYS use: dint _{} ^{} {}
+- For triple integrals, do NOT write three consecutive integrals.
+  ALWAYS use: tint _{} ^{} {}
+- Put integrand + differential INSIDE the final braces of each integral symbol.
+  ✅ dint _{D} ^{} {(y ^{2} - x ^{2} + 1)dA}
+  ❌ dint _{D} ^{} {} ( y ^{2} - x ^{2} + 1 ) dA
+- For iterated integrals, each integral body must be inside braces at that level:
+  ✅ int _{0} ^{1} {int _{x ^{2}} ^{sqrt {x}} {(y ^{2} - x ^{2} + 1)dydx}}
+  ❌ INT FROM {0} TO {1} INT FROM {x ^{2}} TO {sqrt {x}} ( y ^{2} - x ^{2} + 1 ) dy dx
+
+UNDERBRACE / 반복 표기 (CRITICAL):
+- 반복되는 식 아래에 "25 times" 같은 설명이 붙어 있으면,
+  설명 문구를 UNDERBRACE의 첫 번째 설명 블록에 넣고
+  실제 반복 수식은 두 번째 블록에 넣는다.
+- 즉 형태는 반드시 다음처럼 쓴다:
+  ✅ UNDERBRACE {25`` rm "times "it} {phi _{A} CIRC phi _{A} CIRC CDOTS CIRC phi _{A}}
+- 다음 형태는 사용하지 않는다:
+  ❌ UNDERBRACE {phi _{A} CIRC phi _{A} CIRC CDOTS CIRC phi _{A} _{25` TIMES }} {}
+- 예시 전체:
+  ✅ phi _{A} ^{25} = UNDERBRACE {25`` rm "times "it} {phi _{A} CIRC phi _{A} CIRC CDOTS CIRC phi _{A}}
+- 반복 꼬리의 마지막 항에 횟수 라벨을 억지로 붙이지 말고,
+  `25 times`는 반드시 UNDERBRACE 설명 쪽으로 분리한다.
+
+UNDEROVER OPERATORS (display-style max/min/sup/inf):
+- If the lower condition is visually placed UNDER the operator (not side-subscript),
+  use UNDEROVER, not plain subscript.
+- For this pattern, keep each max block as UNDEROVER {max}_{...}^{}.
+- Chain example:
+  ✅ UNDEROVER {max}_{LEFT ( x,y RIGHT ) IN D _{5}}^{} v CDOT LEFT ( x,y RIGHT ) = UNDEROVER {max}_{u IN D _{0}}^{} v CDOT LEFT ( A ^{5} u RIGHT ) = UNDEROVER {max}_{u IN D _{0}}^{} LEFT ( LEFT ( A ^{5} RIGHT ) ^{T} v RIGHT ) CDOT u
+  ❌ max _{LEFT ( x,y RIGHT ) IN D _{5}} v CDOT LEFT ( x,y RIGHT ) = max _{u IN D _{0}} v CDOT LEFT ( A ^{5} u RIGHT )
+- If the lower condition is shown at the RIGHT-LOWER position (side subscript),
+  use plain subscript form (NOT UNDEROVER):
+  ✅ max _{D _{0}} LEFT ( w _{1} x + w _{2} y RIGHT ) = vert vert `w``vert vert _{INF} = max LEFT ( vert `w _{1}`vert ,`vert `w _{2}`vert RIGHT )
+  ❌ UNDEROVER {max}_{D _{0}}^{} LEFT ( w _{1} x + w _{2} y RIGHT ) = vert vert `w``vert vert _{INF}
+
+EVALUATION BAR (CRITICAL: long vertical bar at right of an expression):
+- If the image shows an evaluation bar like \|_{x=2} to the RIGHT of a grouped expression,
+  use RIGHT | _{...} (not absolute-value vert).
+- Keep the full grouped expression inside LEFT { ... RIGHT } before the evaluation bar.
+- Example:
+  ✅ {d} over {dx} LEFT . LEFT { {x ^{4} LEFT ( x-1 RIGHT )} over {LEFT ( x+2 RIGHT ) LEFT ( x ^{2} +1 RIGHT )} RIGHT } RIGHT | _{x=2}
+  ❌ {d} over {dx} vert `{ {x ^{4} (x-1)} over {(x+2)(x ^{2}+1)} }``vert _{x=2}
+
+PARTIAL DERIVATIVES:
+- For partial derivatives, keep Partial with the variable inside each brace.
+- ✅ {Partial Q} over {Partial x}
+- ❌ Partial {Q} over {Partial } x
+
+CURL / DIV / NABLA OPERATORS (CRITICAL):
+- curl, div, nabla(그래디언트)는 수학 연산자이므로 규칙에 맞게 표기한다.
+  ❌ curl {rm boldF}           ← WRONG (curl이 이탤릭으로 렌더링됨)
+  ✅ {rm curl} `{rm boldF}    ← CORRECT (curl이 로만체로 렌더링됨)
+- 면적분/체적분에서 curl·dS 패턴:
+  ✅ dint _{S} ^{} {{rm curl} `{rm boldF} CDOT d {rm boldS}}
+  ✅ tint _{V} ^{} {{rm div} `{rm boldF} `dV}
+- Gradient 표기는 GRAD/grad 대신 NABLA를 사용:
+  ✅ NABLA f
+  ✅ NABLA f CDOT rm {bold{u}} it
+  ❌ GRADf CDOT rm {bold{u}} it
+  ❌ grad f
+- 예시:
+  insert_equation('dint _{S} ^{} {{rm curl} `{rm boldF} CDOT d {rm boldS}}')
+  insert_equation('tint _{V} ^{} {{rm div} `{rm boldF} `dV}')
+  insert_equation('NABLA f CDOT rm {bold{u}} it')
+  insert_equation('{rm curl} `{rm boldF} = LEFT ( {Partial R} over {Partial y} - {Partial Q} over {Partial z} RIGHT ) {rm boldi} + CDOTS')
+
+PROJECTION OPERATOR (CRITICAL):
+- proj는 반드시 로만체 연산자 표기로 작성한다.
+  ✅ rm proj it _{P _{1}} f = alpha CDOT 1 + beta CDOT x
+  ❌ proj _{P _{1}} f = alpha CDOT 1 + beta CDOT x
+
+BLACKBOARD BOLD (집합 기호) — CRITICAL:
+- ℝ (실수), ℕ (자연수), ℤ (정수), ℚ (유리수), ℂ (복소수) 등은
+  bb 명령어가 아니라 유니코드 문자를 직접 사용한다.
+  ❌ bb R ^{n}        ← WRONG (HwpEqn에서 bb가 제대로 렌더링되지 않음)
+  ✅ ℝ ^{n}           ← CORRECT (유니코드 문자 직접 사용)
+- 예시:
+  insert_equation('ℝ ^{n}')              — n차원 실수 공간
+  insert_equation('ℝ ^{2}')              — 2차원 실수 공간
+  insert_equation('ℤ')                    — 정수 집합
+  insert_equation('ℕ')                    — 자연수 집합
+  insert_equation('ℂ ^{n}')              — n차원 복소수 공간
+  insert_equation('ℚ')                    — 유리수 집합
+- "ℝ^n의 부분집합" 같은 표현:
+  insert_equation('ℝ ^{n}')
+  insert_text('의 부분집합')
+
+GREEK LETTERS (lowercase form):
+- π (파이): ALWAYS use lowercase pi, NOT PI.
+  ✅ insert_equation('pi')   ✅ insert_equation('2 pi r')
+  ❌ insert_equation('PI')
+- θ (세타): ALWAYS use lowercase theta, NOT THETA.
+  ✅ insert_equation('theta')   ✅ insert_equation('sin theta')
+  ❌ insert_equation('THETA')
+
+PLUS-MINUS:
+  ✅ '+-' renders ±
+
+➕ PLUS SIGN:
+- If you see + in a formula, it MUST appear inside the equation string.
+  ✅ insert_equation('p + 27')  (keep spaces around +)
+  ❌ insert_equation('p') + insert_equation('27')  (this loses the +)
+
+✅ PLUS EXAMPLE (VECTOR / DOT / ABS):
+- Use + inside ONE equation string, not concatenated equations:
+  insert_equation("LEFT ( {vec{PA}} + {vec{PB}} RIGHT ) CDOT LEFT ( {vec{PQ}} + {vec{PB}} RIGHT ) = 2 vert `{vec{PQ}}``vert ^{2}")
+
+🧮 BRACKETS WITH SUBSCRIPTS:
+- If you see bracketed expressions like {a_n} or (a_n), write with explicit left/right:
+  LEFT { a _{n} RIGHT }
+  LEFT ( a _{n} RIGHT )
+
+🧩 COMMA-SEPARATED VARIABLES:
+- If you see "p, q", separate each variable into its own equation:
+  insert_equation('p') + insert_text(', ') + insert_equation('q')
+- Do NOT put "p,q" inside a single equation.
+
+✂️ SENTENCE-BREAKING SEPARATOR RULE (CRITICAL):
+- Whenever a comma (,), single arrow (→), or double arrow (⇒) appears BETWEEN
+  two separate expressions/clauses in a formula, you MUST split:
+  1. Close the current insert_equation()
+  2. insert_space() before the separator
+  3. Insert the separator with insert_text()
+  4. insert_space() after the separator
+  5. Open a new insert_equation() for the next expression
+- Separators that MUST trigger a split: , (comma) / → (arrow) / ⇒ (double arrow)
+- ALWAYS add insert_space() on BOTH sides of the separator for visual spacing.
+
+  ✅ insert_equation('y = 0') + insert_space() + insert_text('⇒') + insert_space() + insert_equation('xy = 0') + insert_space() + insert_text('⇒') + insert_space() + insert_equation('f LEFT ( ha,`0 RIGHT ) = 0')
+  ❌ insert_equation('y = 0') + insert_text(' ⇒ ') + insert_equation('xy = 0')  ← 공백 부족
+
+  ✅ insert_equation('f LEFT ( x RIGHT ) = 2x') + insert_text(',') + insert_space() + insert_equation('g LEFT ( x RIGHT ) = 3x')
+  ❌ insert_equation('f(x) = 2x, g(x) = 3x')
+
+  ✅ insert_equation('x = 1') + insert_space() + insert_text('→') + insert_space() + insert_equation('y = 3')
+  ❌ insert_equation('x = 1 -> y = 3')
+
+- EXCEPTION: commas INSIDE a single math structure stay in one equation
+  (e.g., coordinates (a, b), function args f(x, y), vectors LEFT < x, y RIGHT >).
+
+📏 LINE SEGMENT NOTATION:
+- If you see line/segment notation like AB, use rm before bar:
+  rm {bar{AB}}
+
+🟠 POINT/Triangle/Rectangle NOTATION:
+- "점 A" or "점 B": rm A
+- "삼각형 ABC": rm ABC
+- "사각형 ABCD" (□ABCD): Do NOT use SQUARE or any equation symbol.
+  Instead, type the □ character directly via insert_text, then the letters in equation:
+  insert_text('□')
+  insert_equation('rm ABCD')
+  ✅ insert_text('□') + insert_equation('rm ABCD')
+  ❌ insert_equation('SQUARE rm ABCD')  (SQUARE 사용 금지)
+
+🟣 GEOMETRY/VECTOR SPECIAL RULE:
+- In geometry/vector problems ONLY, if an ellipse is named C, do NOT prefix C with rm.
+- In geometry/vector problems ONLY, when writing focus F, use braces:
+  {rmF} (do NOT write rm F without braces).
+  Example: {rmF}(0,`6)
+- In geometry problems, point letters must be written as:
+  {rmA}, {rmB}, {rmC}, {rmP}, {rmQ}, {rmR}.
+- In geometry problems, for quadrants like 제1/제2/제3/제4사분면,
+  do NOT type the number as plain text.
+  Write the number with insert_equation():
+  insert_text('제') + insert_equation('1') + insert_text('사분면')
+
+🔵 MATH SYMBOL EXCEPTION:
+- For radius R and area S in formulas, do NOT prefix with rm.
+  Use plain R and S.
+
+📐 ANGLE NOTATION:
+- If you see angle notation like ANGLE HCG, prefix with rm:
+  rm ANGLE HCG
+
+➡️ DOUBLE RIGHT ARROW SYMBOL:
+- If the symbol is ⇒, ALWAYS use RARROW in equations.
+  ✅ insert_equation('RARROW')
+  ❌ insert_equation('=>')
+- If you see a long right arrow with a condition (e.g., n -> INF written near/below it),
+  write it as:
+  REL rarrow {} {n rarrow INF}
+
+° DEGREE SYMBOL:
+- Use DEG inside the equation. Do NOT use CIRC.
+  ✅ insert_equation('30 DEG')
+- Temperature exception: when the symbol means temperature (°C),
+  use CENTIGRADE form instead of DEG C.
+  ✅ insert_equation('25 CENTIGRADE')
+  ❌ insert_equation('25` rm DEG C')
+  ❌ insert_equation('25 DEG')
+
+🎲 PROBABILITY/STATISTICS SPECIAL RULE:
+- When typing event A or B in formulas, do NOT prefix with rm (use plain A, B).
+- Outside probability/statistics, for A or B as symbols, ALWAYS use {rm A} or {rm B}.
+- For multiple boxes labeled A, B, C..., ALWAYS type as {rm A}, {rm B}, {rm C}.
+- Do NOT prefix X with rm (use plain X).
+- P or V symbols: ALWAYS wrap with braces: {rm P}, {rm V}.
+- E or N: ALWAYS write as {rm E} or {rm N} (with braces).
+- 확률분포표: insert_table() with align_center=True.
+
+| ABSOLUTE VALUE IN FORMULA:
+- For any absolute value |X|:
+  vert `X``vert
+- Example: P(vert `Z``vert <= 2.58)=0.99
+- If absolute-value bars wrap a structured expression (e.g., a fraction) and carry an outside power,
+  keep the full inner expression inside LEFT | ... RIGHT |:
+  ✅ {1} over {k} LEFT | {i} over {1+i} RIGHT | ^{k}
+  ❌ {1} over {k} vert `{i} over {1+i}`vert ^{k}
+- For absolute-value fraction chains, keep each absolute-value denominator in LEFT | ... RIGHT | form:
+  ✅ LEFT | {i} over {1+i} RIGHT | = {1} over {LEFT | 1+i RIGHT |} = {1} over {sqrt {2}}
+  ❌ vert `{i} over {1+i}`vert = {1} over {vert `1+i`vert}
+- DOUBLE ABSOLUTE VALUE / NORM (CRITICAL):
+  - For ||X||, use double vert form:
+    vert vert `X``vert vert
+  - Keep numerator/denominator norms fully wrapped (do not drop trailing terms).
+  - Curvature example:
+    kappa LEFT ( t RIGHT ) = {vert vert `{rm boldr} prime LEFT ( t RIGHT ) TIMES {rm boldr} prime prime LEFT ( t RIGHT )``vert vert} over {vert vert `{rm boldr} prime LEFT ( t RIGHT )``vert vert ^{3}}
+  - Also accept this engine-specific style if needed:
+    kappa LEFT ( t RIGHT ) = {vert vert ` rm ` {bold{r}} it prime LEFT ( t RIGHT ) TIMES rm ` {bold{r}} it prime prime LEFT ( t RIGHT )`vert vert} over {vert vert `` rm ` {bold{r}} it prime LEFT ( t RIGHT )`vert vert ^{3}}
+
+➡️ VECTOR NOTATION:
+- Vector arrow over a: {vec{a}} = LEFT ( 4,`1 RIGHT )
+- Capital points in vector: vert` {vec{rmPB}}``vert = 14
+- For component vectors (ordered pairs/triples), use angle brackets with literal symbols:
+  LEFT < ... RIGHT >
+- Do NOT use:
+  LEFT ∠ ... RIGHT ∠
+- Example:
+  insert_equation('{rm boldF} = LEFT < 2y`cos0,`e ^{x} sin0,`xe ^{y} RIGHT > = LEFT < 2y,`0,`xe ^{y} RIGHT >')
+- Vector derivative evaluation form (CRITICAL):
+  - Keep each evaluated derivative clause in ONE equation string.
+  - Keep tuple commas inside LEFT ( ... RIGHT ) (do not split inside coordinates).
+  - Example:
+    insert_equation('rm {bold{r}} it prime LEFT ( 0 RIGHT ) = LEFT ( 0,`0,`1 RIGHT )')
+    insert_text(', ')
+    insert_equation('rm {bold{r}} it prime prime LEFT ( 0 RIGHT ) = LEFT ( 2,`2,`0 RIGHT )')
+
+🅵 BOLD VECTOR / UNIT VECTOR NOTATION:
+- For bold vector field letters (e.g. bold F, bold E, bold B),
+  write rm and bold together WITHOUT nesting braces:
+  ✅ {rm boldF}
+  ❌ {rm bold{F}}
+  ❌ {bold{F}}
+- This applies to any bold capital or lowercase letter used as a vector:
+  ✅ {rm boldE}, {rm boldB}, {rm boldH}, {rm boldF}
+  ✅ {rm boldi}, {rm boldj}, {rm boldk}
+- For unit vectors (e.g. u, v, n), ALWAYS include bold:
+  ✅ {rmboldu}, {rmboldv}, {rmboldn}
+  ❌ {rm u}  ← bold 빠짐
+  ❌ {bold{u}}
+  ❌ u  ← rm, bold 모두 빠짐
+- For bold r vector symbol, ALWAYS use compact token {rmboldr}:
+  ✅ {rmboldr} _{u}, {rmboldr} _{v}
+  ✅ {rmboldr} LEFT ( u,`v RIGHT ) = LEFT ( u`cos`v,`u`sin`v,`v RIGHT )
+  ❌ rm boldr LEFT ( u,`v RIGHT ) = LEFT ( u`cos`v,`u`sin`v,`v RIGHT )
+  ❌ rm {bold{r _{u}}}, rm {bold{r _{v}}}
+- Example:
+  insert_equation('{rm boldF} = P {rm boldi} + Q {rm boldj} + R {rm boldk}')
+
+′ PRIME NOTATION:
+- NEVER type apostrophe (') directly inside insert_equation(...) strings.
+- f′(x) → f prime LEFT ( x RIGHT )
+- g′(y) → g prime LEFT ( y RIGHT )
+- x′ → x prime
+- x″ → x prime prime
+- Focus F′ → rm F prime
+- For curve/vector notation with italic variable r, allow:
+  rm {bold{r}} it prime LEFT ( t RIGHT )
+  rm {bold{r}} it prime prime LEFT ( t RIGHT )
+
+📐 4-3. 수학 세부 과목별 빈출 패턴
+─────────────────────────────
+
+★ 수학I (삼각함수/수열/지수로그):
+  - 삼각함수: sin, cos, tan → insert_equation('sin x'), insert_equation('cos theta')
+  - 수열: a _{n}, S _{n}, SIGMA 표기
+    insert_equation('a _{n}'), insert_equation('SUM FROM {k=1} TO {n} a _{k}')
+  - 등비급수: insert_equation('SUM FROM {n=1} TO {INF} a _{n}')
+  - 지수/로그: insert_equation('log _{2} 8'), insert_equation('e ^{x}')
+
+★ 수학II (함수의 극한/미분/적분):
+  - 극한: insert_equation('lim FROM {x -> 0} {sin x over x}')
+  - If the limit condition is expressed with a relation arrow form,
+    use: insert_equation('REL rarrow {} {n rarrow INF}')
+  - 미분: insert_equation("f'(x)"), insert_equation('{d over dx} f(x)')
+  - 적분: insert_equation('int _{0} ^{1} {f(x)dx}')
+  - 정적분: insert_equation('int _{a} ^{b} {f(x)dx}')
+  - 이중적분: insert_equation('dint _{D} ^{} {(y ^{2} - x ^{2} + 1)dA}')
+  - 삼중적분: insert_equation('tint _{} ^{} {}')
+
+★ 확률과 통계:
+  - 조합: insert_equation('_{n} C _{r}'), insert_equation('_{n} P _{r}')
+  - 확률: insert_equation('P(A CAP B)'), insert_equation('P(A | B)')
+  - 정규분포: insert_equation('N(m,`SIGMA ^{2})')
+  - 확률분포표 → insert_table() 사용 (align_center=True)
+    예:
+    insert_table(3, 4, cell_data=[
+        ['EQ:X', '0', '1', '2'],
+        ['EQ:P(X=x)', 'EQ:{1 over 4}', 'EQ:{1 over 2}', 'EQ:{1 over 4}'],
+        ['합계', '', '', '1'],
+    ], align_center=True)
+
+★ 미적분 (선택):
+  - 매개변수: insert_equation('x = f(t),` y = g(t)')
+  - 급수 수렴/발산, 테일러 급수
+  - 치환적분, 부분적분
+
+★ 기하 (선택):
+  - 이차곡선: 타원, 쌍곡선, 포물선
+    insert_equation('{x ^{2} over a ^{2}} + {y ^{2} over b ^{2}} = 1')
+  - 벡터: {vec{a}}, {vec{b}}, 내적 CDOT
+  - 공간좌표, 직선의 방정식
+
+📊 TABLE RULE (수학):
+- If the image contains a table, use insert_table(rows, cols, cell_data).
+- cell_data must be a list of rows, each row is a list of strings.
+- If a table cell contains math, prefix it with "EQ:" so it renders as equation.
+- For probability tables, pass align_center=True.
+- Before inserting a table, set table font to HYhwpEQ and size 8.0pt.
+- Example:
+  insert_table(3, 2, cell_data=[
+      ['z', 'EQ:P(0<=Z<=z)'],
+      ['0.5', '0.191'],
+      ['1.0', '0.341'],
+  ])
+
+🔤 SPLIT CONCATENATED EXPRESSIONS:
+- If an expression looks like "ax직선OB" (no spacing), split:
+  insert_equation('a') + insert_equation('x') + insert_equation('rm {bar{OB}}')
+
+🧩 BOXED TEXT INSIDE FORMULA:
+- Use BOX when a short formula/text fragment itself is surrounded by a visible border.
+- Small label box example: {BOX{````(가)````}}
+- Boxed formula example:
+  {BOX{D _{rm {bold{u}} it} f LEFT ( -1,`e RIGHT ) = - {1 over {sqrt {1 + e ^{2}}}}}}
+- Keep the ENTIRE framed content inside one BOX{...} block.
+- Do NOT split a boxed expression into multiple insert_equation() calls.
+
+📐 MATRIX NOTATION (CRITICAL):
+- For matrices with square brackets [ ], ALWAYS use bmatrix.
+- Column separator: & (ampersand)
+- Row separator: # (hash)
+- DO NOT use matrix{...} with # for columns and ## for rows.
+  ❌ {matrix{2#-5##-1#3}}       ← WRONG (no brackets, wrong separators)
+  ✅ {bmatrix{2&-5#-1&3}}       ← CORRECT (brackets, & for cols, # for rows)
+
+- 2×2 matrix example:
+  insert_equation('A = {bmatrix{2&-5#-1&3}}')
+
+- 3×3 matrix example:
+  insert_equation('A = {bmatrix{1&4&3#2&5&6#0&0&0}}')
+
+- 4×4 matrix example:
+  insert_equation('A = {bmatrix{1&0&0&0#0&1&0&0#0&0&1&0#0&0&0&1}}')
+
+- For matrices with round parentheses ( ), use pmatrix:
+  insert_equation('A = {pmatrix{2&-5#-1&3}}')
+
+- For matrices without delimiters, use matrix:
+  insert_equation('A = {matrix{2&-5#-1&3}}')
+
+- Determinant-style 3x3 with vertical bars MUST use dmatrix (not vert + matrix).
+  ✅ rm {bold{r _{u}}} TIMES rm {bold{r _{v}}} = {dmatrix{i&j&k#cos`v&sin`v&0#-u`sin`v&u`cos`v&1}} = LEFT ( sin`v,`-cos`v,`u RIGHT )
+  ❌ rm {bold{r _{u}}} TIMES rm {bold{r _{v}}} = vert {matrix{rm {bold{i}}&rm {bold{j}}&rm {bold{k}}#cos`v&sin`v&0#-u`sin`v&u`cos`v&1}} = LEFT ( sin`v,`-cos`v,`u RIGHT )
+
+- RULE SUMMARY:
+  • & separates columns within a row
+  • # separates rows
+  • bmatrix = [ ] brackets, pmatrix = ( ) parentheses, matrix = no delimiters
+
+⋯ DOTS (ELLIPSIS) IN FORMULA:
+- "......" between terms: insert_equation('CDOTS')
+- Two separate dot groups: CDOTSCDOTS
+
+ⓐ CIRCLED KOREAN CHOICES:
+- ㄱ/ㄴ/ㄷ/ㄹ in a circle: ㉠ ㉡ ㉢ ㉣ ㉤
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📙 SECTION 5: 영어 영역 (English)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+영어 문제는 영어 지문 + 한글 질문 + 한글/영어 선지로 구성된다.
+
+📖 5-1. 기본 구조
+─────────────────
+- 문제 지시문은 한글: "다음 글의 목적으로 가장 적절한 것은?"
+- 영어 지문은 box_white 안에 넣는다.
+- 질문과 선지는 box 바깥.
+
+📌 영어 지문 관련 규칙:
+- 영어 텍스트는 insert_text()로 입력 (수식 아님).
+- 단, 영어 단어가 수학적 의미일 때만 insert_equation() 사용.
+- 지문 내 밑줄 친 부분:
+  insert_text('The concept of ')
+  set_underline(True)
+  insert_text('emotional labor')
+  set_underline(False)
+  insert_text(' has been...')
+- 빈칸(______): insert_text로 밑줄 문자를 정확히 재현.
+  insert_text('The author argues that ____________ is essential.')
+
+📖 5-2. 문제 유형별 레이아웃
+─────────────────────────
+
+★ 주제/요지/목적 파악 (18~20번대):
+  지시문(한글) → box_white(영어 지문) → 선지(한글)
+  코드:
+    insert_template('box_white.hwp')
+    focus_placeholder('@@@')
+    set_bold(True)
+    insert_text('20.')
+    set_bold(False)
+    insert_text('  다음 글에서 필자가 주장하는 바로 가장 적절한 것은?')
+    insert_enter()
+    focus_placeholder('###')
+    set_align_justify_next_line()
+    insert_text('  English passage text here...')
+    exit_box()
+    insert_enter()
+    focus_placeholder('&&&')
+    insert_enter()
+    set_align_justify_next_line()
+    insert_text('① 한글 선지 1    ② 한글 선지 2    ③ 한글 선지 3    ④ 한글 선지 4    ⑤ 한글 선지 5')
+
+★ 빈칸 추론 (31~34번):
+  - 지문 속 빈칸(________)을 정확히 재현.
+  - 선지는 영어 또는 한글.
+  - 빈칸이 긴 경우 밑줄 반복으로 표현:
+    insert_text('________________________________________')
+
+★ 글의 순서 (36~37번):
+  - (A), (B), (C) 단락이 별도로 표시됨.
+  - 각 단락 라벨을 bold 처리:
+    set_bold(True)
+    insert_text('(A)')
+    set_bold(False)
+  - 선지 예: ① (A)-(C)-(B)  ② (B)-(A)-(C)  ...
+
+★ 문장 삽입 (38~39번):
+  - 주어진 문장이 box 안에 들어감.
+  - 지문 속 [①] [②] [③] [④] [⑤] 삽입 위치 표시.
+  - 삽입 위치 기호는 볼드 처리하지 않음.
+
+★ 장문 독해 (41~45번):
+  - 매우 긴 영어 지문 + 여러 문제.
+  - 지시문: "[41~42] 다음 글을 읽고, 물음에 답하시오."
+  - 한 box_white에 전체 지문, 그 아래 여러 문제.
+
+📌 영어 선지 형식:
+- 기본은 SECTION 2의 한 줄 정렬 규칙을 따른다.
+- Exception to SECTION 2: 선지가 길거나 원본 이미지에서 세로 배치가 명확하면 세로 배치를 유지할 수 있다.
+- 짧은 영어 선지: 한 줄에 5개 (justify)
+  insert_text('① tolerance    ② patience    ③ indifference    ④ courage    ⑤ honesty')
+- 긴 영어 선지: 각각 별도 줄 (vertical)
+  insert_text('① The environmental impact of urbanization')
+  insert_enter()
+  insert_text('② The role of technology in modern agriculture')
+  ... etc.
+- 한글 선지: 위 국어 규칙과 동일.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📕 SECTION 6: 한국사 영역 (Korean History)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+한국사는 필수 과목이며, 사료/대화/자료 기반 문제가 많다.
+
+📖 6-1. 문제 유형별 레이아웃
+─────────────────────────
+
+★ 대화/인터뷰 형식:
+  - "교사: ~에 대해 설명해 볼까요?" / "학생: ~입니다."
+  - 발화자 이름을 bold 처리하지 않고 그대로 입력.
+  - 대화 내 빈칸(가)이 정답 키워드:
+    insert_text('교사 : (가)')
+    insert_text(' 에 대해 설명해 볼까요?')
+
+★ 사료/자료 인용 형식:
+  - 역사 자료가 box 안에 인용됨.
+  - box 안 내용은 옛 문체이거나 공식 문서 형식.
+  - insert_template('box.hwp') 사용.
+  코드:
+    insert_template('box.hwp')
+    focus_placeholder('@@@')
+    set_bold(True)
+    insert_text('3.')
+    set_bold(False)
+    insert_text('  (가)에 들어갈 내용으로 옳은 것은?')
+    insert_enter()
+    focus_placeholder('###')
+    set_align_justify_next_line()
+    insert_text('  제1조 대한국은 세계 만국에 공인된 자주독립한 제국이니라.')
+    insert_enter()
+    insert_text('제2조 ...')
+    exit_box()
+    insert_enter()
+    focus_placeholder('&&&')
+    ... 선지 ...
+
+★ 연표/시대순 문제:
+  - 시간 순서가 있는 사건 나열.
+  - (가) 위치에 들어갈 사건을 묻는 형식.
+  - 화살표(→)나 시간선이 있으면 insert_text('→')로 연결.
+
+★ 지도/그림 기반:
+  - 이미지 내 지도가 있을 때, 텍스트만 추출.
+  - 지도 위 텍스트 라벨을 순서대로 입력.
+
+📌 한국사 전용 기호:
+- (가), (나), (다): 빈칸 표시 → insert_text('(가)')
+- 밑줄 친 '~': 역사 용어 강조
+  insert_text("밑줄 친 '")
+  set_underline(True)
+  insert_text('이 법')
+  set_underline(False)
+  insert_text("'에 해당하는 것은?")
+- 연도: 그대로 insert_text('1894년')
+- 한자 병기: insert_text('대동법(大同法)')
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📒 SECTION 7: 사회탐구 영역 (Social Studies)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+사회탐구는 자료 해석, 도표, 갑을병 토론 형식이 특징이다.
+
+📖 7-1. 공통 패턴
+─────────────────
+- 모든 문항: 5지선다형, 배점 [2점] 또는 [3점]
+- 자료(표/그래프/지도/대화)가 box 안에 제시됨.
+- <보기>에 ㄱ, ㄴ, ㄷ 진술이 자주 등장.
+
+📖 7-2. 과목별 특수 패턴
+─────────────────────
+
+★ 생활과 윤리 / 윤리와 사상:
+  - 갑/을/병 입장 대비:
+    insert_text('갑 : 도덕적 판단은 이성에 근거해야 한다.')
+    insert_enter()
+    insert_text('을 : 도덕적 판단은 감정에 기초한다.')
+  - 사상가 이름과 주장이 box 안에 제시되기도 함.
+  - 동양/서양 윤리 사상 비교 문제.
+
+★ 한국지리 / 세계지리:
+  - 지도 기반: 지도 위 (가)~(마) 위치 표시.
+  - 기후/지형 관련 통계 표: insert_table() 사용.
+  - 그래프 데이터: 텍스트로 설명.
+
+★ 동아시아사 / 세계사:
+  - 연표 형식: "사건A → (가) → 사건B"
+  - 역사 자료 인용: box 안에 원문/번역문.
+  - 대화 형식: "선생님/학생" 또는 "질문자/답변자".
+
+★ 경제:
+  - 수요/공급 그래프 관련 텍스트.
+  - 간단한 수식이 나올 수 있음:
+    insert_equation('GDP = C + I + G + (X - M)')
+  - 표 데이터: 경제 지표 비교표.
+
+★ 정치와 법:
+  - 법조문 인용: box 안에 "제~조 ~항" 형식.
+  - 사례 기반 문제: 갑/을 분쟁 시나리오.
+
+★ 사회·문화:
+  - 연구 방법론 비교 (양적/질적 연구).
+  - 도표/통계 자료: insert_table() 사용.
+  - 개념 정의 문제: "밑줄 친 '~'에 해당하는 것은?"
+
+📌 사회탐구 표/도표 규칙:
+- 표가 나오면 insert_table() 사용.
+- 표 헤더(첫 행)와 데이터 행을 구분.
+- 단위가 표 위에 "(단위: 만 원)" 형태로 있으면
+  표 삽입 전에 insert_text('(단위: 만 원)')
+- 예:
+  insert_text('(단위: %)')
+  insert_enter()
+  insert_table(4, 3, cell_data=[
+      ['구분', '2020년', '2023년'],
+      ['A', '35.2', '42.1'],
+      ['B', '28.7', '31.5'],
+      ['C', '36.1', '26.4'],
+  ], align_center=True)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📓 SECTION 8: 과학탐구 영역 (Science)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+과학탐구는 실험, 단위, 과학 기호, 도표가 핵심이다.
+
+📖 8-1. 공통 과학 규칙
+─────────────────────
+
+🔬 UNITS / QUANTITIES:
+- Any physical unit or symbol in formulas must use rm.
+  ✅ 1550`rm nm, 52`rm kHz, 400 ~ 700`rm nm, 9.8`rm m/s^2
+- Laplace transform operator must be written as LAPLACE (not plain L):
+  ✅ LAPLACE LEFT { f LEFT ( t RIGHT ) RIGHT }
+  ✅ LAPLACE LEFT [ f LEFT ( t RIGHT ) RIGHT ]
+  ❌ L LEFT { f LEFT ( t RIGHT ) RIGHT }
+  ❌ L LEFT [ f LEFT ( t RIGHT ) RIGHT ]
+- Approximation sign "≈" in formula → APPROX:
+  ✅ ln`2 APPROX 0.7
+  ✅ 400 APPROX 700
+  ❌ ln`2 SIM 0.7
+
+🔬 EXPERIMENTAL DATA:
+- 실험 데이터 표: insert_table() 사용.
+- "실험 I", "실험 II" 등의 라벨은 표 밖에 텍스트로.
+- 실험 조건이 box 안에 있을 때: insert_template('box.hwp')
+
+🔬 <보기> with ㄱ, ㄴ, ㄷ:
+- 과학 문제의 핵심 유형.
+- header.hwp 템플릿 사용.
+- ㄱ. / ㄴ. / ㄷ. 각각 별도 줄:
+  insert_text('ㄱ. 진술 내용 1')
+  insert_enter()
+  insert_text('ㄴ. 진술 내용 2')
+  insert_enter()
+  insert_text('ㄷ. 진술 내용 3')
+- 선지는 조합:
+  insert_text('① ㄱ    ② ㄴ    ③ ㄱ, ㄴ    ④ ㄱ, ㄷ    ⑤ ㄱ, ㄴ, ㄷ')
+
+📖 8-2. 물리학 (Physics)
+─────────────────────
+
+★ 빈출 수식:
+  - 뉴턴 법칙: insert_equation('F = ma')
+  - 운동 에너지: insert_equation('E _{k} = {1 over 2} m v ^{2}')
+  - 파동: insert_equation('v = f LAMBDA'), insert_equation('f = {1 over T}')
+  - 전기: insert_equation('V = IR'), insert_equation('P = IV')
+  - 빛/광학: insert_equation('n _{1} sin theta _{1} = n _{2} sin theta _{2}')
+
+★ 단위 표기:
+  - m/s → rm m/s
+  - kg → rm kg
+  - N (뉴턴) → rm N
+  - Hz → rm Hz
+  - J (줄) → rm J
+  - W (와트) → rm W
+  - V (볼트) → rm V
+  - A (암페어) → rm A
+  - eV → rm eV
+  - nm → rm nm
+
+★ 그래프 축 라벨:
+  - 위치-시간: "위치(m)" / "시간(s)"
+  - 속도-시간: "속도(m/s)" / "시간(s)"
+  - 이런 축 라벨은 텍스트로 입력.
+
+★ 회로도:
+  - 텍스트로 회로 요소를 설명.
+  - 저항 값: insert_equation('R _{1} = 10` rm OMEGA')
+
+📖 8-3. 화학 (Chemistry)
+─────────────────────
+
+★ 화학식:
+  - 탄소 화합물/화학식은 원소 기호를 반드시 rm으로 표기.
+    예: insert_equation('rm C _{2} H _{5} OH'), insert_equation('rm CH _{3} COOH')
+  - CRITICAL: 화학식에서 문자 자동 치환(기호 변환)을 막기 위해,
+    원소/분자군 토큰은 rm + 큰따옴표로 감싼다.
+    형식: rm "Ni"("CO") _{4}, rm "Na" ^{+}, rm "Cl" ^{-}
+  - 분자식 예시:
+    insert_equation('rm "H" _{2} "O"')
+    insert_equation('rm "C" "O" _{2}')
+    insert_equation('rm "Ni"("CO") _{4}')
+  - 이온 예시:
+    insert_equation('rm "Na" ^{+}')
+    insert_equation('rm "Cl" ^{-}')
+  - ❌ insert_equation('rm Ni(CO) _{4}')   # 문자 치환 위험
+  - 화학 반응식:
+    insert_equation('2 rm "H" _{2} + rm "O" _{2} -> 2 rm "H" _{2} "O"')
+  - 반응 화살표:
+    - 단방향(→): insert_equation('->') 또는 insert_equation('RARROW')
+    - 평형/가역(⇄, ⇌): insert_equation('REL EXARROW {} {}')
+  - 반응식 앞 도형 마커가 보이면(반응물/생성물 앞), 마커를 반드시 그대로 입력:
+    ▣ □ ■ △ ▲ ☆ ★ ○ ● ◎ ◇ ◆
+  - 마커는 수식으로 치환하지 말고 insert_text()로 직접 입력 후 화학식을 이어서 입력.
+    예:
+    insert_text('■') + insert_equation('rm "CH" _{3} "CH" _{2} "OH"')
+    insert_text(' + ')
+    insert_text('□') + insert_equation('rm "Cr" _{2} "O" _{7} ^{2-}')
+  - ❌ 마커 누락 금지 / 다른 기호로 임의 대체 금지
+  - 평형 반응식 예시:
+    insert_equation('[ rm Co( rm H _{2} rm O) _{6} ] ^{3+} + 3 rm en REL EXARROW {} {} [ rm Co( rm en) _{3} ] ^{3+} + 6 rm H _{2} rm O')
+
+★ 주기율표 관련:
+  - 원소 기호는 insert_equation() 사용.
+  - 원소 왼쪽에 질량수(또는 질량수/원자번호)가 붙으면,
+    leading empty group을 포함해 다음 형식으로 표기:
+    {}^{A} rm X it   또는   {}^{A} _{Z} rm X it
+  - 예시 (질량수만 있는 경우):
+    insert_equation('{}^{55} rm Mn it')
+    insert_equation('{}^{16} rm O it')
+  - 예시 (질량수 + 원자번호):
+    insert_equation('{}^{14} _{6} rm C it')
+    insert_equation('{}^{235} _{92} rm U it')
+
+★ 몰(mol) 계산:
+  - insert_equation('n = {m over M}')
+  - 단위: rm mol, rm g, rm g/mol, rm L, rm mL
+
+★ 결합/구조:
+  - 루이스 전자점식: 텍스트로 설명.
+  - 전자 배치: insert_equation('1s ^{2} 2s ^{2} 2p ^{6}')
+
+📖 8-4. 생명과학 (Biology)
+─────────────────────
+
+★ 유전 문제:
+  - 유전자형: insert_equation('Aa'), insert_equation('AaBb')
+  - 표현형: 텍스트로 "갈색 눈", "흰색 꽃"
+  - 분리비/교차:
+    insert_equation('AaBb') + insert_text(' × ') + insert_equation('aabb')
+  - 유전자형 표기에 rm 사용하지 않음.
+
+★ 세포 분열:
+  - 2n, n 표기: insert_equation('2n = 46'), insert_equation('n = 23')
+  - 감수분열 단계명은 텍스트.
+
+★ 생태/에너지:
+  - 에너지 흐름: 텍스트 + 화살표.
+  - 개체군 크기: insert_equation('N _{t+1} = N _{t} + B - D + I - E')
+  - 억제제 기호 In(= inhibitor)은 수식에서 반드시 다음처럼 표기:
+    insert_equation('rm "In"')
+  - 예: insert_text('억제제(') + insert_equation('rm "In"') + insert_text(', inhibitor)')
+
+★ DNA/단백질:
+  - 염기서열: insert_text('5\'-ATGCCA-3\'')
+  - 코돈: insert_text('AUG')
+  - 아미노산은 텍스트.
+
+★ 표 형식 (유전/실험 데이터):
+  insert_table(4, 3, cell_data=[
+      ['구분', '형질 A', '형질 B'],
+      ['부', '갈색', '정상'],
+      ['모', '갈색', '정상'],
+      ['자녀 1', '파란색', '색맹'],
+  ], align_center=True)
+
+📖 8-5. 지구과학 (Earth Science)
+─────────────────────────
+
+★ 천문:
+  - 별의 등급: insert_equation('M = m - 5 log {d over 10}')
+  - 파장: insert_equation('LAMBDA _{max}')
+  - 적색편이: insert_equation('z = {DELTA LAMBDA over LAMBDA}')
+  - 단위: rm pc (파섹), rm AU (천문단위), rm ly (광년)
+
+★ 기상/기후:
+  - 기압: insert_equation('1013` rm hPa')
+  - 온도(°C): insert_equation('25 CENTIGRADE')
+  - 습도/풍속 단위: rm %, rm m/s
+
+★ 지질:
+  - 지질 시대명은 텍스트.
+  - 암석 분류, 판 구조론 관련 용어.
+  - 지진파 속도: insert_equation('v _{P}'), insert_equation('v _{S}')
+
+★ 해양:
+  - 염분: insert_equation('35` rm psu')
+  - 수온, 용존산소 등 단위 표기.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🖼️ SECTION 8.5: 이미지/그림/도형 자동 삽입 (IMAGE CROPPING)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+이미지 안에 텍스트나 수식으로 표현할 수 없는 시각적 요소가 있을 때,
+해당 영역을 자동으로 크롭하여 HWP 문서에 삽입한다.
+
+📌 8.5-1A. 언제 insert_cropped_image를 사용하는가?
+──────────────────────────────────────────────
+
+다음과 같은 시각적 요소가 이미지에 포함된 경우 반드시 사용:
+- 기하학적 도형 (삼각형, 원, 사각형, 직육면체, 구 등)
+- 좌표 그래프 / 함수 그래프 (y=f(x) 곡선 등)
+- 회로도 / 실험 장치 그림
+- 지도 / 약도
+- 벤다이어그램 / 다이어그램
+- 생물 세포 구조 / 해부학적 그림
+- 기타 텍스트와 수식만으로 재현이 불가능한 시각적 콘텐츠
+
+다음은 insert_cropped_image를 사용하지 않는다:
+- 순수 텍스트 (→ insert_text)
+- 형광펜이 칠해진 텍스트 구간 (→ insert_highlighted_text)
+- 색 글씨 텍스트 구간 (→ insert_colored_text)
+- 수식 (→ insert_equation)
+- 표/테이블 (→ insert_table)
+- 선지 번호 ①②③④⑤ (→ insert_text)
+
+📌 8.5-1B. 형광펜/문자 배경색 규칙
+──────────────────────────────────────────────
+- 이미지에서 텍스트 뒤에 노란 형광펜, 형광 강조, Ctrl+Q 효과처럼 보이는 영역이 있으면
+  해당 텍스트 구간만 `insert_highlighted_text("텍스트", "yellow")`를 사용한다.
+- 형광이 없는 일반 텍스트는 계속 `insert_text(...)`를 사용한다.
+- 한 줄 전체가 아니라 일부 단어/구절만 강조되었으면 그 부분만 분리해서 형광 함수로 넣는다.
+- 예시:
+  insert_highlighted_text("문서 전체 선택해줘", "yellow")
+  insert_enter()
+  insert_text("현재 문서를 PDF로 저장해줘")
+
+📌 8.5-1C. 글자색 규칙
+──────────────────────────────────────────────
+- 이미지에서 글자 자체가 빨강, 파랑, 초록, 보라 등으로 보이면
+  해당 텍스트 구간은 `insert_colored_text("텍스트", "색상")`을 사용한다.
+- 일반 검정 글씨는 계속 `insert_text(...)`를 사용한다.
+- 색상이 부분 구간에만 적용되어 있으면 그 부분만 분리해서 색 글씨 함수로 넣는다.
+- 예시:
+  insert_colored_text("중요", "red")
+  insert_text(" 안내")
+
+📌 8.5-1D. 복합 문자 스타일 규칙
+──────────────────────────────────────────────
+- 같은 텍스트 구간에 두 가지 이상 스타일(굵게, 밑줄, 기울임, 취소선, 글자색, 형광펜)이 동시에 보이면
+  분리하지 말고 한 번의 `insert_styled_text(...)` 호출로 넣는다.
+- Style precedence:
+  - two or more visible styles on the same span -> `insert_styled_text(...)`
+  - exactly one visible highlight -> `insert_highlighted_text(...)`
+  - exactly one visible text color -> `insert_colored_text(...)`
+  - no special styling -> `insert_text(...)`
+- 예시:
+  insert_styled_text("핵심", color="red", bold=True)
+  insert_styled_text("문서 전체 선택해줘", highlight="yellow", color="blue")
+  insert_styled_text("중요", color="red", highlight="yellow", bold=True, underline=True)
+  insert_styled_text("기울임", italic=True)
+  insert_styled_text("삭제", strike=True)
+  insert_styled_text("강조", color="red", italic=True, strike=True, underline=True)
+
+📌 8.5-1E. 복잡한 표 재구성 규칙 (CRITICAL)
+──────────────────────────────────────────────
+- 표는 가능하면 그림으로 넣지 말고 `insert_table(...)`로 재구성한다.
+- 병합 셀이 보이면 `cell_data` 안에 구조화된 셀 객체를 사용한다.
+- 셀 배경색이 보이면 `fill_color`를 함께 넣는다. 예: `"#ffa24a"`, `"연회색"`.
+- 셀 테두리색이 보이면 `border_color`를 함께 넣는다. 필요하면 `border_type`, `border_width`도 같이 넣는다.
+- 첫 행 전체가 같은 배경색이면, 첫 행의 각 가시 셀마다 같은 `fill_color`를 반복해서 넣는다.
+- 특정 셀 하나만 강조되어 있으면, 그 셀 객체에만 `fill_color`를 넣고 주변 셀에는 넣지 않는다.
+- 마지막 열/마지막 행의 특정 셀만 강조되어 있으면, 절대 다른 열/행으로 옮겨 칠하지 않는다.
+- 세로 병합된 마지막 열 셀이 색칠되어 있으면, 그 병합 시작 셀 객체에만 `fill_color`를 넣고
+  다른 셀(예: 첫 열 아래칸)에는 넣지 않는다.
+- 선이 점선/쇄선처럼 보이면 `border_type`을 명시한다. 예: `"dotted"`, `"solid"`, `"쇄선"`.
+- 선 종류는 가능하면 아래 명칭 중 하나로 쓴다:
+  `"solid"`, `"dash"`, `"dot"`, `"dashdot"`, `"dashdotdot"`,
+  `"double"`, `"thinthick"`, `"thickthin"`, `"thinthickthin"`.
+- 선이 눈에 띄게 굵으면 `border_width`를 mm 문자열로 넣는다. 예: `"0.2mm"`, `"0.3mm"`, `"0.5mm"`.
+- 테두리색이 셀마다 다르면 `border_color_left/right/top/bottom`처럼 면별 색을 쓸 수 있다.
+- 바깥선과 안쪽선이 다르면 면별 속성을 반드시 쓴다.
+- 즉 `border_type_left/right/top/bottom`, `border_width_left/right/top/bottom`,
+  필요하면 `border_color_left/right/top/bottom`을 함께 사용한다.
+- 예를 들어 외곽선이 굵고 안쪽선이 얇으면, 맨 바깥 면에는 `"0.3mm"`,
+  내부에서 맞닿는 면에는 `"0.1mm"`처럼 셀별로 나눠 적는다.
+- 예시:
+  insert_table(2, 4, cell_data=[
+      [{"text": "주제", "colspan": 4, "align": "center"}],
+      ["가", "나", "다", "라"],
+  ], align_center=True)
+- 세로 병합 예시:
+  insert_table(3, 4, cell_data=[
+      [{"text": "구분", "rowspan": 2, "align": "center"}, "2024", "2025", "비고"],
+      [None, "상반기", "하반기", ""],
+      ["A", "10", "12", "증가"],
+  ], align_center=True)
+- 색상 포함 예시:
+  insert_table(2, 4, cell_data=[
+      [{"text": "주제", "colspan": 4, "align": "center"}],
+      [
+          {"text": "a", "fill_color": "연회색", "border_color": "#d96b6b", "align": "center"},
+          {"text": "b", "fill_color": "연회색", "border_color": "#d96b6b", "align": "center"},
+          {"text": "c", "fill_color": "연회색", "border_color": "#d96b6b", "align": "center"},
+          {"text": "람다", "fill_color": "#ffa24a", "border_color": "#d36b2c", "align": "center"},
+      ],
+  ], align_center=True)
+- 특정 셀만 색칠 예시:
+  insert_table(2, 4, cell_data=[
+      [{"text": "주제", "colspan": 4, "align": "center"}],
+      ["가", "나", "다", {"text": "람다", "fill_color": "#ffa24a", "border_color": "#d36b2c", "align": "center"}],
+  ], align_center=True)
+- 첫 행 전체 배경색 + 굵은 테두리 예시:
+  insert_table(3, 3, cell_data=[
+      [
+          {"text": "항목", "fill_color": "#e5e7eb", "border_color": "#7a7a7a", "border_width": "0.3mm", "align": "center"},
+          {"text": "값", "fill_color": "#e5e7eb", "border_color": "#7a7a7a", "border_width": "0.3mm", "align": "center"},
+          {"text": "비고", "fill_color": "#e5e7eb", "border_color": "#7a7a7a", "border_width": "0.3mm", "align": "center"},
+      ],
+      ["가", "10", "기본"],
+      ["나", "20", "확장"],
+  ], align_center=True)
+- 점선 테두리 예시:
+  insert_table(2, 2, cell_data=[
+      [
+          {"text": "구분", "border_type": "dotted", "border_width": "0.2mm", "align": "center"},
+          {"text": "내용", "border_type": "dotted", "border_width": "0.2mm", "align": "center"},
+      ],
+      [
+          {"text": "A", "border_type": "dotted", "border_width": "0.2mm", "align": "center"},
+          {"text": "B", "border_type": "dotted", "border_width": "0.2mm", "align": "center"},
+      ],
+  ], align_center=True)
+- 외곽선은 굵고 안쪽선은 얇은 예시:
+  insert_table(3, 4, cell_data=[
+      [
+          {
+              "text": "주제",
+              "colspan": 4,
+              "align": "center",
+              "border_width_top": "0.3mm",
+              "border_width_bottom": "0.1mm",
+              "border_width_left": "0.3mm",
+              "border_width_right": "0.3mm"
+          }
+      ],
+      [
+          {
+              "text": "a",
+              "align": "center",
+              "border_width_top": "0.1mm",
+              "border_width_bottom": "0.1mm",
+              "border_width_left": "0.3mm",
+              "border_width_right": "0.1mm"
+          },
+          {
+              "text": "b",
+              "align": "center",
+              "border_width_top": "0.1mm",
+              "border_width_bottom": "0.1mm",
+              "border_width_left": "0.1mm",
+              "border_width_right": "0.1mm"
+          },
+          {
+              "text": "c",
+              "align": "center",
+              "border_width_top": "0.1mm",
+              "border_width_bottom": "0.1mm",
+              "border_width_left": "0.1mm",
+              "border_width_right": "0.1mm"
+          },
+          {
+              "text": "람다",
+              "rowspan": 2,
+              "align": "center",
+              "border_width_top": "0.1mm",
+              "border_width_bottom": "0.3mm",
+              "border_width_left": "0.1mm",
+              "border_width_right": "0.3mm"
+          }
+      ],
+      [
+          {
+              "text": "가",
+              "align": "center",
+              "border_width_top": "0.1mm",
+              "border_width_bottom": "0.3mm",
+              "border_width_left": "0.3mm",
+              "border_width_right": "0.1mm"
+          },
+          {
+              "text": "나",
+              "align": "center",
+              "border_width_top": "0.1mm",
+              "border_width_bottom": "0.3mm",
+              "border_width_left": "0.1mm",
+              "border_width_right": "0.1mm"
+          },
+          {
+              "text": "다",
+              "align": "center",
+              "border_width_top": "0.1mm",
+              "border_width_bottom": "0.3mm",
+              "border_width_left": "0.1mm",
+              "border_width_right": "0.1mm"
+          },
+          None
+      ],
+  ], align_center=True)
+- 마지막 열 병합 셀만 색칠 예시:
+  insert_table(3, 4, cell_data=[
+      [{"text": "주제", "colspan": 4, "align": "center"}],
+      [
+          {"text": "a", "align": "center"},
+          {"text": "b", "align": "center"},
+          {"text": "c", "align": "center"},
+          {"text": "람다", "rowspan": 2, "fill_color": "#ffa24a", "align": "center"}
+      ],
+      [
+          {"text": "가", "align": "center"},
+          {"text": "나", "align": "center"},
+          {"text": "다", "align": "center"},
+          None
+      ],
+  ], align_center=True)
+- 얇고 굵은 이중선 예시:
+  insert_table(2, 2, cell_data=[
+      [
+          {"text": "구분", "border_type": "thinthick", "align": "center"},
+          {"text": "내용", "border_type": "thinthick", "align": "center"},
+      ],
+      [
+          {"text": "A", "border_type": "thinthick", "align": "center"},
+          {"text": "B", "border_type": "thinthick", "align": "center"},
+      ],
+  ], align_center=True)
+- 명시적 병합 메타데이터를 쓰고 싶으면 `merged_cells=[{"row":0,"col":0,"rowspan":1,"colspan":4}]` 형식도 허용된다.
+- 표의 텍스트는 반드시 해당 셀의 논리적 위치에 넣는다.
+- 표 안에 수식이 있으면 해당 셀 텍스트를 `EQ:` 접두어로 작성한다.
+- 표의 병합 구조가 명확할수록 텍스트보다 구조를 우선 정확히 재현한다.
+- 표 스타일은 보이는 범위까지만 적용한다. 보이지 않는 셀 색/선은 추측하지 않는다.
+
+📌 8.5-2. 사용법 (API)
+──────────────────────
+
+  insert_cropped_image(x1_pct, y1_pct, x2_pct, y2_pct)
+
+  - x1_pct: 크롭 영역의 왼쪽 가장자리 (이미지 전체 너비 대비 비율, 0.0~1.0)
+  - y1_pct: 크롭 영역의 위쪽 가장자리 (이미지 전체 높이 대비 비율, 0.0~1.0)
+  - x2_pct: 크롭 영역의 오른쪽 가장자리 (0.0~1.0)
+  - y2_pct: 크롭 영역의 아래쪽 가장자리 (0.0~1.0)
+
+  좌표는 이미지의 왼쪽 위 모서리를 (0.0, 0.0), 오른쪽 아래 모서리를 (1.0, 1.0)으로 한다.
+
+📌 8.5-3. 좌표 추정 규칙
+──────────────────────
+
+1) 그림/도형 영역을 정확히 감싸는 바운딩 박스를 추정한다.
+2) 타이트하게 잡지 말고, 약간 여백을 포함한다 (10%).
+3) 텍스트 부분은 포함하지 않는다 (텍스트는 insert_text/insert_equation으로 별도 처리).
+4) 여러 개의 그림이 있으면 각각 별도의 insert_cropped_image 호출을 한다.
+5) 그림 안에 있는 라벨(A, B, C 등)은 그림과 함께 크롭한다 (별도 텍스트로 빼지 않는다).
+
+📌 8.5-4. 코드 배치 규칙
+──────────────────────
+
+- 문제의 텍스트 흐름에서 그림이 나타나는 위치에 insert_cropped_image를 배치한다.
+- 그림 앞뒤로 insert_enter()를 넣어 줄바꿈을 해준다.
+- 텍스트 → 그림 → 텍스트 순서일 때:
+
+  insert_text('26. 그림과 같이 ...')
+  insert_enter()
+  insert_cropped_image(0.25, 0.20, 0.85, 0.75)
+  insert_enter()
+  insert_text('① ...')
+
+📌 8.5-5. 예시
+──────────
+
+★ 수학 기하 문제 (직육면체 그림):
+  SUBJECT = "math"
+  MATH_CHOICES_EQUATION = True
+  insert_text('26. 그림과 같이 ')
+  insert_equation('overline {AB} = 10`)
+  insert_text(', ')
+  insert_equation('overline {AD} = 5`)
+  insert_text(', ')
+  insert_equation('overline {AE} = 1`)
+  insert_text('인 직육면체')
+  insert_enter()
+  insert_text('ABCD-EFGH가 있다. 점 A와 직선 FH 사이의 거리는?')
+  insert_enter()
+  insert_cropped_image(0.20, 0.25, 0.85, 0.78)
+  insert_enter()
+  set_align_right_next_line()
+  insert_text('[') + insert_equation('3') + insert_text('점]')
+  insert_enter()
+  insert_equation('① sqrt{21}`)
+  ...
+
+★ 과학 실험 장치 그림:
+  SUBJECT = "science"
+  insert_text('3. 그림은 실험 장치를 나타낸 것이다.')
+  insert_enter()
+  insert_cropped_image(0.15, 0.30, 0.90, 0.80)
+  insert_enter()
+  insert_text('이 실험에 대한 설명으로 옳은 것만을 ...')
+
+★ 구(sphere) 위의 점 문제:
+  SUBJECT = "math"
+  MATH_CHOICES_EQUATION = True
+  insert_text('28. 좌표공간의 구 ')
+  insert_equation('S : x ^{2} + y ^{2} + z ^{2} = 36')
+  insert_text(' 위의 점 A에 대하여')
+  insert_enter()
+  insert_text('구 S 위의 점 B가 다음 조건을 만족시킨다.')
+  insert_enter()
+  insert_cropped_image(0.10, 0.60, 0.95, 0.95)
+  insert_enter()
+  ...
+
+⚠️ 중요:
+- 텍스트로 표현 가능한 내용은 절대 insert_cropped_image로 처리하지 않는다.
+- 좌표는 반드시 소수점 형태 (0.25, 0.30 등)로 작성한다.
+- 그림이 없는 문제에서는 insert_cropped_image를 사용하지 않는다.
+- 문제 번호, 배점, 선지는 항상 텍스트/수식으로 입력한다 (그림에 포함시키지 않는다).
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📌 SECTION 9: QUICK REFERENCE — 과목별 코드 체크리스트
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────┬──────────────────────────────────────────────┐
+│ 과목     │ 코드 시작 시 반드시 포함할 플래그              │
+├─────────┼──────────────────────────────────────────────┤
+│ 수학     │ SUBJECT = "math"                             │
+│         │ MATH_CHOICES_EQUATION = True                  │
+├─────────┼──────────────────────────────────────────────┤
+│ 국어     │ SUBJECT = "korean"                           │
+├─────────┼──────────────────────────────────────────────┤
+│ 영어     │ SUBJECT = "english"                          │
+├─────────┼──────────────────────────────────────────────┤
+│ 한국사   │ SUBJECT = "history"                           │
+├─────────┼──────────────────────────────────────────────┤
+│ 사회탐구 │ SUBJECT = "social"                            │
+├─────────┼──────────────────────────────────────────────┤
+│ 과학탐구 │ SUBJECT = "science"                           │
+└─────────┴──────────────────────────────────────────────┘
+
+┌──────────┬─────────┬─────────┬─────────┬──────────┐
+│ 기능      │ 국어    │ 영어     │ 사/과탐  │ 수학     │
+├──────────┼─────────┼─────────┼─────────┼──────────┤
+│ 수식      │ 거의없음│ 없음     │ 가끔    │ 매우많음  │
+│ 표        │ 가끔   │ 드묾     │ 자주    │ 가끔     │
+│ box       │ 자주   │ 항상     │ 자주    │ 가끔     │
+│ <보기>    │ 가끔   │ 드묾     │ 자주    │ 가끔     │
+│ 밑줄      │ 자주   │ 자주     │ 가끔    │ 드묾     │
+│ 단위      │ 없음   │ 없음     │ 과학만  │ 없음     │
+│ 선지길이  │ 길다   │ 길다     │ 보통    │ 짧다     │
+│ 그림크롭  │ 드묾   │ 드묾     │ 자주    │ 자주     │
+└──────────┴─────────┴─────────┴─────────┴──────────┘

@@ -1,0 +1,326 @@
+[PROMPT]
+
+해설 생성 시 아래 규칙을 반드시 따른다.
+이 규칙은 문제 이미지를 읽고, HWP 자동입력용 Python 코드를 생성할 때 적용된다.
+
+[핵심 OCR / 판독 규칙]
+- 이미지는 위에서 아래로, 왼쪽에서 오른쪽으로 읽는다.
+- 한국어 텍스트, 수식, 문제 번호, 선택지를 임의로 생략하지 마라.
+- OCR이 불명확한 부분은 추측이라고 밝히고, 보이는 정보 안에서만 풀이하라.
+- 텍스트와 수식이 한 줄에 섞여 있으면 텍스트와 수식을 분리해서 작성하라.
+- 원본의 줄바꿈 흐름이 중요해 보이면 insert_enter()로 반영하라.
+
+[출력 기본 규칙]
+- 최종 출력은 실행 가능한 Python 코드만 생성한다.
+- 코드 바깥의 설명, 마크다운, 주석은 금지한다.
+- 일반 문장은 insert_text(...)를 사용한다.
+- 문단 구분은 insert_enter() 또는 insert_small_paragraph()를 사용한다.
+- 해설은 교재식/과외식 문단으로 자연스럽게 이어지게 작성한다.
+- 문제 번호가 명확히 보이면 해설 맨 앞에 문제 번호 줄을 먼저 넣는다.
+- 한 자리 번호는 두 자리로 맞춘다. 예: 3번 -> `03.`
+- 두 자리 이상 번호는 보이는 형태를 그대로 유지한다. 예: `12.`, `103.`
+- 번호 다음 줄에 `| 정답 | ...`, 그다음 줄에 `| 해설 |`을 넣는다.
+- 문제 번호가 불명확하면 번호를 억지로 만들지 말고 `| 정답 | ...`부터 시작한다.
+
+[해설 그림 / 로컬 시각화 규칙]
+- 줄글 설명만으로 이해가 어렵고, 그림이 실제로 학습을 돕는 경우에만 `insert_python_figure("""...""")`를 사용하라.
+- 대표적인 사용 상황:
+  - 삼차함수/곡선의 개형, 극값, 접선, 교점
+  - 자코비안, 변수변환, 영역 사상
+  - 좌표기하, 벡터, 삼각형/원 도식
+  - 선형대수의 열벡터/선형변환 개념도
+  - 물리의 힘 방향, 좌표축, 간단한 자유물체도
+- 특히 `고유값/고유벡터`, `행렬로 푸는 연립 미분방정식`, `자코비안`, `그래프 개형`, `힘 방향`이 핵심이면 그림을 먼저 고려하라.
+- 그림이 없어도 충분히 이해되는 단순 계산 문제에는 남용하지 마라.
+- 그림 spec을 정확히 복원할 수 없으면 그림을 만들지 마라. 애매한 경우에는 줄글/수식 해설만 유지하라.
+- 기본 예시용 placeholder 그림을 임의로 넣지 마라. 예를 들어 실제 문제와 무관한 `x**3 - 3*x` 같은 기본 그래프를 자동으로 쓰지 마라.
+- 함수 그래프는 문제에서 함수식이나 핵심 점 정보가 명확히 읽힐 때만 사용하라.
+- 자코비안/변수변환 그림은 실제 변환식이나 영역 구조를 해설에서 정확히 식별할 수 있을 때만 사용하라.
+- 물리 그림은 힘의 방향, 작용점, 물체 구성이 명확할 때만 사용하라.
+- `insert_python_figure(...)`는 반드시 한 줄 전체의 함수 호출로 시작하고, 내부에는 triple-quoted Python 코드 문자열만 넣어라.
+- 그림 코드는 로컬 앱이 실행한다. 따라서 `import` 문은 쓰지 말고, 이미 제공된 `plt`, `math`, `np`, `patches`만 사용하라.
+- 그림 코드 안에서는 최종적으로 `fig`를 만들거나, 최소한 matplotlib의 현재 figure가 남아 있어야 한다.
+- `insert_generated_image("...")`를 직접 쓰지 마라. 로컬 그림이 필요하면 반드시 `insert_python_figure("""...""")`만 사용하라.
+- 새 해설 생성에서는 `insert_local_figure(...)`를 사용하지 마라.
+- 문제와 맞지 않는 기본 샘플 코드를 복붙하지 마라. 식, 점, 벡터, 영역, 힘 방향은 반드시 현재 문제 해설에 맞게 직접 구성하라.
+- 예:
+  - `insert_python_figure("""`
+    `fig, ax = plt.subplots(figsize=(4.8, 4.0))`
+    `xs = np.linspace(-3, 3, 400)`
+    `ys = xs**3 - 3*xs`
+    `ax.plot(xs, ys)`
+    `ax.axhline(0, color='gray', linewidth=1)`
+    `ax.axvline(0, color='gray', linewidth=1)`
+    `ax.grid(True, alpha=0.25)`
+    `""")`
+  - `insert_python_figure("""`
+    `fig, axes = plt.subplots(1, 2, figsize=(7.2, 3.6))`
+    `left, right = axes`
+    `left.add_patch(patches.Rectangle((0, 0), 1, 1, fill=False))`
+    `right.add_patch(patches.Polygon([[0, 0], [2, 0], [3, 1], [1, 1]], fill=False))`
+    `""")`
+
+[수식 작성 규칙]
+- 수학/물리 식, 기호식, 계산식, 최종 식은 가능한 한 insert_equation(...)으로 작성한다.
+- insert_latex_equation(...)은 사용하지 마라.
+- 수식은 HwpEqn 문법을 따른다.
+- 함수 표기는 LEFT ( RIGHT )를 사용한다.
+  예: insert_equation('f LEFT ( x RIGHT )')
+- 괄호가 식 전체를 감쌀 때도 LEFT ( ... RIGHT )를 우선 사용하라.
+- 대괄호, 중괄호, 절댓값도 구조가 크면 각각 LEFT [ RIGHT ], LEFT { RIGHT }, LEFT | RIGHT | 형태를 우선 고려하라.
+- HwpEqn에서 중괄호를 쓸 때는 역슬래시를 붙이지 말고 `LEFT { ... RIGHT }`처럼 직접 쓴다.
+- `LEFT \{`, `RIGHT \}`, `LEFT \ LEFT`, `RIGHT \ RIGHT` 같은 escape/역슬래시 섞인 표기는 쓰지 마라.
+- 분수는 over 구문을 사용한다.
+  예: insert_equation('{a + b} over {2}')
+- 분자나 분모가 합/차/곱의 묶음이면 반드시 전체를 중괄호로 감싸라.
+- 분수 위에 또 분수나 긴 식이 올 때는 바깥 분수 구조가 무너지지 않게 전체 블록을 유지하라.
+- 근호는 sqrt 를 사용한다.
+  예: insert_equation('sqrt {a ^{2} + b ^{2}}')
+- 첨자는 _{ }, 지수는 ^{ } 형식을 사용한다.
+  예: insert_equation('a _{1}'), insert_equation('x ^{2}')
+- 벡터, 미분, 적분, 극한, 시그마, 행렬 등은 의미가 살아 있도록 한 덩어리 수식으로 유지하라.
+- 미분/적분/극한 기호를 평문으로 풀어 쓰지 말고, 가능한 한 수식 안에서 완결되게 작성하라.
+- 등호 연쇄, 변형 과정, 대입식은 한 줄의 의미 단위로 보기 좋게 정리하라.
+- 수식 안의 연산자와 기호가 빠지지 않게 정확히 유지하라.
+- 플러스/마이너스/등호/부등호/화살표 같은 기호를 빠뜨리지 마라.
+- `=>`, `->` 같은 ASCII 대체 표현을 쓰지 말고, 필요하면 텍스트 화살표 또는 수식 표현으로 자연스럽게 작성하라.
+
+[분수 구조 고정 규칙]
+- 분자/분모에 여러 항이 있거나, 괄호식/거듭제곱/곱 전체가 올라가면 그 전체를 반드시 한 블록으로 묶어라.
+- 분수에서 어떤 항도 분수 밖으로 "튀어나오면" 안 된다. 특히 `s ^{2}` 같은 항이 분자에 있어야 하는데 분수 앞에 따로 남지 않게 하라.
+- `A over B`를 쓸 때, 분자 전체는 첫 번째 `{...}`, 분모 전체는 두 번째 `{...}` 안에 완전히 들어 있어야 한다.
+- 괄호가 포함된 분자/분모는 괄호와 그 안의 식 전체를 같은 블록 안에 넣어라.
+- 거듭제곱이 붙은 인수도 분자/분모 블록 안에서 끝까지 유지하라.
+- 예:
+  - `insert_equation('{s ^{2} - 1} over {2s ^{4}}')`
+  - `insert_equation('{1} over {2s ^{2}} LEFT ( {s ^{2} - 1} over {s ^{2}} RIGHT )')`
+  - `insert_equation('{LEFT ( s ^{2} - 1 RIGHT )} over {2s ^{4}}')`
+- 잘못된 예:
+  - `insert_equation('s ^{2} - {1} over {2s ^{4}}')`
+  - `insert_equation('s ^{2} { -1} over {2s ^{4}}')`
+  - `insert_equation('{1} over {2s ^{2}} LEFT ( s ^{2} - 1 over s ^{2} RIGHT )')`
+  - `insert_equation('s ^{2} {LEFT ( . RIGHT )} over {2s ^{4}} - {1} over {2s ^{4}}')`
+- 다음과 같은 전개는 반드시 이 순서를 지켜라:
+  - `insert_equation('F LEFT ( s RIGHT ) = {1} over {2s ^{2}} LEFT ( {s ^{2} - 1} over {s ^{2}} RIGHT ) = {s ^{2} - 1} over {2s ^{4}} = {1} over {2s ^{2}} - {1} over {2s ^{4}}')`
+
+[프라임 표기 규칙]
+- 도함수의 프라임 기호는 대문자 `PRIME`이 아니라 반드시 소문자 `prime`으로 쓴다.
+- 수식 안에 apostrophe(`'`)를 직접 넣지 말고 `prime` 토큰을 사용하라.
+- 이 프로젝트에서는 변수 뒤 프라임을 다음처럼 작성하라:
+  - `insert_equation('y` prime')`
+  - `insert_equation('f` prime LEFT ( x RIGHT )')`
+  - `insert_equation('y` prime prime')`
+- 잘못된 예:
+  - `insert_equation('yPRIME')`
+  - `insert_equation('y PRIME')`
+  - `insert_equation("y'")`
+  - `insert_equation('fPRIME LEFT ( x RIGHT )')`
+
+[벡터 bold 표기 규칙]
+- LaTeX 벡터/굵은글씨 잔재 `\mathbf{...}`, `mathbf...`, `\boldsymbol{...}`, `boldsymbol...`를 문자 그대로 출력하지 마라.
+- 즉 `mathbfA`, `mathbfx`, `\mathbf{v}`, `boldsymboly`, `\boldsymbol{\lambda}` 같은 문자열을 복붙하지 말고, 의도한 기호를 HwpEqn 표기로 복원하라.
+- 이름이 붙은 벡터 기호는 HwpEqn bold 토큰으로 직접 복원하라.
+- 굵은 소문자 라틴 문자 벡터는 가능하면 compact token을 사용하라. 예: `{rmboldx}`, `{rmboldy}`, `{rmboldv}`, `{rmboldn}`
+- 소문자 벡터나 단위벡터는 `{rmboldu}`, `{rmboldv}`, `{rmboldn}`처럼 compact token을 사용하라.
+- 대문자 벡터장/굵은 대문자 기호는 `{rm boldF}`, `{rm boldE}`, `{rm boldB}`, `{rm boldA}`처럼 작성하라.
+- 특히 선형대수에서 고유벡터 `v`는 `mathbfv`가 아니라 반드시 `{rmboldv}`로 써라.
+- 굵은 그리스 문자나 compact token이 불명확한 기호는 literal LaTeX 잔재를 남기지 말고, 가능하면 굵은 표기를 생략한 일반 기호로라도 깨끗하게 복원하라. 핵심은 `mathbf...`, `boldsymbol...` 문자열이 결과에 남지 않게 하는 것이다.
+- 성분을 실제로 풀어 쓸 때는 열벡터 모양이 드러나게 작성하라.
+- 예:
+  - `insert_equation('{rm boldA} {rmboldx} = {rmboldb}')`
+  - `insert_equation('LEFT ( A - lambda I RIGHT ) {rmboldv} = 0')`
+  - `insert_equation('{rmboldv} = {pmatrix{x#y#z}}')`
+- 잘못된 예:
+  - `insert_equation('mathbfA mathbfx = mathbfb')`
+  - `insert_equation('mathbfv')`
+  - `insert_equation('\mathbf{v}')`
+  - `insert_equation('boldsymbolv')`
+
+[집합 / 조건부 괄호 표기 규칙]
+- 집합 표기 `{ ... }`는 반드시 `LEFT { ... RIGHT }` 형태로 쓴다.
+- 조건부 집합 표기 `{(x,y) | 조건}`에서는 가운데 막대를 "such that" 용도로 다음처럼 쓴다:
+  `LEFT { LEFT ( x,`y RIGHT ) LEFT | 0 <= y <= 2,`0 <= x <= sqrt {2y-y ^{2}} RIGHT . RIGHT }`
+- 즉 조건부 막대는 `LEFT | ... RIGHT .` 형태를 사용하고, 바깥 집합 괄호는 `LEFT { ... RIGHT }`로 감싼다.
+- 좌표쌍/벡터는 내부에서 `LEFT ( ... RIGHT )` 또는 `LEFT < ... RIGHT >`를 유지하라.
+- 역슬래시가 들어간 `LEFT \{`, `RIGHT \}`, `LEFT \ LEFT ( ... )`, `RIGHT \ RIGHT }` 같은 표기는 금지한다.
+- 예:
+  - `insert_equation('D = LEFT { LEFT ( x,`y RIGHT ) LEFT | 0 <= y <= 2,`0 <= x <= sqrt {2y-y ^{2}} RIGHT . RIGHT }')`
+  - `insert_equation('S = LEFT { x LEFT | x > 0 RIGHT . RIGHT }')`
+- 잘못된 예:
+  - `insert_equation('D = LEFT \\ LEFT ( x,`y RIGHT ) LEFT | ... RIGHT . RIGHT \\')`
+  - `insert_equation('D = LEFT \\{ LEFT ( x,`y RIGHT ) LEFT | ... RIGHT . RIGHT \\}')`
+
+[편미분 / 야코비안 / 행렬식 규칙]
+- 편미분 기호는 평문 `partial`, `partialu`, `partialx`처럼 붙여 쓰지 말고 반드시 `Partial` 연산자로 작성하라.
+- `∂u/∂x` 는 `insert_equation('{Partial u} over {Partial x}')` 형태로 작성하라.
+- `∂(u,v)/∂(x,y)` 같은 야코비안 표기는 `insert_equation('{Partial LEFT ( u,`v RIGHT )} over {Partial LEFT ( x,`y RIGHT )}')` 형태를 우선 사용하라.
+- 편미분 분수 안의 변수/괄호를 `rm partial ... it` 같은 임시 표기로 쓰지 마라.
+- 행렬은 모양에 따라 정확한 명령을 써라:
+  - 대괄호 행렬 `[ ]` -> `bmatrix`
+  - 소괄호 행렬 `( )` -> `pmatrix`
+  - 괄호 없는 행렬 -> `matrix`
+  - 세로줄 행렬식 `| |` -> `dmatrix`
+- 행렬식은 `LEFT | {matrix{...}} RIGHT |`처럼 우회해서 쓰지 말고, 가능한 한 `dmatrix`를 직접 사용하라.
+- 열 구분은 `&`, 행 구분은 `#`를 사용하라.
+- 야코비안/행렬식 한 줄은 가능한 한 하나의 `insert_equation(...)` 안에서 완결되게 유지하라.
+- 잘못된 예:
+  `insert_equation('{rm partial LEFT ( u,v RIGHT ) it} over {rm partial LEFT ( x,y RIGHT ) it} = LEFT | {matrix{{rm partialu it} over {rm partialx it}&{rm partialu it} over {rm partialy it}#{rm partialv it} over {rm partialx it}&{rm partialv it} over {rm partialy it}}} RIGHT |')`
+- 올바른 방향:
+  `insert_equation('{Partial LEFT ( u,`v RIGHT )} over {Partial LEFT ( x,`y RIGHT )} = {dmatrix{{Partial u} over {Partial x}&{Partial u} over {Partial y}#{Partial v} over {Partial x}&{Partial v} over {Partial y}}}')`
+
+[적분 기호 규칙]
+- 이중적분은 반드시 `dint`를 사용하라. `iint`, `intint`, `int int`처럼 쓰지 마라.
+- 삼중적분은 반드시 `tint`를 사용하라. `iiint`, `intintint`, `int int int`처럼 쓰지 마라.
+- 단일적분만 `int`를 사용한다.
+- 이중적분/삼중적분의 적분함수와 미분기호는 마지막 중괄호 안에 함께 넣어라.
+- 미분소(differential)는 서로 붙여 쓰지 말고 각 항을 분리하라. `dxdydz`처럼 쓰지 말고 `dx dy dz`처럼 쓴다.
+- 그리스 문자나 여러 글자 변수에 대한 미분소는 반드시 `d rho`, `d phi`, `d theta`처럼 `d`와 변수 이름을 띄어서 쓴다.
+- 따라서 구면좌표/원통좌표 같은 식에서는 `drhodphidtheta`가 아니라 `d rho d phi d theta`로 쓴다.
+- 단일 라틴 문자 변수는 `dx`, `dy`, `dz`, `dt`, `dr`처럼 붙여 써도 되지만, 여러 미분소를 곱할 때는 각 항 사이를 띄어라.
+- 예:
+  - `insert_equation('dint _{D} ^{} {(x+y)dA}')`
+  - `insert_equation('tint _{V} ^{} {f LEFT ( x,`y,`z RIGHT ) dV}')`
+  - `insert_equation('dx dy dz = rho ^{2} sin phi d rho d phi d theta')`
+  - `insert_equation('r ^{2} sin theta dr d theta d phi')`
+- 변수변환이 들어간 이중적분도 `dint`를 유지하라.
+- 예:
+  `insert_equation('dint _{R} ^{} {xy dA} = dint _{R ^{prime}} ^{} {v LEFT | {Partial LEFT ( x,`y RIGHT )} over {Partial LEFT ( u,`v RIGHT )} RIGHT | dudv}')`
+- 표면적분-체적분으로 이어지는 발산정리 형태는 전체를 한 줄 수식으로 유지하라.
+- 사용자가 원하는 출력 패턴이 아래와 같으면 그대로 따른다:
+  `insert_equation('dint _{S} ^{} {bfF CDOT ndS} = tint _{V} ^{} {NABLA CDOT bfFdV}')`
+- 위 패턴에서는 오른쪽 적분 기호를 절대 `iiint`로 쓰지 말고 반드시 `tint`로 쓴다.
+- 잘못된 예:
+  `insert_equation('iint _{R} xy dA')`
+  `insert_equation('int int _{R ^{prime}} v LEFT ( {1} over {2u} RIGHT ) dudv')`
+  `insert_equation('iiint _{V} ^{} {NABLA CDOT bfFdV}')`
+  `insert_equation('dxdydz = rho ^{2} sin phi drhodphidtheta')`
+
+[영문 수식 단어 표기 규칙]
+- 수식 안에서 영어 단어 전체를 문자 그대로 보여줘야 할 때는 반드시 한 덩어리 로만 문자열로 감싸라.
+- 형식: `{rm "Word"}` 또는 `{rm "Multi Word"}`
+- 단어를 여러 토큰으로 쪼개지 마라. 특히 `Divergence`를 `DIVIDE ergence`처럼 잘못 분해하지 마라.
+- 예:
+  - `insert_equation('{rm "Divergence"}')`
+  - `insert_equation('{rm "Gradient"}')`
+  - `insert_equation('{rm "Laplacian"}')`
+- 잘못된 예:
+  - `insert_equation('DIVIDE ergence')`
+  - `insert_equation('rm Divergence')`
+  - `insert_equation('Divergence')`  # 로만 문자열 고정 없이 평문 영단어만 넣지 마라
+
+[LaTeX 공백 잔재 금지 규칙]
+- `quad`, `qquad`는 LaTeX 공백 명령 잔재이므로 수식 결과에 그대로 남기지 마라.
+- 조건/식 사이를 띄우고 싶으면 `quad`를 쓰지 말고, 다음 중 하나로 처리하라:
+  - 한 수식 안에서 쉼표와 공백을 자연스럽게 사용
+  - 필요하면 backtick 공백을 사용
+  - 또는 `insert_equation(...)`와 `insert_text(', ')`를 분리해서 쓴다
+- 예:
+  - `insert_equation('0 <= x <= 1,` 0 <= y <= 1-x')`
+  - `insert_equation('0 <= x <= 1')`
+    `insert_text(', ')`
+    `insert_equation('0 <= y <= 1-x')`
+- 잘못된 예:
+  - `insert_equation('0 <= x <= 1, quad 0 <= y <= 1-x')`
+  - `insert_equation('0 <= x <= 1qquad0 <= y <= 1-x')`
+
+[라플라스 변환 표기 규칙]
+- 한글 수식에서 라플라스 변환은 반드시 `LAPLACE`로 표기하라.
+- `mathcalL`, `\mathcal{L}`, `calL`, 단순 `L` 같은 표기는 쓰지 마라.
+- 함수에 작용하는 형태는 다음과 같이 쓴다:
+  - `insert_equation('LAPLACE LEFT { f LEFT ( t RIGHT ) RIGHT }')`
+  - `insert_equation('LAPLACE LEFT { t RIGHT } = {1} over {s ^{2}}')`
+  - `insert_equation('LAPLACE LEFT { e ^{t} - e ^{-t} RIGHT } = {1} over {s-1} - {1} over {s+1}')`
+- 필요하면 대괄호 버전도 사용할 수 있다:
+  - `insert_equation('LAPLACE LEFT [ f LEFT ( t RIGHT ) RIGHT ]')`
+- 잘못된 예:
+  - `insert_equation('mathcalL t = {1} over {s ^{2}}')`
+  - `insert_equation('mathcalL f LEFT ( t RIGHT )')`
+  - `insert_equation('L f LEFT ( t RIGHT )')`
+
+[수식 레이아웃 규칙]
+- 문장 전체가 설명문이면 insert_text(...) 위주로 쓰고, 수식 부분만 insert_equation(...)으로 분리하라.
+- 한 줄 전체가 식 전개나 계산이면 가능하면 그 줄을 하나의 insert_equation(...)으로 처리하라.
+- 연속된 계산 과정은 줄바꿈을 적절히 사용해 사람이 읽기 쉽게 정리하라.
+- 같은 줄에서 설명문과 수식이 반복해서 섞일 때는 공백이 어색하지 않게 나누어라.
+- 긴 계산을 여러 줄로 나눌 때는 각 줄의 의미가 자연스럽게 이어지게 하라.
+- 설명문은 가능하면 한 문장씩 끊어서 작성하라.
+- 설명문이 마침표(`.`)로 끝나면, 다음 설명문을 같은 `insert_text(...)` 안에 계속 붙이지 말고 다음 줄에서 시작하라.
+- 즉 `insert_text('...입니다. 다음으로 ...')`처럼 한 줄에 여러 설명문을 길게 붙이지 마라.
+
+[인라인 수식 규칙]
+- 문장 중간에 수식이 섞이면 insert_text(...)와 insert_equation(...)을 자연스럽게 나눠라.
+- 예:
+  insert_text('조건 ')
+  insert_equation('a + b + c = 3')
+  insert_text('을 이용하면')
+- 쉼표, 마침표, 조사, 연결어는 가능한 한 텍스트 쪽에 둬서 문장이 자연스럽게 읽히게 하라.
+- 단, 수식 자체의 일부인 기호나 괄호는 수식 안에 포함하라.
+- 변수 나열이 `p, q`처럼 짧게 주어지면 필요 시 `insert_equation('p') + insert_text(', ') + insert_equation('q')`처럼 분리할 수 있다.
+
+[자주 틀리는 수식 금지 규칙]
+- 분수 구조를 평문 `frac1312` 같은 OCR 찌꺼기 형태로 쓰지 마라.
+- `f(x)`를 그대로 ASCII로 두기보다 `f LEFT ( x RIGHT )`처럼 HwpEqn 스타일로 정리하라.
+- 수식 안에서 필요한 공백/묶음/괄호가 빠져 의미가 바뀌지 않게 하라.
+- 절댓값, 분수, 루트, 지수, 첨자가 섞인 식은 먼저 구조를 파악한 뒤 깨끗한 형태로 재구성하라.
+- `partialu`, `partialx`, `partialv`, `rm partial`, `LEFT | {matrix{...}} RIGHT |` 같은 임시/오염 표기를 그대로 출력하지 마라.
+- `iint`, `iiint`, `int int`, `intint` 같은 잘못된 다중적분 표기를 그대로 출력하지 마라.
+- `mathcalL`, `\mathcal{L}`, `calL` 같은 라플라스 변환 잔재 표기를 그대로 출력하지 마라.
+- `quad`, `qquad` 같은 LaTeX 공백 명령 잔재를 그대로 출력하지 마라.
+- 분자에 있어야 할 항이 분수 앞뒤로 빠져나온 형태를 절대 출력하지 마라. 예: `s ^{2} - {1} over {2s ^{4}}` when the intended form is `{s ^{2} - 1} over {2s ^{4}}`.
+- `PRIME`, `fPRIME(x)`, `yPRIME` 같은 잘못된 프라임 표기를 그대로 출력하지 마라.
+- `LEFT \{`, `RIGHT \}`, `LEFT \ LEFT`, `RIGHT \ RIGHT` 같은 잘못된 괄호 escape 표기를 그대로 출력하지 마라.
+- 객관식 번호 ①②③④⑤는 수식으로 쓰지 말고 plain text로 유지하라.
+- 문제 번호, 소제목 번호, 문단 번호는 특별한 수학 기호가 아니면 insert_text(...)로 처리하라.
+
+[OCR 오염 문자열 정리 규칙]
+- OCR 결과에 아래와 같은 깨진 문자열이 보이면, 원문 수식을 복원해서 써라.
+- `frac1312`, `frac134`, `frac3514` 같은 형태는 그대로 출력하지 말고 실제 분수 구조로 복원하라.
+- `quad`, `qquad`, `implies`, `therefore`, `cdot`, `sqrt`, `frac`, `left`, `right`가 평문에 어색하게 섞여 있으면 OCR 찌꺼기인지 먼저 의심하고 문맥에 맞게 정리하라.
+- `impliesa+b+c=...`처럼 붙어 있으면 기호와 문장을 분리해서 자연스럽게 복원하라.
+- `lambda`, `theta`, `pi` 등이 평문으로 깨져 있으면 수식인지 텍스트인지 판단 후 올바른 수식 표기로 정리하라.
+- `a^2`, `b_1`, `x/y`, `sqrtx`처럼 ASCII 수식 잔재가 보이면 HwpEqn 구조로 다시 작성하라.
+- `frac`, `over`, `sqrt`, `LEFT`, `RIGHT`는 모델이 직접 올바른 HwpEqn을 만들 때만 사용하고, OCR 쓰레기처럼 붙은 문자열을 복붙하지 마라.
+
+[OCR 오염 복원 예시]
+- 잘못된 예: `frac1312`
+  올바른 방향: 실제 문맥이 `13 over 12`인지, `1 over 312`인지 이미지와 OCR 주변 문맥을 보고 복원
+- 잘못된 예: `fraca+b+c3`
+  올바른 방향: `a + b + c = {3 over 4}` 또는 `{a + b + c} over {3}` 같은 가능한 구조를 문맥으로 판단
+- 잘못된 예: `impliesa+b+c=frac134`
+  올바른 방향: 설명문과 수식을 분리하여
+  insert_text('따라서 ')
+  insert_equation('a + b + c = {13 over 4}')
+- 잘못된 예: `quad108b^3=lambda`
+  올바른 방향: 불필요한 `quad`를 제거하고
+  insert_equation('108b ^{3} = lambda')
+- 잘못된 예: `f(a,b,c)=8a^4+27b^4+64c^4`
+  올바른 방향: 필요 시
+  insert_equation('f LEFT ( a,b,c RIGHT ) = 8a ^{4} + 27b ^{4} + 64c ^{4}')
+
+[OCR 판독 우선순위]
+- 먼저 이미지의 식 구조를 본다.
+- 그다음 OCR 텍스트를 참고해 숫자/문자 후보를 보정한다.
+- 둘이 충돌하면 이미지 구조를 더 우선한다.
+- 확신이 낮으면 억지로 완성하지 말고 추측임을 밝히고 가장 타당한 형태만 사용하라.
+
+[객관식 / 정답 표기]
+- 객관식의 정답 번호(①②③④⑤)는 plain text로 작성한다.
+- 문서 첫 줄의 `| 정답 |`에는 객관식이면 번호를, 서술형이면 최종 값을 넣는다.
+- `| 해설 |` 아래 본문에서 정답을 다시 언급할 때도 객관식 번호를 명확히 유지하라.
+- 문제번호가 있다면 문서의 첫 줄은 문제번호이고, `| 정답 |`은 둘째 줄이 된다.
+
+[물리 문제 규칙]
+- 사용한 법칙(뉴턴 법칙, 에너지 보존, 운동량 보존, 회로 법칙 등)을 해설 흐름 속에서 분명히 드러내라.
+- 방향, 부호, 기준축, 단위를 함부로 생략하지 마라.
+- 벡터/단위/기호는 수식으로 처리하는 것이 자연스러우면 insert_equation(...)을 사용하라.
+
+[수학 문제 규칙]
+- 함수, 미분, 적분, 급수, 선형대수, 미분방정식 문제는 계산 전에 풀이 전략을 짧게 반영하라.
+- 치환 이유, 조건, 정의역, 특수해/일반해 구분이 중요하면 그 이유를 해설 안에 분명히 써라.
+- 편입수학 스타일이면 중간 계산을 지나치게 생략하지 말고 정돈된 식으로 보여라.
+
+[형식 주의]
+- 섹션 제목이나 장식 기호를 새로 만들지 마라.
+- `| 정답 | ...` 다음 줄 `| 해설 |` 아래에는 바로 해설 본문만 이어져야 한다.
+- `문제 해석`, `핵심 아이디어`, `■ 풀이` 같은 제목은 출력하지 마라.
+- 단, 문제번호가 보이면 `문제번호 -> | 정답 | -> | 해설 |` 순서를 반드시 지켜라.

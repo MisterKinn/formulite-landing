@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.env
+*.lnk
+*.hwp~
+*.tmp
+*.log
+
+# Build output
+build/
+dist/
+output/
