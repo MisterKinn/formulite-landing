@@ -620,12 +620,13 @@ function ProfileContent() {
     };
 
     const isPlanResolving = loadingSubscription || loadingPayments;
+    const effectivePlanId = isPlanResolving ? "free" : getEffectivePlanId();
     const effectivePlanInfo = isPlanResolving
         ? {
               name: "요금제 확인 중",
               description: "결제 정보와 사용량을 동기화하고 있습니다",
           }
-        : getPlanInfo(getEffectivePlanId());
+        : getPlanInfo(effectivePlanId);
     const planExpiryDate = getPlanExpiryDate();
     const fallbackLimitByPlan = (planId: string) => {
         const normalized = planId.toLowerCase();
@@ -634,7 +635,7 @@ function ProfileContent() {
         if (normalized === "plus" || normalized === "test") return 330;
         return 5;
     };
-    const fallbackPlanId = getEffectivePlanId();
+    const fallbackPlanId = effectivePlanId;
     const questionUsage =
         aiUsage ||
         (isPlanResolving
@@ -768,7 +769,11 @@ function ProfileContent() {
 
     // 구독 취소
     const handleCancelSubscription = async () => {
-        if (!authUser || !subscription) return;
+        if (!authUser) return;
+        if (!subscription?.billingKey) {
+            setError("구독 정보를 확인한 뒤 다시 시도해주세요.");
+            return;
+        }
 
         if (
             !confirm(
@@ -1126,7 +1131,7 @@ function ProfileContent() {
                                             <div className="profile-subscription-info">
                                                 <div className="profile-subscription-plan">
                                                     <span className="profile-subscription-plan-icon">
-                                                        {getPlanIcon(isPlanResolving ? undefined : getEffectivePlanId())}
+                                                        {getPlanIcon(isPlanResolving ? undefined : effectivePlanId)}
                                                     </span>
                                                     <div>
                                                         <span className="profile-subscription-plan-name">
@@ -1154,8 +1159,8 @@ function ProfileContent() {
                                                 >
                                                     요금제 업그레이드
                                                 </button>
-                                                {subscription && subscription.plan !== "free" && (
-                                                    subscription.status === "cancelled" ? (
+                                                {effectivePlanId !== "free" && (
+                                                    subscription?.status === "cancelled" ? (
                                                         <div className="profile-subscription-cancelled">
                                                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                                                 <circle cx="12" cy="12" r="10" />
