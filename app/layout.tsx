@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
 import { AuthProvider } from "../context/AuthContext";
 import { Analytics } from "@vercel/analytics/next";
-import BottomDownloadCTA from "../components/BottomDownloadCTA";
-
 // Global styles
 import "./style.css";
 import "./mobile.css";
@@ -58,7 +56,6 @@ export default function RootLayout({
             <body className="antialiased" style={{ padding: 0, margin: 0 }}>
                 <AuthProvider>
                     <div className="app-shell">{children}</div>
-                    <BottomDownloadCTA />
                 </AuthProvider>
                 <Analytics />
             </body>

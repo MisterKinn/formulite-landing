@@ -1146,9 +1146,16 @@ function ProfileContent() {
                                                     </div>
                                                 )}
                                             </div>
-                                            {subscription && subscription.plan !== "free" && (
-                                                <div className="profile-subscription-actions">
-                                                    {subscription.status === "cancelled" ? (
+                                            <div className="profile-subscription-actions">
+                                                <button
+                                                    type="button"
+                                                    className="profile-btn profile-btn-upgrade"
+                                                    onClick={() => setActiveTab("subscription")}
+                                                >
+                                                    요금제 업그레이드
+                                                </button>
+                                                {subscription && subscription.plan !== "free" && (
+                                                    subscription.status === "cancelled" ? (
                                                         <div className="profile-subscription-cancelled">
                                                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                                                 <circle cx="12" cy="12" r="10" />
@@ -1158,27 +1165,21 @@ function ProfileContent() {
                                                             <span>구독이 취소되었습니다. 만료일까지 서비스를 이용할 수 있습니다.</span>
                                                         </div>
                                                     ) : (
-                                                        <button
-                                                            type="button"
-                                                            className="profile-btn profile-btn-cancel-sub"
-                                                            onClick={handleCancelSubscription}
-                                                        >
-                                                            구독 취소하기
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            )}
-                                            {(!subscription || subscription.plan === "free") && !isPlanResolving && (
-                                                <div className="profile-subscription-actions">
-                                                    <button
-                                                        type="button"
-                                                        className="profile-btn profile-btn-upgrade"
-                                                        onClick={() => setActiveTab("subscription")}
-                                                    >
-                                                        요금제 업그레이드
-                                                    </button>
-                                                </div>
-                                            )}
+                                                        <div className="profile-cancel-sub-wrap">
+                                                            <button
+                                                                type="button"
+                                                                className="profile-btn profile-btn-cancel-sub"
+                                                                onClick={handleCancelSubscription}
+                                                            >
+                                                                구독 취소하기
+                                                            </button>
+                                                            <span className="profile-cancel-sub-tooltip">
+                                                                다음 회차의 결제가 일어나지 않습니다.
+                                                            </span>
+                                                        </div>
+                                                    )
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
 

@@ -506,6 +506,8 @@
 .profile-subscription-actions {
     padding-top: 12px;
     border-top: 1px solid #1a1a1a;
+    display: flex;
+    gap: 10px;
 }
 
 .profile-subscription-cancelled {
@@ -515,6 +517,7 @@
     font-size: 0.8125rem;
     color: #888;
     padding: 4px 0;
+    flex: 1;
 }
 
 .profile-subscription-cancelled svg {
@@ -541,8 +544,45 @@
     border-color: #ef4444;
 }
 
+.profile-cancel-sub-wrap {
+    position: relative;
+    flex: 1;
+}
+
+.profile-cancel-sub-tooltip {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: #222;
+    color: #ccc;
+    font-size: 0.75rem;
+    font-weight: 500;
+    padding: 8px 14px;
+    border-radius: 8px;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.profile-cancel-sub-tooltip::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-top-color: #222;
+}
+
+.profile-cancel-sub-wrap:hover .profile-cancel-sub-tooltip {
+    opacity: 1;
+}
+
 .profile-btn-upgrade {
-    width: 100%;
+    flex: 1;
     padding: 10px 16px;
     font-size: 0.8125rem;
     font-weight: 600;
@@ -572,6 +612,16 @@
 
     .profile-subscription-card {
         padding: 16px;
+    }
+
+    .profile-subscription-actions {
+        flex-direction: column;
+    }
+
+    .profile-cancel-sub-tooltip {
+        white-space: normal;
+        text-align: center;
+        min-width: 180px;
     }
 }
 
