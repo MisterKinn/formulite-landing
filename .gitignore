@@ -62,3 +62,4 @@ nova-ai-setup.zip
 
 *.md
 .vercel
+.env*.local

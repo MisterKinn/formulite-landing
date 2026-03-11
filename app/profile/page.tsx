@@ -1118,6 +1118,70 @@ function ProfileContent() {
                                         </div>
                                     </div>
 
+                                    <div className="profile-section">
+                                        <h2 className="profile-section-title">
+                                            구독 관리
+                                        </h2>
+                                        <div className="profile-subscription-card">
+                                            <div className="profile-subscription-info">
+                                                <div className="profile-subscription-plan">
+                                                    <span className="profile-subscription-plan-icon">
+                                                        {getPlanIcon(isPlanResolving ? undefined : getEffectivePlanId())}
+                                                    </span>
+                                                    <div>
+                                                        <span className="profile-subscription-plan-name">
+                                                            {effectivePlanInfo.name}
+                                                        </span>
+                                                        <span className="profile-subscription-plan-desc">
+                                                            {effectivePlanInfo.description}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                {planExpiryDate && (
+                                                    <div className="profile-subscription-expiry">
+                                                        <span className="profile-subscription-expiry-label">만료일</span>
+                                                        <span className="profile-subscription-expiry-value">
+                                                            {planExpiryDate.toLocaleDateString("ko-KR")}
+                                                        </span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            {subscription && subscription.plan !== "free" && (
+                                                <div className="profile-subscription-actions">
+                                                    {subscription.status === "cancelled" ? (
+                                                        <div className="profile-subscription-cancelled">
+                                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                                <circle cx="12" cy="12" r="10" />
+                                                                <line x1="12" y1="8" x2="12" y2="12" />
+                                                                <line x1="12" y1="16" x2="12.01" y2="16" />
+                                                            </svg>
+                                                            <span>구독이 취소되었습니다. 만료일까지 서비스를 이용할 수 있습니다.</span>
+                                                        </div>
+                                                    ) : (
+                                                        <button
+                                                            type="button"
+                                                            className="profile-btn profile-btn-cancel-sub"
+                                                            onClick={handleCancelSubscription}
+                                                        >
+                                                            구독 취소하기
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            )}
+                                            {(!subscription || subscription.plan === "free") && !isPlanResolving && (
+                                                <div className="profile-subscription-actions">
+                                                    <button
+                                                        type="button"
+                                                        className="profile-btn profile-btn-upgrade"
+                                                        onClick={() => setActiveTab("subscription")}
+                                                    >
+                                                        요금제 업그레이드
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
                                     <div className="danger-zone">
                                         <h2 className="danger-title">
                                             위험 영역
