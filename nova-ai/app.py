@@ -186,13 +186,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     ai_gen = subparsers.add_parser("ai-generate", help="AI로 스크립트 생성")
     ai_gen.add_argument("description", help="요청 설명")
-    ai_gen.add_argument("--model", default="gemini-3-flash-preview")
+    ai_gen.add_argument("--model")
     ai_gen.add_argument("--output", help="저장할 파일 경로")
     ai_gen.set_defaults(func=cmd_ai_generate)
 
     ai_run = subparsers.add_parser("ai-run", help="AI로 생성 후 실행")
     ai_run.add_argument("description", help="요청 설명")
-    ai_run.add_argument("--model", default="gemini-3-flash-preview")
+    ai_run.add_argument("--model")
     ai_run.set_defaults(func=cmd_ai_run)
 
     return parser

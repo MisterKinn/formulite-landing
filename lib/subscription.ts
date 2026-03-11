@@ -135,7 +135,7 @@ export async function getSubscription(userId: string) {
 // Update user plan
 export async function updateUserPlan(
     userId: string,
-    plan: "free" | "go" | "plus" | "pro",
+    plan: "free" | "go" | "plus" | "pro" | "test",
 ) {
     try {
         const db = getDb();

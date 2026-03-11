@@ -138,8 +138,8 @@ const plansData: PlanData[] = [
         id: "plus",
         name: "Plus 요금제",
         description: "더 많은 기능과\n우선 지원을 받으세요",
-        monthlyPrice: 29900,
-        yearlyPrice: 20930,
+        monthlyPrice: 120,
+        yearlyPrice: 120,
         icon: <ZapIcon />,
         popular: true,
         features: [
@@ -152,6 +152,24 @@ const plansData: PlanData[] = [
             { text: "API 액세스", included: false },
         ],
         ctaText: "Plus 요금제로 업그레이드",
+    },
+    {
+        id: "test",
+        name: "Test 요금제",
+        description: "임시 결제 테스트를 위한\n짧은 주기의 테스트 플랜",
+        monthlyPrice: 100,
+        yearlyPrice: 100,
+        icon: <ZapIcon />,
+        features: [
+            { text: "1분 주기 테스트 결제", included: true },
+            { text: "Plus와 동일 사용량 한도", included: true },
+            { text: "결제 플로우 점검", included: true },
+            { text: "팀 공유 기능", included: false },
+            { text: "전담 지원 서비스", included: false },
+            { text: "운영 중 제거 예정", included: true },
+            { text: "API 액세스", included: false },
+        ],
+        ctaText: "Test 요금제로 시작",
     },
     {
         id: "pro",
@@ -178,6 +196,7 @@ function getTierOrder(planId: string): number {
     const tierOrder: { [key: string]: number } = {
         free: 0,
         go: 1,
+        test: 1.5,
         plus: 2,
         pro: 3,
     };
@@ -194,6 +213,7 @@ function getCtaText(planId: string, currentPlanId: string): string {
         const planNames: { [key: string]: string } = {
             free: "Free로",
             go: "Go 요금제로",
+            test: "Test 요금제로",
             plus: "Plus 요금제로",
             pro: "Ultra 요금제로",
         };
@@ -203,6 +223,7 @@ function getCtaText(planId: string, currentPlanId: string): string {
         const planNames: { [key: string]: string } = {
             free: "Free로",
             go: "Go 요금제로",
+            test: "Test 요금제로",
             plus: "Plus 요금제로",
             pro: "Ultra 요금제로",
         };
@@ -473,7 +494,9 @@ function ProfileContent() {
     // Map plan id to icon component
     const getPlanIcon = (planId?: string) => {
         if (planId === "pro") return <CrownIcon />;
-        if (planId === "plus" || planId === "go") return <ZapIcon />;
+        if (planId === "plus" || planId === "go" || planId === "test") {
+            return <ZapIcon />;
+        }
         return <SparklesIcon />;
     };
 
@@ -492,6 +515,10 @@ function ProfileContent() {
             plus: {
                 name: "Plus 요금제",
                 description: "전문 기능을 이용 중입니다",
+            },
+            test: {
+                name: "Test 요금제",
+                description: "임시 테스트 결제를 이용 중입니다",
             },
             free: {
                 name: "Free",
@@ -514,10 +541,11 @@ function ProfileContent() {
 
     const inferPlanFromOrderName = (
         orderName?: unknown,
-    ): "free" | "go" | "plus" | "pro" => {
+    ): "free" | "go" | "plus" | "pro" | "test" => {
         if (typeof orderName !== "string") return "free";
         const normalized = orderName.toLowerCase();
         if (normalized.includes("ultra") || normalized.includes("pro")) return "pro";
+        if (normalized.includes("test")) return "test";
         if (normalized.includes("go")) return "go";
         if (normalized.includes("plus")) return "plus";
         return "free";
@@ -698,12 +726,14 @@ function ProfileContent() {
         try {
             const planNameMap: Record<string, string> = {
                 go: "Go",
+                test: "Test",
                 plus: "Plus",
                 pro: "Ultra",
             };
             const planName = planNameMap[plan.id] || plan.name;
             const planAmount = plan.monthlyPrice;
             const orderName = `Nova AI ${planName} 요금제`;
+            const nextBillingCycle = plan.id === "test" ? "test" : "monthly";
 
             const clientKey =
                 process.env.NEXT_PUBLIC_TOSS_BILLING_CLIENT_KEY?.trim() ||
@@ -718,7 +748,7 @@ function ProfileContent() {
 
             await payment.requestBillingAuth({
                 method: "CARD",
-                successUrl: `${window.location.origin}/card-registration/success?amount=${planAmount}&orderName=${encodeURIComponent(orderName)}&billingCycle=monthly`,
+                successUrl: `${window.location.origin}/card-registration/success?amount=${planAmount}&orderName=${encodeURIComponent(orderName)}&billingCycle=${nextBillingCycle}`,
                 failUrl: `${window.location.origin}/card-registration/fail?amount=${planAmount}&orderName=${encodeURIComponent(orderName)}`,
                 customerEmail: authUser.email || "customer@example.com",
                 customerName: authUser.displayName || "고객",

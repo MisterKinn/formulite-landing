@@ -31,7 +31,7 @@ interface PricingPlan {
     features: string[];
     cta: string;
     popular?: boolean;
-    tier: "free" | "go" | "plus" | "pro";
+    tier: "free" | "go" | "plus" | "pro" | "test";
 }
 
 type BillingCycle = "monthly" | "yearly";
@@ -77,8 +77,8 @@ const plans: PricingPlan[] = [
         name: "Plus 요금제",
         subDescription: "가장 많은 팀이 선택하는 표준 워크플로 플랜입니다.",
         prices: {
-            monthly: "29,900",
-            yearly: "20,930",
+            monthly: "120",
+            yearly: "120",
         },
         features: [
             "월 300회+30회 AI 타이핑 생성",
@@ -91,6 +91,22 @@ const plans: PricingPlan[] = [
         cta: "Plus 시작하기",
         popular: true,
         tier: "plus",
+    },
+    {
+        name: "Test 요금제",
+        subDescription: "임시 테스트 결제를 빠르게 확인하기 위한 테스트 플랜입니다.",
+        prices: {
+            monthly: "100",
+            yearly: "100",
+        },
+        features: [
+            "1분 주기 테스트 결제",
+            "Plus와 동일한 사용량 한도 적용",
+            "결제 흐름 점검용 임시 플랜",
+            "운영 중 제거 예정",
+        ],
+        cta: "Test 시작하기",
+        tier: "test",
     },
     {
         name: "Ultra 요금제",
@@ -119,7 +135,7 @@ export default function Pricing() {
     const [billingCycle, setBillingCycle] = useState<BillingCycle>("yearly");
 
     const paymentMetaByTier: Record<
-        "go" | "plus" | "pro",
+        "go" | "plus" | "pro" | "test",
         Record<BillingCycle, { amount: number; orderName: string }>
     > = {
         go: {
@@ -134,12 +150,22 @@ export default function Pricing() {
         },
         plus: {
             monthly: {
-                amount: 29900,
+                amount: 120,
                 orderName: "Nova AI Plus 요금제 (월간 결제)",
             },
             yearly: {
-                amount: 251160,
-                orderName: "Nova AI Plus 요금제 (연간 결제, 월 30% 할인 적용)",
+                amount: 120,
+                orderName: "Nova AI Plus 요금제 (연간 결제)",
+            },
+        },
+        test: {
+            monthly: {
+                amount: 100,
+                orderName: "Nova AI Test 요금제 (테스트 결제)",
+            },
+            yearly: {
+                amount: 100,
+                orderName: "Nova AI Test 요금제 (테스트 결제)",
             },
         },
         pro: {
@@ -166,14 +192,17 @@ export default function Pricing() {
 
         if (loading || isPaying) return;
 
-        const paymentMeta = paymentMetaByTier[tier][billingCycle];
+        const effectiveBillingCycle: BillingCycle =
+            tier === "test" ? "monthly" : billingCycle;
+        const paymentMeta = paymentMetaByTier[tier][effectiveBillingCycle];
+        const paymentBillingCycle = tier === "test" ? "test" : billingCycle;
 
         if (!isAuthenticated) {
             const loginParams = new URLSearchParams({
                 postLoginAction: "payment",
                 amount: String(paymentMeta.amount),
                 orderName: paymentMeta.orderName,
-                billingCycle,
+                billingCycle: paymentBillingCycle,
             });
             router.push(`/login?${loginParams.toString()}`);
             return;
@@ -200,7 +229,7 @@ export default function Pricing() {
 
             await payment.requestBillingAuth({
                 method: "CARD",
-                successUrl: `${window.location.origin}/card-registration/success?amount=${paymentMeta.amount}&orderName=${encodeURIComponent(paymentMeta.orderName)}&billingCycle=${billingCycle}`,
+                successUrl: `${window.location.origin}/card-registration/success?amount=${paymentMeta.amount}&orderName=${encodeURIComponent(paymentMeta.orderName)}&billingCycle=${paymentBillingCycle}`,
                 failUrl: `${window.location.origin}/card-registration/fail?amount=${paymentMeta.amount}&orderName=${encodeURIComponent(paymentMeta.orderName)}`,
                 customerEmail: user.email || "customer@example.com",
                 customerName: user.displayName || "고객",

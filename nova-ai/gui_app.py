@@ -61,8 +61,8 @@ from chat_page import ChatComposeTextEdit, ChatMessageWidget, ChatWorker
 from figure_code_runner import FigureCodeRenderError, render_python_figure_code
 from hwp_controller import HwpController, HwpControllerError
 from local_figure_renderer import LocalFigureRenderError, render_local_figure
-from ocr_pipeline import extract_text, extract_text_from_pil_image, OcrError
-from layout_detector import detect_container, crop_inside_rect, mask_rect_on_image
+from ocr_pipeline import extract_text
+from layout_detector import detect_container
 from prompt_loader import get_image_generation_prompt
 from script_runner import ScriptRunner, ScriptCancelled
 from backend.oauth_desktop import get_stored_user, start_oauth_flow, logout_user, is_logged_in
@@ -167,7 +167,7 @@ class VoiceTranscriptionWorker(QThread):
     def __init__(self, wav_path: str, model: str | None = None, parent=None) -> None:
         super().__init__(parent)
         self._wav_path = wav_path
-        self._model = (model or "").strip() or "gemini-2.5-flash"
+        self._model = (model or "").strip()
 
     @staticmethod
     def _extract_response_text(response: object) -> str:
@@ -187,30 +187,59 @@ class VoiceTranscriptionWorker(QThread):
             result_text = ""
         return (result_text or "").strip()
 
-    def run(self) -> None:  # type: ignore[override]
+    @staticmethod
+    def _extract_openai_transcription_text(response: object) -> str:
+        if isinstance(response, str):
+            return response.strip()
+        try:
+            text = getattr(response, "text", None)
+            if isinstance(text, str):
+                return text.strip()
+        except Exception:
+            pass
+        return str(response or "").strip()
+
+    def _run_openai_transcription(self, model_name: str) -> str:
+        api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+        if not api_key:
+            raise RuntimeError("OPENAI_API_KEY is missing.")
+        try:
+            from openai import OpenAI
+        except Exception as exc:
+            raise RuntimeError("openai package is not installed.") from exc
+
+        client = OpenAI(api_key=api_key)
+        with open(self._wav_path, "rb") as audio_file:
+            response = client.audio.transcriptions.create(
+                model=model_name,
+                file=audio_file,
+                language="ko",
+                response_format="text",
+                prompt=(
+                    "한글 문서 편집 보조용 음성을 한국어 명령문으로 정확히 받아쓴다. "
+                    "설명은 추가하지 말고, 들린 명령만 평문으로 반환한다."
+                ),
+            )
+        return self._extract_openai_transcription_text(response)
+
+    def _run_gemini_transcription(self, model_name: str) -> str:
         uploaded_file = None
         try:
-            from ai_client import _load_env as _load_ai_env  # type: ignore
             import google.generativeai as genai  # type: ignore
 
-            _load_ai_env()
             api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
             if not api_key:
                 raise RuntimeError("GEMINI_API_KEY is missing.")
-
             genai.configure(api_key=api_key)
             uploaded_file = genai.upload_file(path=self._wav_path, mime_type="audio/wav")
-            model = genai.GenerativeModel(self._model)
+            model = genai.GenerativeModel(model_name)
             prompt = (
                 "Transcribe this Korean speech clip for an HWP document editing assistant. "
                 "Return only the spoken user instruction in plain Korean text. "
                 "Do not add explanations. If there is no clear speech, return an empty string."
             )
             response = model.generate_content([prompt, uploaded_file])
-            text = self._extract_response_text(response)
-            self.transcription_finished.emit(text, self._wav_path)
-        except Exception as exc:
-            self.transcription_error.emit(str(exc), self._wav_path)
+            return self._extract_response_text(response)
         finally:
             if uploaded_file is not None:
                 try:
@@ -219,6 +248,30 @@ class VoiceTranscriptionWorker(QThread):
                     genai.delete_file(uploaded_file.name)
                 except Exception:
                     pass
+
+    def run(self) -> None:  # type: ignore[override]
+        try:
+            from ai_client import _is_openai_model, _load_env as _load_ai_env, _normalize_model_name  # type: ignore
+
+            try:
+                _load_ai_env()
+            except Exception:
+                pass
+            raw_model = (
+                self._model
+                or os.getenv("OPENAI_TRANSCRIBE_MODEL")
+                or os.getenv("OPENAI_AUDIO_MODEL")
+                or os.getenv("VOICE_TRANSCRIBE_MODEL")
+                or "gpt-4o-mini-transcribe"
+            )
+            model_name = _normalize_model_name(raw_model)
+            if _is_openai_model(model_name):
+                text = self._run_openai_transcription(model_name)
+            else:
+                text = self._run_gemini_transcription(model_name)
+            self.transcription_finished.emit(text, self._wav_path)
+        except Exception as exc:
+            self.transcription_error.emit(str(exc), self._wav_path)
 
 
 class AIWorker(QThread):
@@ -362,6 +415,85 @@ class AIWorker(QThread):
         return (None, "")
 
     @staticmethod
+    def _extract_openai_image_bytes(response: object) -> tuple[bytes | None, str]:
+        def _get_field(obj: object, *names: str) -> object | None:
+            if obj is None:
+                return None
+            if isinstance(obj, dict):
+                for name in names:
+                    if name in obj:
+                        return obj.get(name)
+                return None
+            for name in names:
+                try:
+                    value = getattr(obj, name)
+                except Exception:
+                    continue
+                if value is not None:
+                    return value
+            return None
+
+        def _iter_items(value: object) -> list[object]:
+            if value is None or isinstance(value, (str, bytes, bytearray)):
+                return []
+            if isinstance(value, dict):
+                return []
+            try:
+                return list(value)
+            except Exception:
+                return []
+
+        def _decode_b64(data: object) -> bytes | None:
+            if not isinstance(data, str) or not data.strip():
+                return None
+            try:
+                return base64.b64decode(data, validate=True)
+            except Exception:
+                try:
+                    return base64.b64decode(data + "===")
+                except Exception:
+                    return None
+
+        def _download_url(url: object) -> tuple[bytes | None, str]:
+            if not isinstance(url, str) or not url.strip():
+                return (None, "")
+            try:
+                import requests
+
+                resp = requests.get(url, timeout=60)
+                resp.raise_for_status()
+                return (resp.content, resp.headers.get("content-type", "image/png"))
+            except Exception:
+                return (None, "")
+
+        def _scan_items(items: list[object]) -> tuple[bytes | None, str]:
+            for item in items:
+                data = _decode_b64(_get_field(item, "b64_json", "b64Json"))
+                if data:
+                    return (data, "image/png")
+                url_data, url_mime = _download_url(_get_field(item, "url"))
+                if url_data:
+                    return (url_data, url_mime or "image/png")
+            return (None, "")
+
+        data, mime = _scan_items(_iter_items(_get_field(response, "data")))
+        if data:
+            return (data, mime)
+
+        try:
+            model_dump = getattr(response, "model_dump", None)
+            if callable(model_dump):
+                payload = model_dump()
+                if isinstance(payload, dict):
+                    data, mime = _scan_items(_iter_items(payload.get("data")))
+                    if data:
+                        return (data, mime)
+        except Exception:
+            pass
+
+        return (None, "")
+
+    @staticmethod
     def _parse_crop_call_args(arg_expr: str) -> tuple[float, float, float, float] | None:
         try:
             node = ast.parse(f"f({arg_expr})", mode="eval")
@@ -422,37 +554,58 @@ class AIWorker(QThread):
         return str(out_path)
 
     def _generate_image_from_crop(self, crop_path: str) -> str:
-        try:
-            from ai_client import _load_env as _load_ai_env  # type: ignore
+        from ai_client import _is_openai_model, _load_env as _load_ai_env, _normalize_model_name  # type: ignore
 
+        try:
             _load_ai_env()
         except Exception:
             pass
 
-        api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
-        if not api_key:
-            raise AIClientError("GEMINI_API_KEY is missing.")
-        model_name = (
-            os.getenv("IMAGE_AI_MODEL")
+        model_name = _normalize_model_name((
+            os.getenv("OPENAI_IMAGE_MODEL")
+            or os.getenv("IMAGE_AI_MODEL")
             or os.getenv("NOVA_IMAGE_MODEL")
-            or os.getenv("GEMINI_MODEL")
-            or os.getenv("LITEPRO_MODEL")
-            or os.getenv("CHAT_AI_MODEL")
-            or "gemini-2.5-flash"
-        ).strip()
+            or "gpt-image-1"
+        ).strip())
         prompt_text = self._get_image_generation_prompt()
 
-        try:
-            import google.generativeai as genai
-            from PIL import Image  # type: ignore[import-not-found]
-        except Exception as exc:
-            raise AIClientError(f"이미지 생성 모듈 로딩 실패: {exc}") from exc
+        if _is_openai_model(model_name):
+            api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+            if not api_key:
+                raise AIClientError("OPENAI_API_KEY is missing.")
+            try:
+                from openai import OpenAI
+            except Exception as exc:
+                raise AIClientError(f"이미지 생성 모듈 로딩 실패: {exc}") from exc
 
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(model_name)
-        image = Image.open(crop_path).convert("RGB")
-        response = model.generate_content([prompt_text, image])
-        img_bytes, mime = self._extract_inline_image_bytes(response)
+            try:
+                client = OpenAI(api_key=api_key)
+                with open(crop_path, "rb") as image_file:
+                    response = client.images.edit(
+                        model=model_name,
+                        image=image_file,
+                        prompt=prompt_text,
+                        output_format="png",
+                    )
+            except Exception as exc:
+                raise AIClientError(f"OpenAI 이미지 생성 실패: {exc}") from exc
+            img_bytes, mime = self._extract_openai_image_bytes(response)
+        else:
+            api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
+            if not api_key:
+                raise AIClientError("GEMINI_API_KEY is missing.")
+            try:
+                import google.generativeai as genai
+                from PIL import Image  # type: ignore[import-not-found]
+            except Exception as exc:
+                raise AIClientError(f"이미지 생성 모듈 로딩 실패: {exc}") from exc
+
+            genai.configure(api_key=api_key)
+            model = genai.GenerativeModel(model_name)
+            image = Image.open(crop_path).convert("RGB")
+            response = model.generate_content([prompt_text, image])
+            img_bytes, mime = self._extract_inline_image_bytes(response)
+
         if not img_bytes:
             raise AIClientError("이미지 생성 응답에서 이미지 데이터를 찾지 못했습니다. 모델 응답 형식이 예상과 다를 수 있습니다.")
 
@@ -766,30 +919,6 @@ class AIWorker(QThread):
                     _log(f"[{idx}] AIClient creation failed: {e}")
                     raise
 
-                def _sanitize_part(script: str) -> str:
-                    code = self._extract_code(script)
-                    if not code:
-                        return ""
-                    out_lines: list[str] = []
-                    for line in code.splitlines():
-                        s = line.strip()
-                        if not s:
-                            out_lines.append(line)
-                            continue
-                        # Prevent nested template/placeholder/box insertions inside parts.
-                        if s.startswith("insert_template("):
-                            continue
-                        if s.startswith("focus_placeholder("):
-                            continue
-                        if s.startswith("insert_box(") or s == "insert_box()":
-                            continue
-                        if s.startswith("insert_view_box(") or s == "insert_view_box()":
-                            continue
-                        if s.startswith("exit_box(") or s == "exit_box()":
-                            continue
-                        out_lines.append(line)
-                    return "\n".join(out_lines).strip()
-
                 # 1) Full OCR (fallback context)
                 _log(f"[{idx}] Starting OCR...")
                 ocr_text_full = ""
@@ -834,176 +963,38 @@ class AIWorker(QThread):
                         increment_ai_usage(uid, amount=usage_cost)
                     return final_code
 
-                # 2) Detect container + split generation when possible
+                # 2) Detect container and provide a layout hint, but keep
+                # the problem generation in a single AI call.
                 _log(f"[{idx}] Detecting container...")
                 det = detect_container(image_path)
                 _log(f"[{idx}] Container detected: template={det.template}, rect={det.rect}")
+                generation_description = ""
                 if det.template and det.rect:
-                    _log(f"[{idx}] Building region images...")
-                    # Build region images
-                    try:
-                        outside_img = mask_rect_on_image(image_path, det.rect)
-                        _log(f"[{idx}] Outside image: {type(outside_img)}")
-                    except Exception as e:
-                        _log(f"[{idx}] mask_rect_on_image failed: {e}")
-                        outside_img = None
-                    
-                    try:
-                        inside_img = crop_inside_rect(image_path, det.rect)
-                        _log(f"[{idx}] Inside image: {type(inside_img)}")
-                    except Exception as e:
-                        _log(f"[{idx}] crop_inside_rect failed: {e}")
-                        inside_img = None
-
-                    tmp_dir = Path(tempfile.gettempdir()) / "nova_ai"
-                    try:
-                        tmp_dir.mkdir(parents=True, exist_ok=True)
-                    except Exception:
-                        tmp_dir = Path.cwd()
-
-                    outside_path = ""
-                    inside_path = ""
-                    try:
-                        if outside_img is not None:
-                            fp = tmp_dir / f"nova_ai_outside_{os.getpid()}_{idx}.png"
-                            outside_img.save(fp, format="PNG")
-                            outside_path = str(fp)
-                    except Exception:
-                        outside_path = ""
-                    try:
-                        if inside_img is not None:
-                            fp = tmp_dir / f"nova_ai_inside_{os.getpid()}_{idx}.png"
-                            inside_img.save(fp, format="PNG")
-                            inside_path = str(fp)
-                    except Exception:
-                        inside_path = ""
-
-                    outside_ocr = ""
-                    inside_ocr = ""
-                    try:
-                        if outside_img is not None:
-                            outside_ocr = extract_text_from_pil_image(outside_img)
-                    except OcrError:
-                        outside_ocr = ""
-                    try:
-                        if inside_img is not None:
-                            inside_ocr = extract_text_from_pil_image(inside_img)
-                    except OcrError:
-                        inside_ocr = ""
-
-                    _log(f"[{idx}] Calling AI for OUTSIDE content...")
-                    outside_script_raw = client.generate_script_for_image(
-                        outside_path or image_path,
-                        description=(
-                            "Type ONLY the content OUTSIDE/BEFORE the box container. "
-                            "This includes the problem statement and equation. "
-                            "Do NOT include ?? ?? ?? conditions - those go INSIDE the box. "
-                            "Do NOT include the answer choices (????????."
-                        ),
-                        ocr_text=outside_ocr or ocr_text_full,
+                    generation_description = (
+                        "Generate the FULL HWP automation code for the ENTIRE problem in ONE pass. "
+                        f"A container was detected and the most likely template is '{det.template}'. "
+                        "If the visible layout matches, use the correct template and placeholder flow in the final script. "
+                        "Return one complete script covering the problem statement, box content, score, and answer choices "
+                        "together in natural reading order. Do NOT return partial scripts split into outside text, box body, "
+                        "and choices."
                     )
-                    _log(f"[{idx}] Outside AI response length: {len(outside_script_raw) if outside_script_raw else 0}")
-                    
-                    _log(f"[{idx}] Calling AI for INSIDE content...")
-                    # For inside content, use the FULL image so AI can find the ?? ?? ?? conditions
-                    inside_script_raw = client.generate_script_for_image(
-                        image_path,  # Use full image, not cropped inside
-                        description=(
-                            "Type ONLY the ?? ?? ?? (or ?? ?? ?? ?? conditions that should go INSIDE the box. "
-                            "These are the numbered conditions like '?? k=0???...' or '?? k=3???...' "
-                            "Do NOT include the problem text before the box. "
-                            "Do NOT include answer choices (????????."
-                        ),
-                        ocr_text=inside_ocr or ocr_text_full,
+                    _log(f"[{idx}] Container hint enabled for single-pass generation")
+                elif det.template:
+                    generation_description = (
+                        "Generate the FULL HWP automation code for the ENTIRE problem in ONE pass. "
+                        f"A container/header pattern was detected and the most likely template is '{det.template}'. "
+                        "If the visible layout matches, use the correct template and placeholder flow in the final script. "
+                        "Return one complete script for the whole problem, not partial scripts for separate regions."
                     )
-                    _log(f"[{idx}] Inside AI response length: {len(inside_script_raw) if inside_script_raw else 0}")
-                    
-                    _log(f"[{idx}] Calling AI for CHOICES content...")
-                    # For choices (????????, use the FULL image
-                    choices_script_raw = client.generate_script_for_image(
-                        image_path,
-                        description=(
-                            "Type ONLY the answer choices (????????or ???? ???? ?? ???? ?? ???? ?? ???? ?? ??. "
-                            "These are the multiple choice options at the bottom of the problem. "
-                            "Do NOT include the problem text. "
-                            "Do NOT include ?? ?? ?? conditions."
-                        ),
-                        ocr_text=ocr_text_full,
-                    )
-                    _log(f"[{idx}] Choices AI response length: {len(choices_script_raw) if choices_script_raw else 0}")
+                    _log(f"[{idx}] Template hint enabled for single-pass generation")
+                else:
+                    _log(f"[{idx}] No container detected, calling AI once for full problem...")
 
-                    outside_part = _sanitize_part(outside_script_raw or "")
-                    inside_part = _sanitize_part(inside_script_raw or "")
-                    choices_part = _sanitize_part(choices_script_raw or "")
-                    
-                    _log(f"[{idx}] Outside part preview: {outside_part[:200] if outside_part else 'EMPTY'}...")
-                    _log(f"[{idx}] Inside part preview: {inside_part[:200] if inside_part else 'EMPTY'}...")
-                    _log(f"[{idx}] Choices part preview: {choices_part[:200] if choices_part else 'EMPTY'}...")
-
-                    # Template structure:
-                    # 1. Insert box template
-                    # 2. @@@ = placeholder for content BEFORE the box (problem text)
-                    # 3. ### = placeholder for content INSIDE the box (?? ?? ?? conditions)
-                    # 4. &&& = placeholder for content AFTER the box (answer choices ????????
-                    combined = "\n".join(
-                        [
-                            f"insert_template('{det.template}')",
-                            "focus_placeholder('@@@')",
-                            outside_part,
-                            "focus_placeholder('###')",
-                            inside_part,
-                            "focus_placeholder('&&&')",
-                            choices_part,
-                        ]
-                    ).strip()
-                    _log(f"[{idx}] Combined script length: {len(combined)}")
-                    combined = self._maybe_refine_table_styles(
-                        idx=idx,
-                        client=client,
-                        image_path=image_path,
-                        script=combined,
-                        ocr_text=ocr_text_full,
-                        log_fn=_log,
-                    )
-                    combined = _append_explanation_if_needed(combined)
-                    combined = self._apply_image_mode_pipeline(idx, image_path, combined, _log)
-                    if uid and combined.strip():
-                        increment_ai_usage(uid, amount=usage_cost)
-                    return combined
-
-                if det.template and not det.rect:
-                    # Header text detected but rectangle not confidently found:
-                    # enforce template/placeholder workflow and let the model separate.
-                    _log(f"[{idx}] Template detected (no rect): {det.template}")
-                    script_raw = client.generate_script_for_image(image_path, ocr_text=ocr_text_full) or ""
-                    _log(f"[{idx}] AI response length: {len(script_raw)}")
-                    script_body = _sanitize_part(script_raw)
-                    combined = "\n".join(
-                        [
-                            f"insert_template('{det.template}')",
-                            "focus_placeholder('@@@')",
-                            script_body,
-                            "focus_placeholder('###')",
-                            "",
-                        ]
-                    ).strip()
-                    combined = self._maybe_refine_table_styles(
-                        idx=idx,
-                        client=client,
-                        image_path=image_path,
-                        script=combined,
-                        ocr_text=ocr_text_full,
-                        log_fn=_log,
-                    )
-                    combined = _append_explanation_if_needed(combined)
-                    combined = self._apply_image_mode_pipeline(idx, image_path, combined, _log)
-                    if uid and combined.strip():
-                        increment_ai_usage(uid, amount=usage_cost)
-                    return combined
-
-                # No container detected: default behavior
-                _log(f"[{idx}] No container detected, calling AI...")
-                raw_result = client.generate_script_for_image(image_path, ocr_text=ocr_text_full) or ""
+                raw_result = client.generate_script_for_image(
+                    image_path,
+                    description=(generation_description or ""),
+                    ocr_text=ocr_text_full,
+                ) or ""
                 _log(f"[{idx}] AI response length: {len(raw_result)}")
                 if not raw_result.strip():
                     _log(f"[{idx}] WARNING: Empty AI response!")
@@ -5284,6 +5275,8 @@ def _normalize_runtime_error_message(message: str) -> str:
         )
 
     lower = text.lower()
+    if "openai_api_key is missing" in lower:
+        return "OPENAI_API_KEY가 설정되어 있지 않습니다. .env 파일을 확인해 주세요."
     if "gemini_api_key is missing" in lower:
         return "GEMINI_API_KEY가 설정되어 있지 않습니다. .env 파일을 확인해 주세요."
     if "insert_cropped_image" in lower and ("source image path" in lower or "원본 이미지 경로" in text):

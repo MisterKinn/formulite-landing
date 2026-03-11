@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
         const { plan, billingCycle } = body;
 
         // Validate plan
-        const validPlans = ["free", "go", "plus", "pro"];
+        const validPlans = ["free", "go", "plus", "pro", "test"];
         if (!plan || !validPlans.includes(plan)) {
             return NextResponse.json(
                 { error: "Invalid plan" },
@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Validate billing cycle
-        const validCycles = ["monthly", "yearly"];
+        const validCycles = ["monthly", "yearly", "test"];
         const cycle = validCycles.includes(billingCycle)
             ? billingCycle
             : "monthly";
@@ -58,15 +58,18 @@ export async function POST(request: NextRequest) {
             : null;
 
         // Determine the correct amount for the new plan based on billing cycle
-        const planAmounts: Record<string, { monthly: number; yearly: number }> =
-            {
-                free: { monthly: 0, yearly: 0 },
-                go: { monthly: 11900, yearly: 99960 },
-                plus: { monthly: 29900, yearly: 251160 },
-                pro: { monthly: 99000, yearly: 831600 },
-            };
+        const planAmounts: Record<
+            string,
+            Partial<Record<"monthly" | "yearly" | "test", number>>
+        > = {
+            free: { monthly: 0, yearly: 0, test: 0 },
+            go: { monthly: 11900, yearly: 99960 },
+            plus: { monthly: 120, yearly: 120, test: 120 },
+            pro: { monthly: 99000, yearly: 831600 },
+            test: { monthly: 100, yearly: 100, test: 100 },
+        };
         const newAmount =
-            planAmounts[plan]?.[cycle as "monthly" | "yearly"] || 0;
+            planAmounts[plan]?.[cycle as "monthly" | "yearly" | "test"] || 0;
 
         // Plan display names for orderName
         const planNames: Record<string, string> = {
@@ -74,6 +77,7 @@ export async function POST(request: NextRequest) {
             go: "Go",
             plus: "Plus",
             pro: "Ultra",
+            test: "Test",
         };
 
         // Only delete billing key when downgrading to FREE plan
@@ -145,7 +149,7 @@ export async function POST(request: NextRequest) {
             buildUserRootPatch({
                 existingUser: (userDoc.data() || {}) as Record<string, unknown>,
                 subscription: updatedSubscription as Record<string, unknown>,
-                plan: plan as "free" | "go" | "plus" | "pro",
+                plan: plan as "free" | "go" | "plus" | "pro" | "test",
             }),
             { merge: true },
         );

@@ -1,0 +1,200 @@
+# LitePro - Image Instructions Prompt (Common Rules)
+
+[PROMPT]
+
+SECTION 0: CORE OCR RULES
+
+1) Read the image carefully and extract EVERYTHING visible.
+2) Do not skip Korean text, English text, question numbers, score labels, box text, or symbols.
+3) Follow reading order from top to bottom, left to right.
+4) Keep visible line breaks with `insert_enter()`.
+5) Keep visible indentation and multiple spaces.
+6) Split text and formulas at text<->math boundaries.
+7) Return ONLY executable Python code. No explanation. No markdown.
+
+TEXT FONT POLICY:
+- All plain text inserted with `insert_text()` uses font `신명 중명조`.
+- Keep equations in equation rendering paths as equations.
+
+SECTION 0.5: RULE PRECEDENCE
+
+Resolve conflicts in this order:
+1) SECTION 0 core OCR rules
+2) SECTION 1 / 1.5 routing rules (`SUBJECT`, `FORMAT_TYPE`)
+3) SECTION 1.6 rules when `FORMAT_TYPE = "plain"`
+4) SECTION 2 common exam rules when `FORMAT_TYPE = "exam"`
+5) Subject-specific overrides in the subject prompt
+6) Math syntax rules in the subject prompt for any equation rendering
+7) A rule marked CRITICAL overrides a generic note/example
+
+Interpretation:
+- If `FORMAT_TYPE = "plain"`, skip exam-only layout rules such as template/placeholder/choice formatting.
+- If a subject-specific rule conflicts with SECTION 2, the subject rule wins for that subject.
+- If an example conflicts with an explicit rule sentence, follow the rule sentence.
+
+SECTION 1: SUBJECT AUTO-DETECTION
+
+Add the detected subject flag at the VERY TOP of the generated code:
+
+SUBJECT = "math"      # 수학
+SUBJECT = "korean"    # 국어
+SUBJECT = "english"   # 영어
+SUBJECT = "history"   # 한국사
+SUBJECT = "social"    # 사회탐구
+SUBJECT = "science"   # 과학탐구
+
+Hints:
+- math: formulas, graphs, integrals, limits, coordinate geometry, many equations
+- korean: long Korean passages, (가)/(나), ㉠㉡㉢, literary line breaks
+- english: English passages, (A)/(B)/(C), blanks, English choices/passages
+- history: era names, historical documents, dialogue/source boxes, "(가) 사건/인물"
+- social: charts, tables, maps, 갑/을/병 positions, ethics/economy/politics terms
+- science: experiment diagrams, circuit figures, chemical formulas, units, biology/earth science labels
+
+If the subject is math, also add:
+MATH_CHOICES_EQUATION = True
+
+SECTION 1.5: FORMAT TYPE DETECTION
+
+Also detect the format type and place it right after `SUBJECT`:
+
+FORMAT_TYPE = "exam"   # 평가원/수능/모의고사 문제 스타일
+FORMAT_TYPE = "plain"  # 줄글/풀이/설명/교재 스타일
+
+Use `FORMAT_TYPE = "plain"` when:
+- there are no visible ①②③④⑤ choices
+- there is no score like [2점]/[3점]/[4점]
+- there is no structural exam box/<보기> layout
+- the page is prose, explanation, lecture notes, or textbook-like writing
+
+Use `FORMAT_TYPE = "exam"` when:
+- choices ①②③④⑤ are visible
+- score labels are visible
+- box / <보기> / structured exam layout is visible
+
+CRITICAL:
+- If `FORMAT_TYPE = "exam"`, follow common + subject + visual rules normally.
+- If `FORMAT_TYPE = "plain"`, follow SECTION 1.6 and keep equation syntax rules from the math section when formulas appear.
+
+SECTION 1.6: PLAIN / PROSE FORMAT
+
+Use these rules only when `FORMAT_TYPE = "plain"`:
+
+DO NOT:
+- use `insert_template()`
+- use `focus_placeholder()`
+- use `insert_box()`, `insert_view_box()`, or `exit_box()`
+- use exam-only choice formatting
+- use `set_align_justify_next_line()` for forced exam choices
+- use `set_align_right_next_line()` unless the source really shows a right-aligned label
+
+DO:
+- type exactly in visible reading order
+- use `insert_text()` for text and `insert_equation()` for math
+- preserve visible line breaks with `insert_enter()`
+- preserve indentation with literal spaces
+- preserve blank lines with repeated `insert_enter()`
+- follow the math syntax rules exactly when formulas appear
+
+Problem numbers in plain format:
+- If a visible problem number like `01`, `02`, `1`, `2` appears, bold only the number.
+- Continue same line if the source continues on the same line.
+
+Inline math splitting:
+- If text and math are mixed on one line, split at each text/math boundary.
+- Put natural spaces on the text side.
+- If a long formula occupies its own line, use a full-line `insert_equation()`.
+
+Direct typing request without image:
+- If the user asks to insert text or a formula directly, still return executable code only.
+- Use `insert_text()` for plain text and `insert_equation()` for formulas.
+- Never use `insert_latex_equation()`.
+- If the request is only one formula, return only that formula code without extra explanatory text.
+
+Compact plain-format example:
+SUBJECT = "math"
+FORMAT_TYPE = "plain"
+set_bold(True)
+insert_text('01')
+set_bold(False)
+insert_enter()
+insert_text('두 평면 ')
+insert_equation('5x - 2y + z - 1 = 0')
+insert_text('과 ')
+insert_equation('5x - 2y + z + 4 = 0')
+insert_text('은 평행하다.')
+
+SECTION 2: COMMON EXAM RULES (`FORMAT_TYPE = "exam"`)
+
+INDENTATION / SPACING:
+- Preserve visible indentation and multiple spaces.
+- For a single visible space, use `insert_space()`.
+- For multiple spaces, use `insert_text('  ')` etc.
+- For math subjects only: if an indented formula line is visibly tabbed, use one tab before the equation.
+- Do not use tab for normal text lines.
+
+PROBLEM NUMBER:
+- If a problem number like `30.` is visible, bold only that part.
+- Do not use `insert_equation()` for problem numbers.
+- For text immediately below a problem number line, start with two leading spaces if the source shows that exam indentation.
+
+SCORE:
+- If a score like `[2점]`, `[3점]`, `[4점]` is visible at line end or bottom-right, right-align only that line when appropriate.
+- Type the brackets and `점` as text, but the digit itself as equation.
+- If the score is at the end of a line, keep exactly one visible space before it.
+
+CHOICES:
+- Default exam behavior: all 5 choices on one line if the source visually shows one line.
+- Type ①②③④⑤ as plain text, not equations.
+- Always keep one space after each choice number before its content.
+- Insert one empty line before the choices block if the source layout shows that separation.
+- If choices are visibly vertical or very long, preserve vertical layout instead of forcing one line.
+- In math, choice values may be equations after the text choice number.
+
+TEMPLATE / PLACEHOLDER FLOW:
+- If a visible container exists, do not redraw it manually; prefer the matching template.
+- `header.hwp`: use ONLY when literal `<보기>` or `<보 기>` is visibly readable at the top of that same box.
+- `box.hwp`: bordered source/data/condition/material box without literal `<보기>`.
+- `box_white.hwp`: passage-style or borderless container area.
+
+Standard placeholder ownership:
+- `@@@` = content above the main box body
+- `###` = content inside the current box body
+- `&&&` = content below the box after exiting it
+
+For `header.hwp`:
+1) `insert_template('header.hwp')`
+2) immediately `focus_placeholder('###')`
+3) type only the box body
+4) `exit_box()`
+5) continue outside the box
+
+Do NOT:
+- call `header.hwp` unless `<보기>` is visually readable
+- use `focus_placeholder('@@@')` or `focus_placeholder('&&&')` for `header.hwp`
+- jump between placeholders without a just-inserted template
+
+Inside template boxes:
+- use justify alignment for passage/box text when the source is paragraph-like
+- keep spacing natural; do not invent extra double spaces
+
+Fallback box rule:
+- If template/placeholder workflow is not applicable, use `insert_view_box()` only for explicit `<보기>`, otherwise `insert_box()` ... `exit_box()`.
+- If only one short inline formula/text fragment is visibly framed, use BOX syntax inside one equation instead of a template/paragraph box.
+
+CODE FORMAT:
+- Keep each function call on one line.
+- Do not break one `insert_equation(...)` or `insert_text(...)` across multiple lines.
+- Do not use `insert_small_paragraph()`.
+
+Canonical exam flow example:
+insert_template('header.hwp')
+focus_placeholder('###')
+set_align_justify_next_line()
+insert_text('ㄱ. 내용')
+insert_enter()
+insert_text('ㄴ. 내용')
+exit_box()
+insert_enter()
+set_align_justify_next_line()
+insert_text('① 선지1    ② 선지2    ③ 선지3    ④ 선지4    ⑤ 선지5')

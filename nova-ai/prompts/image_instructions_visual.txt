@@ -1,0 +1,111 @@
+# LitePro - Image Instructions Prompt (Visual Rules)
+
+[PROMPT]
+
+SECTION 8.5: VISUAL ELEMENTS / IMAGE CROPPING / STYLED TEXT
+
+Use `insert_cropped_image(...)` when the image contains a visual element that cannot be faithfully recreated by text/equations/tables:
+- geometry figures
+- graphs / function plots / coordinate diagrams
+- circuit or apparatus diagrams
+- maps / diagrams / venn diagrams
+- biological or anatomical figures
+- other non-textual visual content
+
+Do NOT use `insert_cropped_image(...)` for:
+- pure text
+- equations
+- tables
+- choice numbers ①②③④⑤
+- highlighted text only
+- colored text only
+
+HIGHLIGHT / COLOR / STYLE:
+- If a span has only highlight, use `insert_highlighted_text(...)`.
+- If a span has only text color, use `insert_colored_text(...)`.
+- If a span has two or more visible styles together (bold/underline/italic/strike/color/highlight), use one `insert_styled_text(...)`.
+- Otherwise use normal `insert_text(...)`.
+
+TABLE RECONSTRUCTION (CRITICAL):
+- Prefer `insert_table(...)` over turning a table into an image.
+- Use structured cell objects for merge/style when needed.
+- Preserve logical cell position, merge structure, and visible highlighting accurately.
+- If the first row shares one fill color, repeat that fill on each visible cell in the first row.
+- If only one cell is colored, apply style only to that cell.
+- If outside borders differ from inside borders, use side-specific border keys.
+- Use visible border style names such as:
+  `solid`, `dash`, `dot`, `dashdot`, `dashdotdot`, `double`, `thinthick`, `thickthin`, `thinthickthin`
+- Use visible width strings such as `0.2mm`, `0.3mm`, `0.5mm`.
+- If a table cell contains math, use `EQ:` inside that cell value.
+- Do not invent invisible colors or borders.
+
+Compact table examples:
+insert_table(2, 4, cell_data=[
+    [{"text": "주제", "colspan": 4, "align": "center"}],
+    ["가", "나", "다", "라"],
+], align_center=True)
+
+insert_table(3, 4, cell_data=[
+    [{"text": "구분", "rowspan": 2, "align": "center"}, "2024", "2025", "비고"],
+    [None, "상반기", "하반기", ""],
+    ["A", "10", "12", "증가"],
+], align_center=True)
+
+insert_table(2, 2, cell_data=[
+    [
+        {"text": "구분", "border_type": "dotted", "border_width": "0.2mm", "align": "center"},
+        {"text": "내용", "border_type": "dotted", "border_width": "0.2mm", "align": "center"},
+    ],
+    [
+        {"text": "A", "border_type": "dotted", "border_width": "0.2mm", "align": "center"},
+        {"text": "B", "border_type": "dotted", "border_width": "0.2mm", "align": "center"},
+    ],
+], align_center=True)
+
+Crop API:
+insert_cropped_image(x1_pct, y1_pct, x2_pct, y2_pct)
+
+Crop rules:
+1) Estimate a bounding box around the visual object.
+2) Include a small margin, but avoid swallowing surrounding text.
+3) Keep labels inside the figure crop if they belong to the figure.
+4) If there are multiple figures, crop them separately.
+5) Coordinates must be decimal ratios between `0.0` and `1.0`.
+
+Placement:
+- Put the cropped image where the figure appears in reading order.
+- Usually add `insert_enter()` before and after the figure if the figure sits on its own line.
+
+Compact crop example:
+insert_text('26. 그림과 같이 ...')
+insert_enter()
+insert_cropped_image(0.20, 0.25, 0.85, 0.78)
+insert_enter()
+set_align_right_next_line()
+insert_text('[')
+insert_equation('3')
+insert_text('점]')
+
+SECTION 9: QUICK CHECKLIST
+
+Always include:
+- `SUBJECT = "..."`
+- `FORMAT_TYPE = "..."`
+- `MATH_CHOICES_EQUATION = True` when subject is math
+
+Always preserve:
+- visible reading order
+- line breaks
+- problem numbers
+- score labels
+- real boxes/containers
+- real tables
+- real figures
+- equation syntax from the math section
+
+Never:
+- skip visible text
+- convert equations to plain text
+- use `<보기>` template without visible `<보기>`
+- turn tables into images unless reconstruction is genuinely impossible
+- use `insert_cropped_image` for content that can be faithfully typed

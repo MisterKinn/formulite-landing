@@ -18,7 +18,14 @@ def _read_prompt(filename: str) -> str:
 
 
 def get_image_instructions_prompt() -> str:
-    return _read_prompt("image_instructions_prompt.txt")
+    split_files = [
+        "image_instructions_common.txt",
+        "image_instructions_subjects.txt",
+        "image_instructions_visual.txt",
+    ]
+    parts = [_read_prompt(name) for name in split_files]
+    parts = [part for part in parts if part]
+    return "\n\n".join(parts).strip()
 
 
 def get_chat_hwp_actions_prompt() -> str:

@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 import sys
 import base64
+import io
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -131,14 +133,91 @@ def _resolve_model(model: Optional[str]) -> str:
     if model:
         return model
     env_model = (
-        os.getenv("NOVA_AI_MODEL")
+        os.getenv("OPENAI_CHAT_MODEL")
+        or os.getenv("NOVA_AI_MODEL")
         or os.getenv("GEMINI_MODEL")
         or os.getenv("LITEPRO_MODEL")
     )
-    return env_model or "gemini-2.5-flash"
+    return env_model or "gpt-5-mini"
+
+
+def _is_openai_model(model: Optional[str]) -> bool:
+    normalized = (model or "").strip().lower()
+    return normalized.startswith(("gpt", "o1", "o3", "o4", "whisper", "dall-e"))
+
+
+def _normalize_model_name(model: str) -> str:
+    text = (model or "").strip()
+    if not text:
+        return text
+    if _is_openai_model(text):
+        return re.sub(r"\s+", "-", text.lower())
+    return text
 
 
 class AIClient:
+    def _ensure_openai_client(self) -> None:
+        if self._openai is not None:
+            return
+        api_key = self.api_key if self.provider == "openai" else os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise AIClientError("OPENAI_API_KEY is missing.")
+        try:
+            from openai import OpenAI
+        except Exception as exc:
+            raise AIClientError("openai package is not installed.") from exc
+        self._openai = OpenAI(api_key=api_key)
+
+    def _ensure_gemini_client(self) -> None:
+        if self._genai is not None:
+            return
+        api_key = self.api_key if self.provider == "gemini" else os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            raise AIClientError("GEMINI_API_KEY is missing.")
+        try:
+            import google.generativeai as genai
+        except Exception as exc:
+            raise AIClientError("google-generativeai package is not installed.") from exc
+        genai.configure(api_key=api_key)
+        self._genai = genai
+
+    @staticmethod
+    def _safe_openai_response_text(response: object) -> str:
+        try:
+            output_text = getattr(response, "output_text", None)
+            if isinstance(output_text, str) and output_text.strip():
+                return output_text.strip()
+        except Exception:
+            pass
+
+        payload = None
+        try:
+            model_dump = getattr(response, "model_dump", None)
+            if callable(model_dump):
+                payload = model_dump()
+        except Exception:
+            payload = None
+
+        if isinstance(payload, dict):
+            texts: list[str] = []
+            for item in payload.get("output", []) or []:
+                if not isinstance(item, dict):
+                    continue
+                if item.get("type") != "message":
+                    continue
+                for content in item.get("content", []) or []:
+                    if not isinstance(content, dict):
+                        continue
+                    if content.get("type") not in {"output_text", "text"}:
+                        continue
+                    text = content.get("text")
+                    if isinstance(text, str) and text:
+                        texts.append(text)
+            if texts:
+                return "".join(texts).strip()
+
+        return ""
+
     @staticmethod
     def _safe_response_text(response: object) -> str:
         chunks: list[str] = []
@@ -199,18 +278,17 @@ class AIClient:
         check_usage: bool = True,
     ) -> None:
         _load_env()
-        self.model = _resolve_model(model)
-        self.api_key = api_key or os.getenv("GEMINI_API_KEY")
-        if not self.api_key:
-            raise AIClientError("GEMINI_API_KEY is missing.")
+        self.model = _normalize_model_name(_resolve_model(model))
+        self.provider = "openai" if _is_openai_model(self.model) else "gemini"
+        self._genai = None
+        self._openai = None
 
-        try:
-            import google.generativeai as genai
-        except Exception as exc:
-            raise AIClientError("google-generativeai package is not installed.") from exc
-
-        genai.configure(api_key=self.api_key)
-        self._genai = genai
+        if self.provider == "openai":
+            self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+            self._ensure_openai_client()
+        else:
+            self.api_key = api_key or os.getenv("GEMINI_API_KEY")
+            self._ensure_gemini_client()
         self._check_usage = check_usage
 
     def _get_user_info(self) -> tuple[str | None, str]:
@@ -273,6 +351,26 @@ class AIClient:
         except Exception:
             return None
 
+    def _prepare_openai_image_data_url(self, image_path: str) -> str:
+        try:
+            from PIL import Image  # type: ignore[import-not-found]
+        except Exception as exc:
+            raise AIClientError("Pillow package is required for OpenAI image requests.") from exc
+
+        try:
+            image = Image.open(image_path).convert("RGB")
+            max_dim = max(image.size)
+            if max_dim > MAX_IMAGE_DIM:
+                scale = MAX_IMAGE_DIM / max_dim
+                new_size = (int(image.size[0] * scale), int(image.size[1] * scale))
+                image = image.resize(new_size, Image.LANCZOS)
+            buffer = io.BytesIO()
+            image.save(buffer, format="PNG")
+            encoded = base64.b64encode(buffer.getvalue()).decode("utf-8")
+            return f"data:image/png;base64,{encoded}"
+        except Exception as exc:
+            raise AIClientError(f"이미지 인코딩 실패: {exc}") from exc
+
     def _generate_script_gemini(
         self,
         prompt: str,
@@ -318,6 +416,38 @@ class AIClient:
         
         return result_text.strip()
 
+    def _generate_script_openai(
+        self,
+        prompt: str,
+        image_path: Optional[str] = None,
+        *,
+        model_name: str,
+    ) -> str:
+        try:
+            content: list[dict[str, str]] = [{"type": "input_text", "text": prompt}]
+            if image_path:
+                content.append(
+                    {
+                        "type": "input_image",
+                        "image_url": self._prepare_openai_image_data_url(image_path),
+                    }
+                )
+            response = self._openai.responses.create(  # type: ignore[union-attr]
+                model=model_name,
+                input=[{"role": "user", "content": content}],
+            )
+            result_text = self._safe_openai_response_text(response)
+        except AIClientError:
+            raise
+        except Exception as exc:
+            _debug(f"[AI Debug] OpenAI response 예외: {exc}")
+            raise AIClientError(str(exc)) from exc
+
+        if not result_text.strip():
+            _debug("[AI Debug] OpenAI 빈 응답 받음")
+            return ""
+        return result_text.strip()
+
     def generate_script(
         self,
         prompt: str,
@@ -329,12 +459,22 @@ class AIClient:
             return ""
 
         self._check_usage_limit()
-        model_name = (model_override or self.model or "").strip() or self.model
-        result_text = self._generate_script_gemini(
-            prompt,
-            image_path=image_path,
-            model_name=model_name,
-        )
+        model_name = _normalize_model_name((model_override or self.model or "").strip() or self.model)
+        provider = "openai" if _is_openai_model(model_name) else "gemini"
+        if provider == "openai":
+            self._ensure_openai_client()
+            result_text = self._generate_script_openai(
+                prompt,
+                image_path=image_path,
+                model_name=model_name,
+            )
+        else:
+            self._ensure_gemini_client()
+            result_text = self._generate_script_gemini(
+                prompt,
+                image_path=image_path,
+                model_name=model_name,
+            )
 
         if result_text.strip():
             self._record_usage()
@@ -368,7 +508,9 @@ class AIClient:
     ) -> str:
         prompt = self.build_prompt(description, image_path=image_path, ocr_text=ocr_text)
         image_model = (
-            os.getenv("IMAGE_AI_MODEL")
+            os.getenv("OPENAI_CHAT_MODEL")
+            or os.getenv("IMAGE_AI_MODEL")
+            or os.getenv("CHAT_AI_MODEL")
             or os.getenv("NOVA_IMAGE_MODEL")
             or ""
         ).strip()
@@ -416,14 +558,15 @@ class AIClient:
     def generate_explanation_for_image(self, image_path: str, ocr_text: str = "") -> str:
         prompt = self.build_explanation_prompt(ocr_text=ocr_text)
         explanation_model = (
-            os.getenv("SOLVE_AI_MODEL")
+            os.getenv("OPENAI_SOLVE_MODEL")
+            or os.getenv("SOLVE_AI_MODEL")
             or os.getenv("EXPLANATION_AI_MODEL")
             or os.getenv("NOVA_AI_MODEL")
             or os.getenv("GEMINI_MODEL")
-            or "gemini-3.1-pro-preview"
+            or "gpt-5.4"
         ).strip()
         return self.generate_script(
             prompt,
             image_path=image_path,
-            model_override=(explanation_model or "gemini-3.1-pro-preview"),
+            model_override=(explanation_model or "gpt-5.4"),
         )

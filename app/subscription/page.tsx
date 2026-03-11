@@ -71,8 +71,8 @@ export default function SubscriptionDashboard() {
     };
 
     const handleStartSubscription = async (
-        plan: "go" | "plus" | "pro",
-        cycle: "monthly" | "yearly",
+        plan: "go" | "plus" | "pro" | "test",
+        cycle: "monthly" | "yearly" | "test",
     ) => {
         if (!subscription?.billingKey) {
             alert("먼저 카드를 등록해주세요");
@@ -85,13 +85,23 @@ export default function SubscriptionDashboard() {
             // 프로필 페이지의 구독 로직을 재사용 (단건 결제)
             const planPrices = {
                 go: { monthly: 11900, yearly: 99960 },
-                plus: { monthly: 29900, yearly: 251160 },
+                plus: { monthly: 120, yearly: 120 },
+                test: { monthly: 100, yearly: 100, test: 100 },
                 pro: { monthly: 99000, yearly: 831600 },
             };
 
-            const amount = planPrices[plan][cycle];
+            const amount =
+                plan === "test"
+                    ? planPrices.test.test
+                    : planPrices[plan][cycle as "monthly" | "yearly"];
             const orderName = `Nova AI ${
-                plan === "go" ? "Go" : plan === "plus" ? "Plus" : "Ultra"
+                plan === "go"
+                    ? "Go"
+                    : plan === "plus"
+                      ? "Plus"
+                      : plan === "test"
+                        ? "Test"
+                        : "Ultra"
             } 요금제`;
 
             // 결제 페이지로 billingCycle을 함께 전달해야
@@ -253,7 +263,9 @@ export default function SubscriptionDashboard() {
                                     <span>
                                         {subscription.billingCycle === "yearly"
                                             ? "연간"
-                                            : "월간"}
+                                            : subscription.billingCycle === "test"
+                                              ? "테스트"
+                                              : "월간"}
                                     </span>
                                 </div>
                                 <div style={styles.detailRow}>
@@ -346,7 +358,7 @@ export default function SubscriptionDashboard() {
 
                             <div style={styles.planCard}>
                                 <h3 style={styles.planTitle}>Plus 요금제</h3>
-                                <p style={styles.planPrice}>월 29,900원</p>
+                                <p style={styles.planPrice}>월 120원</p>
                                 <button
                                     style={styles.button}
                                     onClick={() =>
@@ -379,7 +391,25 @@ export default function SubscriptionDashboard() {
                                 >
                                     {actionLoading === "subscribe_plus_yearly"
                                         ? "처리 중..."
-                                        : "연간 구독 (251,160원)"}
+                                        : "연간 구독 (120원)"}
+                                </button>
+                            </div>
+
+                            <div style={styles.planCard}>
+                                <h3 style={styles.planTitle}>Test 요금제</h3>
+                                <p style={styles.planPrice}>테스트 100원</p>
+                                <button
+                                    style={styles.button}
+                                    onClick={() =>
+                                        handleStartSubscription("test", "test")
+                                    }
+                                    disabled={
+                                        actionLoading === "subscribe_test_test"
+                                    }
+                                >
+                                    {actionLoading === "subscribe_test_test"
+                                        ? "처리 중..."
+                                        : "테스트 구독"}
                                 </button>
                             </div>
 

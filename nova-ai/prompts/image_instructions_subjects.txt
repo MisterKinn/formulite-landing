@@ -1,0 +1,316 @@
+# LitePro - Image Instructions Prompt (Subject Rules)
+
+[PROMPT]
+
+SECTION 3: KOREAN
+
+General:
+- Long Korean passages are common; text accuracy is more important than decoration.
+- Preserve original line breaks, literary stanza breaks, and indentation exactly.
+- Keep ㉠㉡㉢㉣㉤, ㉮㉯㉰㉱㉲, ⓐⓑⓒ, [A]/[B]/[C], ※ as visible text.
+
+Reading / literature:
+- Long reading passages usually go in `box_white.hwp`.
+- Poetry: every line break matters; preserve each poetic line with `insert_enter()`.
+- Stanza gaps use an empty line if visible.
+- `(가)`, `(나)` labels should be bold.
+- Preserve dialogue quotes and old/classical wording exactly.
+
+Language / media:
+- Dialogue format keeps speaker labels as text.
+- Media/article/ad-like materials may use a box.
+- Grammar/analysis tables should use `insert_table()`.
+
+Underline / emphasis:
+- If a visible Korean underlined span appears, wrap only that span with `set_underline(True/False)`.
+
+<보기>:
+- Use `header.hwp` only when literal `<보기>` is visible.
+
+SECTION 4: MATHEMATICS
+
+4-1. STRUCTURE
+- Multiple-choice math problems often use equation choices.
+- Short-answer math problems have no choices.
+- If math is detected, add `MATH_CHOICES_EQUATION = True`.
+- Use equations for math content, but keep problem number, brackets, and normal prose as text.
+
+4-2. HwpEqn SYNTAX RULES (PRESERVE CAREFULLY)
+
+Use `insert_equation()` for ALL math.
+Do not write formulas in `insert_text()`.
+For English letters/words used as math symbols, still use `insert_equation()`.
+
+Inline pattern:
+insert_text('문장 ')
+insert_equation('x = 1')
+insert_text(' 일 때')
+
+Powers:
+- Always wrap superscripts with braces.
+- ✅ `x ^{2}`  `t ^{3}`
+
+PARENTHESES (CRITICAL):
+- ALWAYS use `LEFT ( ... RIGHT )` inside equations.
+- ✅ `f LEFT ( x RIGHT )`
+- ✅ `f LEFT ( 0,`0 RIGHT )`
+
+PARENTHESES + FRACTION (CRITICAL):
+- Parentheses must stay fully inside the numerator or denominator braces.
+- The fraction wraps around the parenthesized expression; never the reverse.
+- ✅ `{{f LEFT ( ha,`hb RIGHT )} over {h}}`
+- ❌ `f LEFT ( ha,`hb RIGHT ) over h`
+- ✅ `{LEFT ( a + b RIGHT )} over {c}`
+- ❌ `LEFT ( a + b over c RIGHT )`
+- Keep an entire parenthesized numerator block together:
+  ✅ `{y LEFT ( 0 + 0 - y ^{4} RIGHT )} over {y ^{4}}`
+- Full chain example:
+  ✅ `f _{x} LEFT ( 0,`y RIGHT ) = {y LEFT ( 0 + 0 - y ^{4} RIGHT )} over {y ^{4}} = - y`
+- Inner-product numerator/denominator must stay grouped:
+  ✅ `alpha = {LEFT < f,``1 RIGHT >} over {LEFT < 1,``1 RIGHT >}`
+  ✅ `beta = {LEFT < f,``x RIGHT >} over {LEFT < x,``x RIGHT >}`
+
+Fractions:
+- Use `over`.
+- ✅ `{a over b}`
+- If the numerator is a sum, brace the whole numerator:
+  ✅ `{b _{2n-1} + b _{3n+1}} over {b _{n}}`
+- If the numerator is a symbolic product such as coefficient × pi, brace the whole product:
+  ✅ `{2 pi} over {5}`
+  ✅ `{13 pi} over {20}`
+- Parenthesized denominators/numerators must remain inside the fraction braces:
+  ✅ `{r over {LEFT ( 1 - r RIGHT ) ^{2}}}`
+  ✅ `{1 over {LEFT ( 1 + x RIGHT ) ^{3}}}`
+  ✅ `{LEFT ( a + b RIGHT ) ^{2} over {LEFT ( a - b RIGHT ) ^{2}}}`
+- Nested fractions: keep the OUTER numerator as one block.
+  ✅ `F LEFT ( s RIGHT ) = {{k} over {p} LEFT ( {1-e ^{-ps}} over {s ^{2}} - {pe ^{-ps}} over {s} RIGHT )} over {1-e ^{-ps}}`
+- If the numerator contains a powered factor, keep the whole factor in numerator braces:
+  ✅ `- {pi LEFT ( -1 RIGHT ) ^{n}} over {n}`
+
+Roots:
+- Square root: `sqrt {x+1}`
+- n-th root always uses `of`:
+  ✅ `{root {4} of {32}}`
+
+Multiplication:
+- Use `times` when a visible multiplication sign should be explicit.
+
+MULTIPLE INTEGRALS:
+- Double integrals must use `dint`.
+- Triple integrals must use `tint`.
+- Put integrand + differential inside the final braces.
+- ✅ `dint _{D} ^{} {(y ^{2} - x ^{2} + 1)dA}`
+- ✅ `int _{0} ^{1} {int _{x ^{2}} ^{sqrt {x}} {(y ^{2} - x ^{2} + 1)dydx}}`
+
+UNDERBRACE / repetition (CRITICAL):
+- Put the repetition label in the first UNDERBRACE block and the repeated expression in the second.
+- ✅ `UNDERBRACE {25`` rm "times "it} {phi _{A} CIRC phi _{A} CIRC CDOTS CIRC phi _{A}}`
+- ✅ `phi _{A} ^{25} = UNDERBRACE {25`` rm "times "it} {phi _{A} CIRC phi _{A} CIRC CDOTS CIRC phi _{A}}`
+
+UNDEROVER operators:
+- If the lower condition is visually under the operator, use `UNDEROVER`.
+- ✅ `UNDEROVER {max}_{LEFT ( x,y RIGHT ) IN D _{5}}^{} ...`
+- If the lower condition is a normal side-subscript, do NOT use UNDEROVER.
+
+EVALUATION BAR (CRITICAL):
+- For an evaluation bar at the right of an expression, use `RIGHT | _{...}`.
+- Keep the full grouped expression inside `LEFT { ... RIGHT }` before the evaluation bar.
+- ✅ `{d} over {dx} LEFT . LEFT { {x ^{4} LEFT ( x-1 RIGHT )} over {LEFT ( x+2 RIGHT ) LEFT ( x ^{2} +1 RIGHT )} RIGHT } RIGHT | _{x=2}`
+
+PARTIAL DERIVATIVES:
+- Keep `Partial` with the variable inside each brace.
+- ✅ `{Partial Q} over {Partial x}`
+
+CURL / DIV / NABLA (CRITICAL):
+- Use roman operators.
+- ✅ `{rm curl} `{rm boldF}`
+- ✅ `{rm div} `{rm boldF}`
+- ✅ `NABLA f`
+- ✅ `dint _{S} ^{} {{rm curl} `{rm boldF} CDOT d {rm boldS}}`
+- ✅ `tint _{V} ^{} {{rm div} `{rm boldF} `dV}`
+
+PROJECTION:
+- `proj` must be roman.
+- ✅ `rm proj it _{P _{1}} f = alpha CDOT 1 + beta CDOT x`
+
+BLACKBOARD BOLD SETS (CRITICAL):
+- Use the actual Unicode characters, not `bb`.
+- ✅ `ℝ ^{n}`  `ℤ`  `ℕ`  `ℂ ^{n}`  `ℚ`
+- If prose follows, split text after the equation.
+
+GREEK LETTERS:
+- Always use lowercase `pi`, not `PI`.
+- Always use lowercase `theta`, not `THETA`.
+
+PLUS-MINUS:
+- `+-` renders `±`.
+
+PLUS SIGN:
+- Keep `+` inside one equation string.
+- ✅ `insert_equation('p + 27')`
+
+BRACKETED SUBSCRIPT EXPRESSIONS:
+- Use explicit left/right:
+  `LEFT { a _{n} RIGHT }`
+  `LEFT ( a _{n} RIGHT )`
+
+COMMA / ARROW / DOUBLE-ARROW SEPARATOR RULE (CRITICAL):
+- If comma, `→`, or `⇒` separates two clauses/expressions, split around the separator.
+- Exception: commas inside coordinates, function arguments, or vectors remain inside one equation.
+
+LINE SEGMENTS:
+- Use `rm {bar{AB}}`
+
+GEOMETRY / POINT / FIGURE NOTATION:
+- Point letters in geometry use roman letter tokens.
+- Example point notation: `{rmA}`, `{rmB}`, `{rmC}`, `{rmP}`, `{rmQ}`, `{rmR}`
+- Triangle ABC: `rm ABC`
+- Rectangle marker `□ABCD` must be split:
+  `insert_text('□')`
+  `insert_equation('rm ABCD')`
+- Angle notation: `rm ANGLE HCG`
+- In geometry/vector problems only:
+  - do not prefix ellipse name `C` with `rm`
+  - focus `F` uses braces: `{rmF}`
+- Quadrant names like 제1사분면:
+  `insert_text('제')`
+  `insert_equation('1')`
+  `insert_text('사분면')`
+
+DEGREE / TEMPERATURE:
+- Degree angle uses `DEG`, not `CIRC`.
+- Temperature uses `CENTIGRADE`.
+- ✅ `30 DEG`
+- ✅ `25 CENTIGRADE`
+
+PROBABILITY / STATISTICS:
+- Event symbols `A`, `B`, `X` usually remain plain in probability formulas.
+- Outside that context, symbolic letters like A/B should use roman form.
+- `P`, `V`, `E`, `N` should be wrapped as roman when required.
+- Probability tables should use `insert_table(..., align_center=True)`.
+
+ABSOLUTE VALUE / NORM:
+- `|X|` -> `vert \`X\`\`vert`
+- If bars wrap a structured expression such as a fraction, keep the full structure in `LEFT | ... RIGHT |`.
+- Double norm:
+  `vert vert \`X\`\`vert vert`
+- Curvature-style norm example:
+  `kappa LEFT ( t RIGHT ) = {vert vert \`{rm boldr} prime LEFT ( t RIGHT ) TIMES {rm boldr} prime prime LEFT ( t RIGHT )\`\`vert vert} over {vert vert \`{rm boldr} prime LEFT ( t RIGHT )\`\`vert vert ^{3}}`
+
+VECTORS:
+- Vector arrow over a symbol: `{vec{a}}`
+- Ordered-pair/triple component vectors use `LEFT < ... RIGHT >`
+- Keep vector derivative evaluation clauses inside one equation each.
+
+BOLD VECTOR / UNIT VECTOR NOTATION (CRITICAL):
+- Bold vector field letters must be written compactly:
+  ✅ `{rm boldF}`, `{rm boldE}`, `{rm boldB}`, `{rm boldi}`, `{rm boldj}`, `{rm boldk}`
+- Unit vectors must include bold:
+  ✅ `{rmboldu}`, `{rmboldv}`, `{rmboldn}`
+- Bold `r` vector must use the compact token:
+  ✅ `{rmboldr} _{u}`, `{rmboldr} _{v}`
+  ✅ `{rmboldr} LEFT ( u,`v RIGHT ) = LEFT ( u`cos`v,`u`sin`v,`v RIGHT )`
+
+PRIME NOTATION:
+- Never type apostrophe directly inside an equation string.
+- `f′(x)` -> `f prime LEFT ( x RIGHT )`
+- `x″` -> `x prime prime`
+- `F′` -> `rm F prime`
+
+MATRICES (CRITICAL):
+- Square brackets use `bmatrix`.
+- Round parentheses use `pmatrix`.
+- No delimiters use `matrix`.
+- Columns use `&`, rows use `#`.
+- Determinants with vertical bars use `dmatrix`.
+- ✅ `{bmatrix{2&-5#-1&3}}`
+- ✅ `{pmatrix{2&-5#-1&3}}`
+- ✅ `{dmatrix{i&j&k#cos`v&sin`v&0#-u`sin`v&u`cos`v&1}}`
+
+BOXED TEXT INSIDE A FORMULA:
+- If one short formula/text fragment itself is visibly framed, keep the whole framed content inside one `BOX{...}`.
+- ✅ `{BOX{D _{rm {bold{u}} it} f LEFT ( -1,`e RIGHT ) = - {1 over {sqrt {1 + e ^{2}}}}}}`
+
+COMMON MATH PATTERNS:
+- `CDOTS` for ellipsis in formulas
+- Circled Korean subchoices stay as visible text characters such as `㉠ ㉡ ㉢`
+- Frequent math subjects may include:
+  - limits: `lim _{x rarrow 0} ...`
+  - sums: `SUM FROM {k=1} TO {n} ...`
+  - combinations: `_{n} C _{r}`
+  - vector inner product: `CDOT`
+  - conics: `{x ^{2} over a ^{2}} + {y ^{2} over b ^{2}} = 1`
+
+4-3. MATH TABLES
+- If the image contains a real table, use `insert_table()`.
+- If a table cell contains math, prefix it with `EQ:`.
+- Probability/statistics tables should use `align_center=True`.
+
+SECTION 5: ENGLISH
+
+- English passage text is plain text, not equations.
+- Most English passages use `box_white.hwp`.
+- Korean question line and choices stay outside the passage box.
+- Preserve underlined English spans with underline toggles.
+- Preserve long blanks with visible underscore text.
+- For order/insertion questions, keep `(A)`, `(B)`, `(C)` and `[①]...[⑤]` exactly as shown.
+- If choices are short, one justified line is acceptable; if long, preserve vertical layout.
+
+SECTION 6: KOREAN HISTORY
+
+- Dialogue, source quotes, and historical materials are common.
+- Historical source text often goes in `box.hwp`.
+- Keep `(가)`, `(나)`, era names, year labels, and Chinese characters exactly.
+- Underlined historical terms should preserve underline only on the emphasized span.
+- Arrows/timelines should stay visible as text if they are text-level elements.
+
+SECTION 7: SOCIAL STUDIES
+
+- Tables, charts, maps, and position-comparison formats are common.
+- Source/data blocks usually go in `box.hwp` or `header.hwp` if literal `<보기>` is visible.
+- Use `insert_table()` for real tables and statistical grids.
+- Keep 갑/을/병/정 speaker-position text exactly.
+- In economics, a simple displayed formula may use `insert_equation()` when the source shows a genuine formula.
+
+SECTION 8: SCIENCE
+
+Common:
+- Units and scientific symbols in equations should usually use roman unit text.
+- Experimental data tables use `insert_table()`.
+- If experimental conditions are in a box, use `box.hwp` or `header.hwp` as visible.
+
+UNITS / QUANTITIES:
+- Examples: `1550\`rm nm`, `52\`rm kHz`, `9.8\`rm m/s ^{2}`
+- Laplace transform must be written as `LAPLACE`, not plain `L`.
+- Approximation sign uses `APPROX`.
+
+PHYSICS:
+- Keep formulas like `F = ma`, `V = IR`, `v = f LAMBDA`, `P = IV`.
+- Circuit values and scientific units stay as equations when visually formula-like.
+
+CHEMISTRY (CRITICAL):
+- Element and molecule tokens should use roman quoted tokens when needed to avoid bad auto-conversion.
+- ✅ `rm "H" _{2} "O"`
+- ✅ `rm "C" "O" _{2}`
+- ✅ `rm "Ni"("CO") _{4}`
+- Ion examples:
+  `rm "Na" ^{+}`
+  `rm "Cl" ^{-}`
+- Reaction arrows:
+  - one-way: `RARROW` or `->`
+  - equilibrium: `REL EXARROW {} {}`
+- If visible geometric markers precede reactants/products (■ □ △ ▲ ○ etc.), keep them as `insert_text()` and do not replace them.
+- Isotope notation:
+  - mass number only: `{}^{55} rm Mn it`
+  - mass + atomic number: `{}^{14} _{6} rm C it`
+
+BIOLOGY:
+- Genotype notation like `Aa`, `AaBb` does not use `rm`.
+- Keep genotype crosses by splitting text and equation as needed.
+- Inhibitor `In` must be:
+  `rm "In"`
+- DNA base sequences and codons are usually text, not equations.
+
+EARTH SCIENCE:
+- Keep scientific equations such as `M = m - 5 log {d over 10}`, `LAMBDA _{max}`, `z = {DELTA LAMBDA over LAMBDA}`.
+- Temperature should still use `CENTIGRADE`.

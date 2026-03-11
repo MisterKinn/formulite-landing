@@ -1685,7 +1685,11 @@ class ChatWorker(QThread):
         except Exception:
             pass
 
-        chat_model = (os.getenv("CHAT_AI_MODEL") or "").strip() or "gemini-2.5-flash"
+        chat_model = (
+            os.getenv("OPENAI_CHAT_MODEL")
+            or os.getenv("CHAT_AI_MODEL")
+            or ""
+        ).strip() or "gpt-5-mini"
         actions = self._infer_local_actions(message)
         has_attachments = bool(self._attachment_paths)
 
