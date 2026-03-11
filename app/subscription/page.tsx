@@ -11,7 +11,7 @@ interface SubscriptionInfo {
     plan: string;
     status: string;
     isRecurring: boolean;
-    billingCycle?: "monthly" | "yearly";
+    billingCycle?: "monthly" | "yearly" | "test";
     nextBillingDate?: string;
     registeredAt?: string;
     lastPaymentDate?: string;
