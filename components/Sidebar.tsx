@@ -7,7 +7,7 @@ const NAV_LINKS = [
     { label: "강점", href: "../#benefits" },
     { label: "기능", href: "../#features" },
     { label: "후기", href: "../#testimonials" },
-    { label: "요금제", href: "../#pricing" },
+    { label: "요금제", href: "/pricing" },
     { label: "자주 묻는 질문", href: "../#faq" },
 ];
 

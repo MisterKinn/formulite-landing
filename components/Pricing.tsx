@@ -31,7 +31,7 @@ interface PricingPlan {
     features: string[];
     cta: string;
     popular?: boolean;
-    tier: "free" | "go" | "plus" | "pro" | "test";
+    tier: "free" | "go" | "plus" | "pro";
 }
 
 type BillingCycle = "monthly" | "yearly";
@@ -77,8 +77,8 @@ const plans: PricingPlan[] = [
         name: "Plus 요금제",
         subDescription: "가장 많은 팀이 선택하는 표준 워크플로 플랜입니다.",
         prices: {
-            monthly: "120",
-            yearly: "120",
+            monthly: "29,900",
+            yearly: "20,930",
         },
         features: [
             "월 300회+30회 AI 타이핑 생성",
@@ -91,22 +91,6 @@ const plans: PricingPlan[] = [
         cta: "Plus 시작하기",
         popular: true,
         tier: "plus",
-    },
-    {
-        name: "Test 요금제",
-        subDescription: "임시 테스트 결제를 빠르게 확인하기 위한 테스트 플랜입니다.",
-        prices: {
-            monthly: "100",
-            yearly: "100",
-        },
-        features: [
-            "1분 주기 테스트 결제",
-            "Plus와 동일한 사용량 한도 적용",
-            "결제 흐름 점검용 임시 플랜",
-            "운영 중 제거 예정",
-        ],
-        cta: "Test 시작하기",
-        tier: "test",
     },
     {
         name: "Ultra 요금제",
@@ -135,7 +119,7 @@ export default function Pricing() {
     const [billingCycle, setBillingCycle] = useState<BillingCycle>("yearly");
 
     const paymentMetaByTier: Record<
-        "go" | "plus" | "pro" | "test",
+        "go" | "plus" | "pro",
         Record<BillingCycle, { amount: number; orderName: string }>
     > = {
         go: {
@@ -150,22 +134,12 @@ export default function Pricing() {
         },
         plus: {
             monthly: {
-                amount: 120,
+                amount: 29900,
                 orderName: "Nova AI Plus 요금제 (월간 결제)",
             },
             yearly: {
-                amount: 120,
-                orderName: "Nova AI Plus 요금제 (연간 결제)",
-            },
-        },
-        test: {
-            monthly: {
-                amount: 100,
-                orderName: "Nova AI Test 요금제 (테스트 결제)",
-            },
-            yearly: {
-                amount: 100,
-                orderName: "Nova AI Test 요금제 (테스트 결제)",
+                amount: 251160,
+                orderName: "Nova AI Plus 요금제 (연간 결제, 월 30% 할인 적용)",
             },
         },
         pro: {
@@ -192,17 +166,14 @@ export default function Pricing() {
 
         if (loading || isPaying) return;
 
-        const effectiveBillingCycle: BillingCycle =
-            tier === "test" ? "monthly" : billingCycle;
-        const paymentMeta = paymentMetaByTier[tier][effectiveBillingCycle];
-        const paymentBillingCycle = tier === "test" ? "test" : billingCycle;
+        const paymentMeta = paymentMetaByTier[tier][billingCycle];
 
         if (!isAuthenticated) {
             const loginParams = new URLSearchParams({
                 postLoginAction: "payment",
                 amount: String(paymentMeta.amount),
                 orderName: paymentMeta.orderName,
-                billingCycle: paymentBillingCycle,
+                billingCycle,
             });
             router.push(`/login?${loginParams.toString()}`);
             return;
@@ -229,7 +200,7 @@ export default function Pricing() {
 
             await payment.requestBillingAuth({
                 method: "CARD",
-                successUrl: `${window.location.origin}/card-registration/success?amount=${paymentMeta.amount}&orderName=${encodeURIComponent(paymentMeta.orderName)}&billingCycle=${paymentBillingCycle}`,
+                successUrl: `${window.location.origin}/card-registration/success?amount=${paymentMeta.amount}&orderName=${encodeURIComponent(paymentMeta.orderName)}&billingCycle=${billingCycle}`,
                 failUrl: `${window.location.origin}/card-registration/fail?amount=${paymentMeta.amount}&orderName=${encodeURIComponent(paymentMeta.orderName)}`,
                 customerEmail: user.email || "customer@example.com",
                 customerName: user.displayName || "고객",
@@ -248,6 +219,7 @@ export default function Pricing() {
         <section id="pricing" className="pricing-section">
             <div className="section-inner">
                 <div className="pricing-header">
+                    <div className="pricing-label">PRICE</div>
                     <h2 className="pricing-title">작업량에 맞는 요금제</h2>
                     <p className="pricing-subtitle">
                         개인 작업부터 팀 단위 운영까지, 필요한 수준에 맞게 선택할 수 있습니다.

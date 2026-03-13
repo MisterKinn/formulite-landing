@@ -615,6 +615,17 @@ export default function AdminPage() {
             minute: "2-digit",
         });
 
+    const formatOptionalDate = (value?: string) => {
+        if (!value) return "-";
+        const parsed = new Date(value);
+        if (Number.isNaN(parsed.getTime())) return "-";
+        return parsed.toLocaleDateString("ko-KR", {
+            year: "numeric",
+            month: "short",
+            day: "numeric",
+        });
+    };
+
     const formatPeriodLabel = (subscription: UserData["subscription"]) => {
         if (subscription.plan === "free" || subscription.status === "none") {
             return "없음";
@@ -651,13 +662,19 @@ export default function AdminPage() {
     return (
         <div className="admin-container">
             <aside className="admin-sidebar">
-                <div className="admin-brand">
-                    <span className="admin-brand-dot" />
-                    <div>
-                        <h1>Nova Admin</h1>
-                        <p>운영 콘솔</p>
-                    </div>
-                </div>
+                <a
+                    href="/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="admin-brand-link"
+                    aria-label="메인 페이지 새 창으로 열기"
+                >
+                    <img
+                        src="/logogo.png"
+                        alt="Nova AI"
+                        className="admin-brand-logo"
+                    />
+                </a>
 
                 <nav className="admin-sidebar-nav">
                     {navItems.map((item) => (
@@ -680,10 +697,6 @@ export default function AdminPage() {
                     ))}
                 </nav>
 
-                <div className="admin-sidebar-footer">
-                    <p>로그인 계정</p>
-                    <strong>{authUser?.email ?? "관리자 세션"}</strong>
-                </div>
             </aside>
 
             <div className="admin-content">
@@ -983,6 +996,7 @@ export default function AdminPage() {
                                         <thead>
                                             <tr>
                                                 <th>이메일</th>
+                                                <th>가입일</th>
                                                 <th>플랜</th>
                                                 <th>구독 기간</th>
                                                 <th>월별 사용량</th>
@@ -997,6 +1011,11 @@ export default function AdminPage() {
                                             {users.map((user) => (
                                                 <tr key={user.uid}>
                                                     <td>{user.email}</td>
+                                                    <td>
+                                                        {formatOptionalDate(
+                                                            user.createdAt,
+                                                        )}
+                                                    </td>
                                                     <td>
                                                         <span
                                                             className={`admin-plan-badge ${user.subscription.plan}`}

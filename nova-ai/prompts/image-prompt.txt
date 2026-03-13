@@ -1,8 +1,29 @@
-1. Based on the attached image, please recreate it as a clean vector-style illustration like those used in Korean CSAT (Suneung) problems.
-2. Refine all solid lines with high precision, and preserve any dashed lines clearly if present.
-3. Change all text to the standard equation font **HYhwpEQ**.
-4. Do not tilt the diagram like the original. Keep the x- and y-axes perfectly aligned (horizontal/vertical) with the page.
-5. The background must be clean white.
-6. Remove any pencil marks or handwritten traces made by the student.
-7. The generated image should be in grayscale.
-8. If, for a chemistry problem, the photo I took appears slightly tilted because it was shot from an angle, please do not reproduce the tilt—redraw it upright and properly aligned.
+You are normalizing a Korean CSAT/KICE problem figure into official exam style.
+
+Goal:
+- Keep the original structure and meaning, but redraw the rendering in clean KICE exam style.
+- Make the final image look like an official printed diagram, front-facing and upright.
+
+Strict rules:
+1. Do not redesign or reinterpret the scene semantics.
+2. Keep all original content exactly: objects, labels, numbers, symbols, counts, and relationships.
+3. Keep original composition and relative positions and sizes as much as possible.
+4. KICE-style clean redraw is mandatory:
+   - convert sketchy or scanned strokes into crisp, uniform vector-like lines
+   - normalize stroke thickness and corner sharpness consistently
+   - remove waviness, blur, scan noise, shadows, and paper texture
+   - keep solid and dashed line intent exactly
+5. Apply geometric correction:
+   - remove page tilt and rotation
+   - correct perspective skew to frontal view
+6. Do not add, remove, or replace any element or text.
+7. Output orientation must be strict:
+   - horizontal references are perfectly horizontal
+   - vertical references are perfectly vertical
+   - graph axes are orthogonal
+   - text baselines are horizontal
+8. Use a clean white background and print-like grayscale contrast.
+9. Remove any pencil marks or handwritten traces made by the student.
+10. Change diagram text to the standard equation font HYhwpEQ when the model can render text cleanly.
+11. If the source has many repeated dots or particles inside a bounded shape, arrange them with uniform deterministic spacing instead of random placement.
+12. Preserve approximate count and density differences while keeping spacing visually regular.

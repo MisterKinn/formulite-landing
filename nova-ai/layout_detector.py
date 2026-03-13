@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass
 from typing import Literal, Optional, Tuple
+from image_path_utils import load_cv2_image, load_pil_image
 
 
 def _debug(msg: str) -> None:
@@ -100,7 +101,7 @@ def _detect_view_text_bbox(image_path: str) -> tuple[bool, Optional[Tuple[int, i
         pass
 
     try:
-        img = Image.open(image_path).convert("RGB")
+        img = load_pil_image(image_path, mode="RGB")
     except Exception:
         return False, None
 
@@ -201,7 +202,7 @@ def _detect_best_rectangle(image_path: str) -> tuple[Optional[Tuple[int, int, in
     except Exception:
         return None, 0.0
 
-    img = cv2.imread(image_path)
+    img = load_cv2_image(image_path)
     if img is None:
         return None, 0.0
     h, w = img.shape[:2]
@@ -358,7 +359,7 @@ def crop_inside_rect(image_path: str, rect: Tuple[int, int, int, int], *, inset:
     except Exception:
         return None
     try:
-        img = Image.open(image_path).convert("RGB")
+        img = load_pil_image(image_path, mode="RGB")
     except Exception:
         return None
     x, y, w, h = rect
@@ -380,7 +381,7 @@ def mask_rect_on_image(image_path: str, rect: Tuple[int, int, int, int], *, pad:
     except Exception:
         return None
     try:
-        img = Image.open(image_path).convert("RGB")
+        img = load_pil_image(image_path, mode="RGB")
     except Exception:
         return None
     x, y, w, h = rect

@@ -7,6 +7,7 @@ import re
 import tempfile
 import time
 from pathlib import Path
+from image_path_utils import load_cv2_image, load_pil_image
 from typing import Any, List
 
 from equation import EquationOptions, insert_equation_control, latex_to_hwpeqn
@@ -73,6 +74,7 @@ def _format_connect_error(primary_exc: Exception, secondary_exc: Exception | Non
 
 class HwpController:
     _IMAGE_INSERT_SCALE = 0.3
+    _UIA_RETRY_COOLDOWN_SEC = 30.0
 
     def __init__(self, visible: bool = True, register_module: bool = True) -> None:
         self._hwp: Any | None = None
@@ -209,6 +211,7 @@ class HwpController:
 
     _uia_instance: Any = None
     _uia_walker: Any = None
+    _uia_disabled_until: float = 0.0
     _last_detected_filename: str = ""
 
     @staticmethod
@@ -222,6 +225,11 @@ class HwpController:
     @staticmethod
     def _ensure_uia() -> tuple[Any, Any]:
         """UI Automation 인스턴스를 반환합니다."""
+        if (
+            HwpController._uia_instance is None
+            and time.monotonic() < HwpController._uia_disabled_until
+        ):
+            raise RuntimeError("UI Automation initialization is temporarily disabled.")
         import comtypes  # type: ignore
         import comtypes.client  # type: ignore
         try:
@@ -229,14 +237,23 @@ class HwpController:
         except OSError:
             pass
         if HwpController._uia_instance is None:
-            uia_mod = comtypes.client.GetModule("UIAutomationCore.dll")
-            uia = comtypes.CoCreateInstance(
-                uia_mod.CUIAutomation._reg_clsid_,
-                interface=uia_mod.IUIAutomation,
-                clsctx=comtypes.CLSCTX_INPROC_SERVER,
-            )
-            HwpController._uia_instance = uia
-            HwpController._uia_walker = uia.CreateTreeWalker(uia.RawViewCondition)
+            try:
+                uia_mod = comtypes.client.GetModule("UIAutomationCore.dll")
+                uia = comtypes.CoCreateInstance(
+                    uia_mod.CUIAutomation._reg_clsid_,
+                    interface=uia_mod.IUIAutomation,
+                    clsctx=comtypes.CLSCTX_INPROC_SERVER,
+                )
+                HwpController._uia_instance = uia
+                HwpController._uia_walker = uia.CreateTreeWalker(uia.RawViewCondition)
+                HwpController._uia_disabled_until = 0.0
+            except Exception:
+                HwpController._uia_instance = None
+                HwpController._uia_walker = None
+                HwpController._uia_disabled_until = (
+                    time.monotonic() + HwpController._UIA_RETRY_COOLDOWN_SEC
+                )
+                raise
         return HwpController._uia_instance, HwpController._uia_walker
 
     _page_re = re.compile(r"(\d+)\s*/\s*(\d+)")
@@ -553,6 +570,9 @@ class HwpController:
         except Exception:
             HwpController._uia_instance = None
             HwpController._uia_walker = None
+            HwpController._uia_disabled_until = (
+                time.monotonic() + HwpController._UIA_RETRY_COOLDOWN_SEC
+            )
             return (0, 0)
 
     @staticmethod
@@ -3112,6 +3132,100 @@ class HwpController:
     # Max pixel width for cropped images before gentle downscaling.
     _CROP_MAX_WIDTH = 900
 
+    def _refine_crop_rect(
+        self,
+        src: str,
+        rect: tuple[int, int, int, int],
+    ) -> tuple[int, int, int, int]:
+        """
+        Tighten a model-provided crop rectangle to the actual visible content
+        inside that rectangle. This helps when the model selects a region that
+        is too loose or contains large white margins.
+        """
+        try:
+            import cv2  # type: ignore[import-not-found]
+            import numpy as np  # type: ignore[import-not-found]
+        except Exception:
+            return rect
+
+        img = load_cv2_image(src)
+        if img is None:
+            return rect
+
+        ih, iw = img.shape[:2]
+        x1, y1, x2, y2 = rect
+        x1 = max(0, min(x1, iw - 1))
+        y1 = max(0, min(y1, ih - 1))
+        x2 = max(x1 + 1, min(x2, iw))
+        y2 = max(y1 + 1, min(y2, ih))
+        roi = img[y1:y2, x1:x2]
+        if roi.size == 0:
+            return rect
+
+        rh, rw = roi.shape[:2]
+        if rw < 24 or rh < 24:
+            return rect
+
+        gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+        blur = cv2.GaussianBlur(gray, (3, 3), 0)
+
+        # Capture both dark ink and thin line art.
+        _, non_white = cv2.threshold(blur, 244, 255, cv2.THRESH_BINARY_INV)
+        edges = cv2.Canny(blur, 40, 140)
+        mask = cv2.bitwise_or(non_white, edges)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8), iterations=1)
+
+        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
+        if num_labels <= 1:
+            return rect
+
+        roi_area = float(rw * rh)
+        min_component_area = max(24, int(roi_area * 0.0005))
+        boxes: list[tuple[int, int, int, int, int]] = []
+        for label in range(1, num_labels):
+            area = int(stats[label, cv2.CC_STAT_AREA])
+            if area < min_component_area:
+                continue
+            sx = int(stats[label, cv2.CC_STAT_LEFT])
+            sy = int(stats[label, cv2.CC_STAT_TOP])
+            sw = int(stats[label, cv2.CC_STAT_WIDTH])
+            sh = int(stats[label, cv2.CC_STAT_HEIGHT])
+            if sw <= 1 or sh <= 1:
+                continue
+            boxes.append((sx, sy, sx + sw, sy + sh, area))
+
+        if not boxes:
+            return rect
+
+        bx0 = min(b[0] for b in boxes)
+        by0 = min(b[1] for b in boxes)
+        bx1 = max(b[2] for b in boxes)
+        by1 = max(b[3] for b in boxes)
+
+        bw = max(1, bx1 - bx0)
+        bh = max(1, by1 - by0)
+        content_area = float(bw * bh)
+
+        # If refinement would collapse to a tiny noisy patch, keep the original.
+        if content_area < roi_area * 0.03:
+            return rect
+
+        pad_x = max(6, int(bw * 0.04))
+        pad_y = max(6, int(bh * 0.04))
+        rx1 = max(x1, x1 + bx0 - pad_x)
+        ry1 = max(y1, y1 + by0 - pad_y)
+        rx2 = min(x2, x1 + bx1 + pad_x)
+        ry2 = min(y2, y1 + by1 + pad_y)
+
+        if rx2 <= rx1 or ry2 <= ry1:
+            return rect
+
+        # Only accept the refinement when it meaningfully tightens the crop.
+        refined_area = float((rx2 - rx1) * (ry2 - ry1))
+        if refined_area >= roi_area * 0.98:
+            return rect
+        return (int(rx1), int(ry1), int(rx2), int(ry2))
+
     def insert_cropped_image(
         self,
         x1_pct: float,
@@ -3142,7 +3256,7 @@ class HwpController:
                 "insert_cropped_image 실패: Pillow 라이브러리가 필요합니다."
             )
 
-        img = Image.open(src)
+        img = load_pil_image(src)
         w, h = img.size
 
         # Be tolerant of model output: swapped/equal percentages are auto-normalized.
@@ -3163,6 +3277,8 @@ class HwpController:
                 f"insert_cropped_image 실패: 유효한 좌표를 만들 수 없습니다 "
                 f"({x1_pct},{y1_pct})-({x2_pct},{y2_pct})"
             )
+
+        x1, y1, x2, y2 = self._refine_crop_rect(src, (x1, y1, x2, y2))
 
         cropped = img.crop((x1, y1, x2, y2))
 
@@ -3423,7 +3539,7 @@ class HwpController:
         try:
             from PIL import Image
 
-            img = Image.open(image_path)
+            img = load_pil_image(image_path)
             w, h = img.size
             s = max(0.1, scale)
             new_w, new_h = max(1, int(w * s)), max(1, int(h * s))

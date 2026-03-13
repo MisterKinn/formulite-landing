@@ -105,6 +105,30 @@ Inline math splitting:
 - Put natural spaces on the text side.
 - If a long formula occupies its own line, use a full-line `insert_equation()`.
 
+Visible underline:
+- If a visible underlined span appears in the source, implement that underline in code. Do not ignore it.
+- Underline ONLY the visibly underlined span, not the whole line or paragraph.
+- For plain text underline, wrap only that text span with:
+  `set_underline(True)` -> `insert_text(...)` -> `set_underline(False)`
+- For equation underline, wrap the equation call with:
+  `set_underline(True)` -> `insert_equation(...)` -> `set_underline(False)`
+- If one underlined span contains both text and math, keep underline enabled across the whole span and split text/math naturally inside it.
+- Examples:
+  `set_underline(True)`
+  `insert_text('밑줄 친 문장')`
+  `set_underline(False)`
+- Examples:
+  `set_underline(True)`
+  `insert_equation('x + y = 1')`
+  `set_underline(False)`
+- Examples:
+  `set_underline(True)`
+  `insert_text('조건 ')`
+  `insert_equation('x + y = 1')`
+  `insert_text('을 이용하면')`
+  `set_underline(False)`
+- Do not fake underline with `_` characters or by converting the underlined span into an image.
+
 Direct typing request without image:
 - If the user asks to insert text or a formula directly, still return executable code only.
 - Use `insert_text()` for plain text and `insert_equation()` for formulas.
@@ -147,9 +171,32 @@ CHOICES:
 - Default exam behavior: all 5 choices on one line if the source visually shows one line.
 - Type ①②③④⑤ as plain text, not equations.
 - Always keep one space after each choice number before its content.
+- After each choice number, write the choice content immediately after one plain space.
+- Do not insert `/`, `\`, `|`, or any OCR separator mark between the choice number and the content.
+- Examples:
+  - `① 0`
+  - `② 1`
+  - `③ -1`
+- Wrong examples:
+  - `①/0`
+  - `②\\1`
+  - `③| -1`
 - Insert one empty line before the choices block if the source layout shows that separation.
 - If choices are visibly vertical or very long, preserve vertical layout instead of forcing one line.
 - In math, choice values may be equations after the text choice number.
+- If choices are arranged in multiple visual columns but there are no real cell borders/grid lines, do NOT use `insert_table(...)`.
+- Column-aligned choice layouts with headers such as `크기 / 방향`, `값 / 단위`, `보기 / 이유` are still ordinary choice text, not a real table.
+- In that case, type them with `insert_text(...)`, `insert_equation(...)`, visible spaces, and line breaks only.
+- Use literal spaces or `insert_text('    ')` to keep approximate column alignment.
+- Do not convert a borderless choice layout into a table just to make alignment easier.
+- Example direction:
+  `insert_text('크기')`
+  `insert_text('      ')`
+  `insert_text('방향')`
+  `insert_enter()`
+  `insert_text('① ')`
+  `insert_equation('{1} over {5} p')`
+  `insert_text('      +x방향')`
 
 TEMPLATE / PLACEHOLDER FLOW:
 - If a visible container exists, do not redraw it manually; prefer the matching template.
@@ -177,6 +224,9 @@ Do NOT:
 Inside template boxes:
 - use justify alignment for passage/box text when the source is paragraph-like
 - keep spacing natural; do not invent extra double spaces
+- If a box contains both readable text and a picture/diagram, type the readable text inside the box and crop ONLY the actual picture/diagram region.
+- Do NOT replace a text-heavy box body with one large `insert_cropped_image(...)` call.
+- If most of the boxed area is text, the box body should be primarily `insert_text(...)` / `insert_equation(...)`, with image cropping used only for the non-text visual subregion.
 
 Fallback box rule:
 - If template/placeholder workflow is not applicable, use `insert_view_box()` only for explicit `<보기>`, otherwise `insert_box()` ... `exit_box()`.

@@ -8,7 +8,7 @@
 
 .admin-sidebar {
     border-right: 1px solid rgba(148, 163, 184, 0.2);
-    background: #000;
+    background: #1d1d1f;
     backdrop-filter: blur(12px);
     padding: 1.5rem 1rem;
     display: flex;
@@ -16,32 +16,22 @@
     gap: 1.5rem;
 }
 
-.admin-brand {
+.admin-brand-link {
     display: flex;
     align-items: center;
-    gap: 0.7rem;
     padding: 0 0.35rem;
+    text-decoration: none;
+    width: fit-content;
 }
 
-.admin-brand-dot {
-    width: 0.75rem;
-    height: 0.75rem;
-    border-radius: 999px;
-    background: linear-gradient(135deg, #38bdf8, #6366f1);
-    box-shadow: 0 0 16px rgba(56, 189, 248, 0.65);
+.admin-brand-logo {
+    width: 124px;
+    height: auto;
+    display: block;
 }
 
-.admin-brand h1 {
-    margin: 0;
-    font-size: 1rem;
-    font-weight: 700;
-    color: #f8fafc;
-}
-
-.admin-brand p {
-    margin: 0.15rem 0 0;
-    font-size: 0.76rem;
-    color: #94a3b8;
+.admin-brand-link:hover .admin-brand-logo {
+    opacity: 0.9;
 }
 
 .admin-sidebar-nav {
@@ -51,7 +41,7 @@
 }
 
 .admin-sidebar-btn {
-    border: 1px solid transparent;
+    border: none;
     background: transparent;
     color: #a6b0c4;
     border-radius: 12px;
@@ -72,13 +62,13 @@
 }
 
 .admin-sidebar-btn:hover {
-    background: #0a0a0a;
-    color: #f1f5f9;
+    background: transparent;
+    color: #f8fafc;
 }
 
 .admin-sidebar-btn.active {
-    border-color: rgba(96, 165, 250, 0.45);
-    background: #0b0b0b;
+    border: none;
+    background: transparent;
     color: #f8fafc;
 }
 
@@ -86,11 +76,16 @@
     min-width: 1.8rem;
     text-align: center;
     font-size: 0.72rem;
-    color: #cbd5e1;
-    background: #000;
-    border: 1px solid rgba(148, 163, 184, 0.25);
+    color: #7f8796;
+    background: transparent;
+    border: none;
     border-radius: 999px;
     padding: 0.14rem 0.45rem;
+}
+
+.admin-sidebar-btn.active .admin-sidebar-count,
+.admin-sidebar-btn:hover .admin-sidebar-count {
+    color: #f8fafc;
 }
 
 .admin-sidebar-footer {
@@ -125,8 +120,8 @@
     margin: 1.25rem 1.25rem 0;
     padding: 1rem 1.15rem;
     border-radius: 16px;
-    border: 1px solid rgba(148, 163, 184, 0.24);
-    background: #000;
+    border: none;
+    background: #1d1d1f;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -142,7 +137,7 @@
 
 .admin-header-text p {
     margin: 0.3rem 0 0;
-    color: #9da9bf;
+    color: #f8fafc;
     font-size: 0.84rem;
 }
 
@@ -154,7 +149,7 @@
 .admin-home-btn,
 .admin-logout-btn {
     border-radius: 10px;
-    border: 1px solid rgba(148, 163, 184, 0.28);
+    border: none;
     padding: 0.55rem 0.82rem;
     display: inline-flex;
     align-items: center;
@@ -226,8 +221,8 @@
 }
 
 .admin-banner-warning {
-    border: 1px solid rgba(245, 158, 11, 0.45);
-    background: #120d00;
+    border: none;
+    background: #1d1d1f;
     color: #fcd34d;
     border-radius: 12px;
     padding: 0.7rem 0.8rem;
@@ -241,8 +236,8 @@
 }
 
 .admin-kpi-card {
-    border: 1px solid rgba(148, 163, 184, 0.22);
-    background: #000;
+    border: none;
+    background: #1d1d1f;
     border-radius: 14px;
     padding: 0.9rem 1rem;
 }
@@ -251,7 +246,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    color: #8fa0bf;
+    color: #f8fafc;
     font-size: 0.8rem;
 }
 
@@ -276,8 +271,8 @@
 }
 
 .admin-panel {
-    border: 1px solid rgba(148, 163, 184, 0.22);
-    background: #000;
+    border: none;
+    background: #1d1d1f;
     border-radius: 14px;
     padding: 1rem;
 }
@@ -298,7 +293,7 @@
 
 .admin-panel-head p {
     margin: 0;
-    color: #8fa0bf;
+    color: #f8fafc;
     font-size: 0.8rem;
 }
 
@@ -313,14 +308,14 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    border: 1px solid rgba(71, 85, 105, 0.3);
-    background: #000;
+    border: none;
+    background: #1d1d1f;
     border-radius: 10px;
     padding: 0.6rem 0.75rem;
 }
 
 .admin-overview-list span {
-    color: #9fb0cc;
+    color: #f8fafc;
     font-size: 0.8rem;
 }
 
@@ -341,8 +336,8 @@
 }
 
 .admin-status-item {
-    border: 1px solid rgba(71, 85, 105, 0.32);
-    background: #000;
+    border: none;
+    background: #1d1d1f;
     border-radius: 10px;
     padding: 0.6rem 0.7rem;
     display: flex;
@@ -351,7 +346,7 @@
 }
 
 .admin-status-item span {
-    color: #9fb0cc;
+    color: #f8fafc;
     font-size: 0.8rem;
 }
 
@@ -386,8 +381,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    border: 1px solid rgba(71, 85, 105, 0.3);
-    background: #000;
+    border: none;
+    background: #1d1d1f;
     border-radius: 10px;
     padding: 0.6rem 0.7rem;
 }
@@ -437,7 +432,7 @@
 .admin-date,
 .admin-plan-select,
 .admin-usage-input {
-    background: #000;
+    background: #1d1d1f;
     border: 1px solid rgba(148, 163, 184, 0.28);
     color: #e2e8f0;
     border-radius: 10px;
@@ -470,7 +465,8 @@
 
 .admin-table-wrapper {
     overflow-x: auto;
-    border: 1px solid rgba(148, 163, 184, 0.2);
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    background: #1d1d1f;
     border-radius: 12px;
 }
 
@@ -483,24 +479,28 @@
     text-align: left;
     font-size: 0.7rem;
     font-weight: 700;
-    color: #8ea0bf;
+    color: #f8fafc;
     text-transform: uppercase;
     letter-spacing: 0.05em;
     padding: 0.72rem;
-    border-bottom: 1px solid rgba(148, 163, 184, 0.2);
-    background: #000;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+    background: #1d1d1f;
 }
 
 .admin-table td {
     padding: 0.72rem;
-    border-bottom: 1px solid rgba(71, 85, 105, 0.25);
+    border-bottom: 1px solid rgba(71, 85, 105, 0.28);
     color: #d9e2f0;
     font-size: 0.8rem;
     vertical-align: middle;
 }
 
+.admin-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
 .admin-table tr:hover {
-    background: #0a0a0a;
+    background: #1d1d1f;
 }
 
 .admin-table td.refunded {
@@ -601,7 +601,7 @@
 .admin-save-btn,
 .admin-delete-btn {
     border-radius: 9px;
-    border: 1px solid transparent;
+    border: none;
     padding: 0.42rem 0.58rem;
     font-size: 0.74rem;
     font-weight: 700;
@@ -611,7 +611,6 @@
 }
 
 .admin-save-btn {
-    border-color: rgba(96, 165, 250, 0.6);
     background: #0a0a0a;
     color: #dbeafe;
 }
@@ -621,7 +620,6 @@
 }
 
 .admin-delete-btn {
-    border-color: rgba(248, 113, 113, 0.62);
     background: #0a0a0a;
     color: #fecaca;
 }

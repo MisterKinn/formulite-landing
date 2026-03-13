@@ -61,8 +61,9 @@ from chat_page import ChatComposeTextEdit, ChatMessageWidget, ChatWorker
 from figure_code_runner import FigureCodeRenderError, render_python_figure_code
 from hwp_controller import HwpController, HwpControllerError
 from local_figure_renderer import LocalFigureRenderError, render_local_figure
-from ocr_pipeline import extract_text
-from layout_detector import detect_container
+from ocr_pipeline import extract_text, extract_text_from_pil_image
+from layout_detector import detect_container, crop_inside_rect
+from image_path_utils import load_pil_image
 from prompt_loader import get_image_generation_prompt
 from script_runner import ScriptRunner, ScriptCancelled
 from backend.oauth_desktop import get_stored_user, start_oauth_flow, logout_user, is_logged_in
@@ -170,88 +171,68 @@ class VoiceTranscriptionWorker(QThread):
         self._model = (model or "").strip()
 
     @staticmethod
-    def _extract_response_text(response: object) -> str:
-        result_text = ""
-        try:
-            if hasattr(response, "text"):
-                result_text = str(response.text or "")
-            elif hasattr(response, "parts") and response.parts:
-                result_text = "".join(part.text for part in response.parts if hasattr(part, "text"))
-            elif hasattr(response, "candidates") and response.candidates:
-                for candidate in response.candidates:
-                    if hasattr(candidate, "content") and hasattr(candidate.content, "parts"):
-                        for part in candidate.content.parts:
-                            if hasattr(part, "text"):
-                                result_text += part.text
-        except Exception:
-            result_text = ""
-        return (result_text or "").strip()
-
-    @staticmethod
-    def _extract_openai_transcription_text(response: object) -> str:
+    def _extract_gemini_transcription_text(response: object) -> str:
         if isinstance(response, str):
             return response.strip()
         try:
             text = getattr(response, "text", None)
-            if isinstance(text, str):
+            if isinstance(text, str) and text.strip():
                 return text.strip()
+        except Exception:
+            pass
+        try:
+            texts: list[str] = []
+            for candidate in getattr(response, "candidates", []) or []:
+                content = getattr(candidate, "content", None)
+                for part in getattr(content, "parts", []) or []:
+                    part_text = getattr(part, "text", None)
+                    if isinstance(part_text, str) and part_text.strip():
+                        texts.append(part_text.strip())
+            if texts:
+                return "\n".join(texts).strip()
         except Exception:
             pass
         return str(response or "").strip()
 
-    def _run_openai_transcription(self, model_name: str) -> str:
-        api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
-        if not api_key:
-            raise RuntimeError("OPENAI_API_KEY is missing.")
-        try:
-            from openai import OpenAI
-        except Exception as exc:
-            raise RuntimeError("openai package is not installed.") from exc
-
-        client = OpenAI(api_key=api_key)
-        with open(self._wav_path, "rb") as audio_file:
-            response = client.audio.transcriptions.create(
-                model=model_name,
-                file=audio_file,
-                language="ko",
-                response_format="text",
-                prompt=(
-                    "한글 문서 편집 보조용 음성을 한국어 명령문으로 정확히 받아쓴다. "
-                    "설명은 추가하지 말고, 들린 명령만 평문으로 반환한다."
-                ),
-            )
-        return self._extract_openai_transcription_text(response)
-
     def _run_gemini_transcription(self, model_name: str) -> str:
-        uploaded_file = None
+        api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
+        if not api_key:
+            raise RuntimeError("GEMINI_API_KEY is missing.")
         try:
-            import google.generativeai as genai  # type: ignore
+            import google.generativeai as genai
+        except Exception as exc:
+            raise RuntimeError("google-generativeai package is not installed.") from exc
 
-            api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
-            if not api_key:
-                raise RuntimeError("GEMINI_API_KEY is missing.")
-            genai.configure(api_key=api_key)
-            uploaded_file = genai.upload_file(path=self._wav_path, mime_type="audio/wav")
-            model = genai.GenerativeModel(model_name)
-            prompt = (
-                "Transcribe this Korean speech clip for an HWP document editing assistant. "
-                "Return only the spoken user instruction in plain Korean text. "
-                "Do not add explanations. If there is no clear speech, return an empty string."
+        suffix = Path(self._wav_path).suffix.lower()
+        mime_type = {
+            ".wav": "audio/wav",
+            ".mp3": "audio/mpeg",
+            ".m4a": "audio/mp4",
+            ".ogg": "audio/ogg",
+            ".webm": "audio/webm",
+        }.get(suffix, "audio/wav")
+
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel(model_name)
+        with open(self._wav_path, "rb") as audio_file:
+            response = model.generate_content(
+                [
+                    (
+                        "다음 한국어 음성을 한글 문서 편집 보조용 명령문으로 정확히 받아쓴다. "
+                        "설명은 추가하지 말고, 들린 명령만 평문으로 반환한다."
+                    ),
+                    {"mime_type": mime_type, "data": audio_file.read()},
+                ],
             )
-            response = model.generate_content([prompt, uploaded_file])
-            return self._extract_response_text(response)
-        finally:
-            if uploaded_file is not None:
-                try:
-                    import google.generativeai as genai  # type: ignore
-
-                    genai.delete_file(uploaded_file.name)
-                except Exception:
-                    pass
+        return self._extract_gemini_transcription_text(response)
 
     def run(self) -> None:  # type: ignore[override]
         try:
-            from ai_client import _is_openai_model, _load_env as _load_ai_env, _normalize_model_name  # type: ignore
+            from ai_client import (  # type: ignore
+                DEFAULT_GEMINI_MODEL,
+                _load_env as _load_ai_env,
+                _normalize_model_name,
+            )
 
             try:
                 _load_ai_env()
@@ -259,16 +240,13 @@ class VoiceTranscriptionWorker(QThread):
                 pass
             raw_model = (
                 self._model
-                or os.getenv("OPENAI_TRANSCRIBE_MODEL")
-                or os.getenv("OPENAI_AUDIO_MODEL")
-                or os.getenv("VOICE_TRANSCRIBE_MODEL")
-                or "gpt-4o-mini-transcribe"
+                or os.getenv("GEMINI_TRANSCRIBE_MODEL")
+                or os.getenv("GEMINI_AUDIO_MODEL")
+                or os.getenv("GEMINI_MODEL")
+                or DEFAULT_GEMINI_MODEL
             )
             model_name = _normalize_model_name(raw_model)
-            if _is_openai_model(model_name):
-                text = self._run_openai_transcription(model_name)
-            else:
-                text = self._run_gemini_transcription(model_name)
+            text = self._run_gemini_transcription(model_name)
             self.transcription_finished.emit(text, self._wav_path)
         except Exception as exc:
             self.transcription_error.emit(str(exc), self._wav_path)
@@ -317,6 +295,151 @@ class AIWorker(QThread):
         self._image_generation_prompt_cache = prompt
         return prompt
 
+    def _build_exam_style_image_prompt(self) -> str:
+        base_prompt = self._get_image_generation_prompt().strip()
+        if not base_prompt:
+            base_prompt = (
+                "Keep the original figure semantics and layout, but redraw it in clean "
+                "Korean CSAT/KICE printed exam style."
+            )
+        normalization_block = """
+[KICE Style Normalization Mode - Highest Priority]
+Preserve semantics and layout, but normalize rendering to clean exam-print style.
+- Keep original composition and object layout as-is.
+- Keep all labels, numbers, symbols, and relationships unchanged.
+- Do not add, remove, or replace objects or text.
+- Normalize sketchy or scan-like strokes into crisp, uniform vector-like lines.
+- Keep line intent (solid or dashed), relative spacing, and graph or table structure.
+- Correct camera tilt, page rotation, and perspective skew into a frontal upright view.
+- Output must be upright: horizontal lines are horizontal, vertical lines are vertical.
+- Use a clean white background with print-like grayscale contrast and remove shadows, blur, scan noise, and handwriting traces.
+- If repeated dots or particles appear inside a bounded shape, place them with uniform deterministic spacing instead of random jitter.
+- Preserve approximate count and density differences while keeping spacing visually regular.
+""".strip()
+        return f"{base_prompt}\n\n{normalization_block}".strip()
+
+    @staticmethod
+    def _rotate_image_with_white_background(image, angle_deg: float):
+        from PIL import Image  # type: ignore[import-not-found]
+
+        if abs(angle_deg) < 0.01:
+            return image
+        fill = 255 if image.mode == "L" else (255, 255, 255)
+        return image.rotate(-angle_deg, expand=True, fillcolor=fill, resample=Image.BICUBIC)
+
+    @staticmethod
+    def _projection_variance(values: list[int]) -> float:
+        if not values:
+            return 0.0
+        mean = sum(values) / len(values)
+        return sum((v - mean) ** 2 for v in values) / len(values)
+
+    @classmethod
+    def _score_alignment_angle(cls, image, angle_deg: float) -> float:
+        rotated = cls._rotate_image_with_white_background(image, angle_deg)
+        width, height = rotated.size
+        pixels = list(rotated.getdata())
+        threshold = 232
+        row_counts = [0] * height
+        col_counts = [0] * width
+        for y in range(height):
+            row_base = y * width
+            for x in range(width):
+                if pixels[row_base + x] < threshold:
+                    row_counts[y] += 1
+                    col_counts[x] += 1
+        if max(row_counts, default=0) == 0 and max(col_counts, default=0) == 0:
+            return 0.0
+        return cls._projection_variance(row_counts) + cls._projection_variance(col_counts)
+
+    @classmethod
+    def _estimate_skew_angle(cls, image) -> float:
+        from PIL import Image  # type: ignore[import-not-found]
+
+        grayscale = image.convert("L")
+        max_detect = 800
+        max_dim = max(grayscale.size)
+        if max_dim > max_detect:
+            scale = max_detect / max_dim
+            grayscale = grayscale.resize(
+                (
+                    max(64, int(grayscale.size[0] * scale)),
+                    max(64, int(grayscale.size[1] * scale)),
+                ),
+                Image.BICUBIC,
+            )
+
+        best_angle = 0.0
+        search_plan = (
+            (-12.0, 12.0, 1.0),
+            (-2.0, 2.0, 0.25),
+            (-0.5, 0.5, 0.1),
+        )
+        for min_offset, max_offset, step in search_plan:
+            center = best_angle
+            start = center + min_offset
+            end = center + max_offset
+            angle = start
+            best_score = None
+            while angle <= end + 1e-9:
+                score = cls._score_alignment_angle(grayscale, angle)
+                if best_score is None or score > best_score:
+                    best_score = score
+                    best_angle = angle
+                angle += step
+        return 0.0 if abs(best_angle) < 0.15 else max(-12.0, min(12.0, best_angle))
+
+    @classmethod
+    def _deskew_exam_style_image(cls, image):
+        current = image.convert("RGB")
+        for _ in range(3):
+            angle = cls._estimate_skew_angle(current)
+            if angle == 0:
+                break
+            current = cls._rotate_image_with_white_background(current, angle)
+        return current
+
+    @staticmethod
+    def _estimate_border_median_luma(image) -> int:
+        grayscale = image.convert("L")
+        width, height = grayscale.size
+        border = max(2, int(min(width, height) * 0.06))
+        pixels = list(grayscale.getdata())
+        samples: list[int] = []
+        for y in range(height):
+            row_base = y * width
+            for x in range(width):
+                if x < border or x >= width - border or y < border or y >= height - border:
+                    samples.append(pixels[row_base + x])
+        if not samples:
+            return 255
+        samples.sort()
+        return samples[len(samples) // 2]
+
+    @classmethod
+    def _enforce_white_background(cls, image):
+        from PIL import Image  # type: ignore[import-not-found]
+
+        base = Image.new("RGB", image.size, "#ffffff")
+        base.paste(image.convert("RGB"))
+        border_median = cls._estimate_border_median_luma(base)
+        if border_median >= 248:
+            return base
+
+        white_point = max(210, min(248, border_median + 6))
+        black_point = 0
+        scale = 255 / max(1, white_point - black_point)
+        corrected = []
+        for r, g, b in list(base.getdata()):
+            channels = []
+            for value in (r, g, b):
+                mapped = round((value - black_point) * scale)
+                channels.append(0 if mapped < 0 else 255 if mapped > 255 else mapped)
+            corrected.append(tuple(channels))
+        normalized = Image.new("RGB", base.size, "#ffffff")
+        normalized.putdata(corrected)
+        return normalized
+
     @staticmethod
     def _extract_inline_image_bytes(response: object) -> tuple[bytes | None, str]:
         def _get_field(obj: object, *names: str) -> object | None:
@@ -344,7 +467,7 @@ class AIWorker(QThread):
             if isinstance(value, (str, bytes, bytearray)):
                 return []
             try:
-                return list(value)  # Handles protobuf repeated containers.
+                return list(value)
             except Exception:
                 return []
 
@@ -372,10 +495,7 @@ class AIWorker(QThread):
             inline = _get_field(part, "inline_data", "inlineData")
             if inline is None:
                 return (None, "")
-            mime = (
-                _get_field(inline, "mime_type", "mimeType")
-                or "image/png"
-            )
+            mime = _get_field(inline, "mime_type", "mimeType") or "image/png"
             data = _decode_data(_get_field(inline, "data"))
             if data:
                 return (data, str(mime or "image/png"))
@@ -402,7 +522,6 @@ class AIWorker(QThread):
         if data:
             return (data, mime)
 
-        # Some SDK responses expose only dict payload via to_dict().
         try:
             to_dict = getattr(response, "to_dict", None)
             if callable(to_dict):
@@ -412,85 +531,6 @@ class AIWorker(QThread):
                     return (data, mime)
         except Exception:
             pass
-        return (None, "")
-
-    @staticmethod
-    def _extract_openai_image_bytes(response: object) -> tuple[bytes | None, str]:
-        def _get_field(obj: object, *names: str) -> object | None:
-            if obj is None:
-                return None
-            if isinstance(obj, dict):
-                for name in names:
-                    if name in obj:
-                        return obj.get(name)
-                return None
-            for name in names:
-                try:
-                    value = getattr(obj, name)
-                except Exception:
-                    continue
-                if value is not None:
-                    return value
-            return None
-
-        def _iter_items(value: object) -> list[object]:
-            if value is None or isinstance(value, (str, bytes, bytearray)):
-                return []
-            if isinstance(value, dict):
-                return []
-            try:
-                return list(value)
-            except Exception:
-                return []
-
-        def _decode_b64(data: object) -> bytes | None:
-            if not isinstance(data, str) or not data.strip():
-                return None
-            try:
-                return base64.b64decode(data, validate=True)
-            except Exception:
-                try:
-                    return base64.b64decode(data + "===")
-                except Exception:
-                    return None
-
-        def _download_url(url: object) -> tuple[bytes | None, str]:
-            if not isinstance(url, str) or not url.strip():
-                return (None, "")
-            try:
-                import requests
-
-                resp = requests.get(url, timeout=60)
-                resp.raise_for_status()
-                return (resp.content, resp.headers.get("content-type", "image/png"))
-            except Exception:
-                return (None, "")
-
-        def _scan_items(items: list[object]) -> tuple[bytes | None, str]:
-            for item in items:
-                data = _decode_b64(_get_field(item, "b64_json", "b64Json"))
-                if data:
-                    return (data, "image/png")
-                url_data, url_mime = _download_url(_get_field(item, "url"))
-                if url_data:
-                    return (url_data, url_mime or "image/png")
-            return (None, "")
-
-        data, mime = _scan_items(_iter_items(_get_field(response, "data")))
-        if data:
-            return (data, mime)
-
-        try:
-            model_dump = getattr(response, "model_dump", None)
-            if callable(model_dump):
-                payload = model_dump()
-                if isinstance(payload, dict):
-                    data, mime = _scan_items(_iter_items(payload.get("data")))
-                    if data:
-                        return (data, mime)
-        except Exception:
-            pass
-
         return (None, "")
 
     @staticmethod
@@ -535,7 +575,7 @@ class AIWorker(QThread):
         from PIL import Image  # type: ignore[import-not-found]
 
         x1_pct, y1_pct, x2_pct, y2_pct = coords
-        img = Image.open(source_image_path).convert("RGB")
+        img = load_pil_image(source_image_path, mode="RGB")
         w, h = img.size
         x1 = max(0, min(int(x1_pct * w), w))
         y1 = max(0, min(int(y1_pct * h), h))
@@ -554,7 +594,11 @@ class AIWorker(QThread):
         return str(out_path)
 
     def _generate_image_from_crop(self, crop_path: str) -> str:
-        from ai_client import _is_openai_model, _load_env as _load_ai_env, _normalize_model_name  # type: ignore
+        from ai_client import (  # type: ignore
+            DEFAULT_GEMINI_MODEL,
+            _load_env as _load_ai_env,
+            _normalize_model_name,
+        )
 
         try:
             _load_ai_env()
@@ -562,52 +606,47 @@ class AIWorker(QThread):
             pass
 
         model_name = _normalize_model_name((
-            os.getenv("OPENAI_IMAGE_MODEL")
-            or os.getenv("IMAGE_AI_MODEL")
-            or os.getenv("NOVA_IMAGE_MODEL")
-            or "gpt-image-1"
+            os.getenv("GEMINI_MODEL")
+            or os.getenv("GEMINI_IMAGE_MODEL")
+            or DEFAULT_GEMINI_MODEL
         ).strip())
-        prompt_text = self._get_image_generation_prompt()
+        if "image" not in model_name:
+            raise AIClientError(
+                f"현재 설정된 모델({model_name})은 텍스트 출력 전용이라 AI 이미지 생성을 지원하지 않습니다."
+            )
+        prompt_text = self._build_exam_style_image_prompt()
+        api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
+        if not api_key:
+            raise AIClientError("GEMINI_API_KEY is missing.")
+        try:
+            import google.generativeai as genai
+            from PIL import Image  # type: ignore[import-not-found]
+            import io
+        except Exception as exc:
+            raise AIClientError(f"이미지 생성 모듈 로딩 실패: {exc}") from exc
 
-        if _is_openai_model(model_name):
-            api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
-            if not api_key:
-                raise AIClientError("OPENAI_API_KEY is missing.")
-            try:
-                from openai import OpenAI
-            except Exception as exc:
-                raise AIClientError(f"이미지 생성 모듈 로딩 실패: {exc}") from exc
-
-            try:
-                client = OpenAI(api_key=api_key)
-                with open(crop_path, "rb") as image_file:
-                    response = client.images.edit(
-                        model=model_name,
-                        image=image_file,
-                        prompt=prompt_text,
-                        output_format="png",
-                    )
-            except Exception as exc:
-                raise AIClientError(f"OpenAI 이미지 생성 실패: {exc}") from exc
-            img_bytes, mime = self._extract_openai_image_bytes(response)
-        else:
-            api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
-            if not api_key:
-                raise AIClientError("GEMINI_API_KEY is missing.")
-            try:
-                import google.generativeai as genai
-                from PIL import Image  # type: ignore[import-not-found]
-            except Exception as exc:
-                raise AIClientError(f"이미지 생성 모듈 로딩 실패: {exc}") from exc
-
+        try:
             genai.configure(api_key=api_key)
             model = genai.GenerativeModel(model_name)
-            image = Image.open(crop_path).convert("RGB")
+            image = self._deskew_exam_style_image(load_pil_image(crop_path, mode="RGB"))
             response = model.generate_content([prompt_text, image])
-            img_bytes, mime = self._extract_inline_image_bytes(response)
+        except Exception as exc:
+            raise AIClientError(f"Gemini 이미지 생성 실패: {exc}") from exc
+        img_bytes, mime = self._extract_inline_image_bytes(response)
 
         if not img_bytes:
             raise AIClientError("이미지 생성 응답에서 이미지 데이터를 찾지 못했습니다. 모델 응답 형식이 예상과 다를 수 있습니다.")
+
+        try:
+            processed_image = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+            processed_image = self._deskew_exam_style_image(processed_image)
+            processed_image = self._enforce_white_background(processed_image)
+            buffer = io.BytesIO()
+            processed_image.save(buffer, format="PNG")
+            img_bytes = buffer.getvalue()
+            mime = "image/png"
+        except Exception:
+            pass
 
         ext = ".png"
         mime_l = (mime or "").lower()
@@ -628,11 +667,11 @@ class AIWorker(QThread):
         image_path: str,
         script: str,
         log_fn,
-    ) -> str:
+    ) -> tuple[str, int]:
         if self._image_mode != "ai_generate":
-            return script
+            return script, 0
         if not script.strip():
-            return script
+            return script, 0
 
         lines = script.splitlines()
         crop_pattern = re.compile(r"^(\s*)insert_cropped_image\((.+)\)\s*$")
@@ -670,7 +709,7 @@ class AIWorker(QThread):
             log_fn(f"[{idx}] Image generation complete: {generated_count} item(s)")
         if failed_count > 0:
             log_fn(f"[{idx}] Image generation fallback used for {failed_count} item(s)")
-        return "\n".join(lines)
+        return "\n".join(lines), generated_count
 
     @staticmethod
     def _strip_image_insertions(script: str) -> str:
@@ -794,17 +833,20 @@ class AIWorker(QThread):
         image_path: str,
         script: str,
         log_fn,
-    ) -> str:
+    ) -> tuple[str, int]:
         processed = script
+        image_credit_cost = 0
         if self._image_mode == "ai_generate":
-            processed = self._apply_image_generation_pipeline(idx, image_path, processed, log_fn)
+            processed, image_credit_cost = self._apply_image_generation_pipeline(
+                idx, image_path, processed, log_fn
+            )
         elif self._image_mode == "no_image":
             stripped = self._strip_image_insertions(processed)
             if stripped != (processed or "").strip():
                 log_fn(f"[{idx}] Image insertion lines removed by no-image mode")
-            return stripped
+            return stripped, 0
         processed = self._apply_python_figure_pipeline(idx, processed, log_fn)
-        return self._apply_local_figure_pipeline(idx, processed, log_fn)
+        return self._apply_local_figure_pipeline(idx, processed, log_fn), image_credit_cost
 
     @staticmethod
     def _script_contains_table_style(script: str) -> bool:
@@ -899,16 +941,23 @@ class AIWorker(QThread):
                 uid = str(user.get("uid") or "")
                 tier = str(user.get("plan") or user.get("tier") or "free")
                 generation_mode = getattr(self, "_generation_mode", "problem")
-                usage_cost = 2 if generation_mode == "problem_and_explanation" else 1
+                base_usage_cost = 2 if generation_mode == "problem_and_explanation" else 1
 
-                if uid and not check_usage_limit(uid, tier, amount=usage_cost):
+                if uid and not check_usage_limit(uid, tier, amount=base_usage_cost):
                     limit = get_plan_limit(tier)
                     remaining = get_remaining_usage(uid, tier)
+                    extra_hint = ""
+                    if self._image_mode == "ai_generate":
+                        extra_hint = (
+                            "\nAI 이미지 생성 모드에서는 실제 이미지 생성이 성공한 건수만큼 "
+                            "건당 1크레딧이 추가 차감됩니다."
+                        )
                     raise AIClientError(
-                        f"현재 모드 실행에 필요한 크레딧이 부족합니다. "
-                        f"(필요: {usage_cost}, 남음: {remaining}, 한도: {limit})\n"
+                        f"현재 모드 실행에 필요한 기본 크레딧이 부족합니다. "
+                        f"(기본 필요: {base_usage_cost}, 남음: {remaining}, 한도: {limit})\n"
                         f"\uD604\uC7AC \uD50C\uB79C: {tier}\n"
                         "nova-ai.work\uC5D0\uC11C \uD50C\uB79C\uC744 \uC5C5\uADF8\uB808\uC774\uB4DC\uD574\uC8FC\uC138\uC694."
+                        f"{extra_hint}"
                     )
 
                 # 1 image : 1 AIClient (1-to-1 mapping, safe for concurrency)
@@ -958,9 +1007,21 @@ class AIWorker(QThread):
 
                 if generation_mode == "explanation":
                     final_code = _append_explanation_if_needed("")
-                    final_code = self._apply_image_mode_pipeline(idx, image_path, final_code, _log)
+                    final_code, image_credit_cost = self._apply_image_mode_pipeline(
+                        idx, image_path, final_code, _log
+                    )
                     if uid and final_code.strip():
-                        increment_ai_usage(uid, amount=usage_cost)
+                        total_usage_cost = base_usage_cost + image_credit_cost
+                        if not check_usage_limit(uid, tier, amount=total_usage_cost):
+                            limit = get_plan_limit(tier)
+                            remaining = get_remaining_usage(uid, tier)
+                            raise AIClientError(
+                                "현재 모드 실행에 필요한 크레딧이 부족합니다. "
+                                f"(기본: {base_usage_cost}, 이미지 생성 추가: {image_credit_cost}, "
+                                f"총 필요: {total_usage_cost}, 남음: {remaining}, 한도: {limit})\n"
+                                f"현재 플랜: {tier}"
+                            )
+                        increment_ai_usage(uid, amount=total_usage_cost)
                     return final_code
 
                 # 2) Detect container and provide a layout hint, but keep
@@ -969,6 +1030,7 @@ class AIWorker(QThread):
                 det = detect_container(image_path)
                 _log(f"[{idx}] Container detected: template={det.template}, rect={det.rect}")
                 generation_description = ""
+                inside_box_ocr_hint = ""
                 if det.template and det.rect:
                     generation_description = (
                         "Generate the FULL HWP automation code for the ENTIRE problem in ONE pass. "
@@ -978,6 +1040,27 @@ class AIWorker(QThread):
                         "together in natural reading order. Do NOT return partial scripts split into outside text, box body, "
                         "and choices."
                     )
+                    try:
+                        inside_img = crop_inside_rect(image_path, det.rect)
+                        if inside_img is not None:
+                            inside_ocr = extract_text_from_pil_image(inside_img).strip()
+                            compact_inside_ocr = " ".join(inside_ocr.split()).strip()
+                            if compact_inside_ocr:
+                                inside_box_ocr_hint = compact_inside_ocr[:1200]
+                                if len(compact_inside_ocr) > 1200:
+                                    inside_box_ocr_hint += "..."
+                            if len(compact_inside_ocr) >= 20:
+                                generation_description += (
+                                    " The detected box/body contains readable text. "
+                                    "Type the readable text inside the box using insert_text(...) and insert_equation(...). "
+                                    "If the box also contains a figure, crop ONLY the actual non-text figure region. "
+                                    "Never replace a text-heavy box body with one large cropped image."
+                                )
+                                _log(
+                                    f"[{idx}] Inside-box OCR hint length: {len(compact_inside_ocr)}"
+                                )
+                    except Exception as exc:
+                        _log(f"[{idx}] Inside-box OCR hint skipped: {exc}")
                     _log(f"[{idx}] Container hint enabled for single-pass generation")
                 elif det.template:
                     generation_description = (
@@ -993,7 +1076,16 @@ class AIWorker(QThread):
                 raw_result = client.generate_script_for_image(
                     image_path,
                     description=(generation_description or ""),
-                    ocr_text=ocr_text_full,
+                    ocr_text=(
+                        ocr_text_full
+                        + (
+                            "\n\nOCR hint from inside the detected box/body "
+                            "(use this only as a hint and verify with the image):\n"
+                            + inside_box_ocr_hint
+                            if inside_box_ocr_hint
+                            else ""
+                        )
+                    ),
                 ) or ""
                 _log(f"[{idx}] AI response length: {len(raw_result)}")
                 if not raw_result.strip():
@@ -1008,9 +1100,21 @@ class AIWorker(QThread):
                     log_fn=_log,
                 )
                 final_code = _append_explanation_if_needed(final_code)
-                final_code = self._apply_image_mode_pipeline(idx, image_path, final_code, _log)
+                final_code, image_credit_cost = self._apply_image_mode_pipeline(
+                    idx, image_path, final_code, _log
+                )
                 if uid and final_code.strip():
-                    increment_ai_usage(uid, amount=usage_cost)
+                    total_usage_cost = base_usage_cost + image_credit_cost
+                    if not check_usage_limit(uid, tier, amount=total_usage_cost):
+                        limit = get_plan_limit(tier)
+                        remaining = get_remaining_usage(uid, tier)
+                        raise AIClientError(
+                            "현재 모드 실행에 필요한 크레딧이 부족합니다. "
+                            f"(기본: {base_usage_cost}, 이미지 생성 추가: {image_credit_cost}, "
+                            f"총 필요: {total_usage_cost}, 남음: {remaining}, 한도: {limit})\n"
+                            f"현재 플랜: {tier}"
+                        )
+                    increment_ai_usage(uid, amount=total_usage_cost)
                 return final_code
 
             # Generate code in batches to avoid flooding the model/API with
@@ -2152,7 +2256,7 @@ class NovaAILiteWindow(QWidget):
         self._typing_eq_font_name = "HYhwpEQ"
         self._typing_eq_font_size_pt = 8.0
         self._typing_generation_mode = "problem"
-        self._image_mode = "crop"
+        self._image_mode = "no_image"
         self._typing_style_compact_breakpoint_px = 980
         _typing_dropdown_icon = (Path(__file__).resolve().parent / "assets" / "dropdown_triangle.png").as_posix()
 
@@ -2219,12 +2323,22 @@ class NovaAILiteWindow(QWidget):
         self._image_mode_combo.setObjectName("typingFontCombo")
         self._image_mode_combo.setEditable(False)
         self._image_mode_combo.addItems(
-            ["이미지 없이 생성하기", "이미지 크롭해서 생성하기"]
+            [
+                self._image_mode_text("no_image"),
+                self._image_mode_text("crop"),
+                self._image_mode_text("ai_generate"),
+            ]
         )
         self._image_mode_combo.setFixedWidth(220)
         _img_mode_row.addWidget(self._image_mode_combo)
         _img_mode_row.addStretch(1)
         _ts_root.addWidget(self._image_mode_row_widget)
+        self._typing_cost_hint_label = QLabel("")
+        self._typing_cost_hint_label.setWordWrap(True)
+        self._typing_cost_hint_label.setStyleSheet(
+            "font-size: 11px; color: #6b7280; padding-left: 56px; padding-top: 2px;"
+        )
+        _ts_root.addWidget(self._typing_cost_hint_label)
 
         _ts_lay = QHBoxLayout()
         _ts_lay.setContentsMargins(0, 0, 0, 0)
@@ -2370,11 +2484,21 @@ class NovaAILiteWindow(QWidget):
         self._image_mode_combo_compact.setObjectName("typingFontCombo")
         self._image_mode_combo_compact.setEditable(False)
         self._image_mode_combo_compact.addItems(
-            ["이미지 없이 생성하기", "이미지 크롭해서 생성하기"]
+            [
+                self._image_mode_text("no_image"),
+                self._image_mode_text("crop"),
+                self._image_mode_text("ai_generate"),
+            ]
         )
         self._image_mode_combo_compact.setMinimumWidth(140)
         _img_mode_row_c.addWidget(self._image_mode_combo_compact, 1)
         _tsc_v.addWidget(self._image_mode_row_widget_compact)
+        self._typing_cost_hint_label_compact = QLabel("")
+        self._typing_cost_hint_label_compact.setWordWrap(True)
+        self._typing_cost_hint_label_compact.setStyleSheet(
+            "font-size: 11px; color: #6b7280; padding-left: 52px; padding-top: 2px;"
+        )
+        _tsc_v.addWidget(self._typing_cost_hint_label_compact)
         _tsc_row1 = QHBoxLayout()
         _tsc_row1.setSpacing(6)
         _tsc_txt_lbl = QLabel("\uAE00\uC528 \uD3F0\uD2B8")
@@ -3010,7 +3134,7 @@ class NovaAILiteWindow(QWidget):
         self._remote_logout_in_progress = False
 
         self._timer = QTimer(self)
-        self._timer.setInterval(250)
+        self._timer.setInterval(1000)
         self._timer.timeout.connect(self._schedule_filename_update)
         self._timer.start()
         self._session_guard_timer = QTimer(self)
@@ -3304,14 +3428,20 @@ class NovaAILiteWindow(QWidget):
                 self.order_title.setText(f"{prefix}: {count}개 선택됨")
             else:
                 self.order_title.setText(f"{prefix}: (없음)")
+        self._refresh_typing_cost_hint_labels()
         self._refresh_header_mode_buttons()
 
     @staticmethod
-    def _typing_generation_mode_text(mode_key: str) -> str:
+    def _typing_generation_base_cost(mode_key: str) -> int:
+        return 2 if mode_key == "problem_and_explanation" else 1
+
+    @classmethod
+    def _typing_generation_mode_text(cls, mode_key: str) -> str:
+        cost = cls._typing_generation_base_cost(mode_key)
         mapping = {
-            "problem": "문제만 타이핑하기 (1크레딧)",
-            "explanation": "해설만 타이핑하기 (1크레딧)",
-            "problem_and_explanation": "문제+해설 타이핑하기 (2크레딧)",
+            "problem": f"문제만 타이핑하기 ({cost}크레딧)",
+            "explanation": f"해설만 타이핑하기 ({cost}크레딧)",
+            "problem_and_explanation": f"문제+해설 타이핑하기 ({cost}크레딧)",
         }
         return mapping.get(mode_key, mapping["problem"])
 
@@ -4532,19 +4662,20 @@ class NovaAILiteWindow(QWidget):
         mapping = {
             "no_image": "이미지 없이 생성하기",
             "crop": "이미지 크롭해서 생성하기",
-            # Hide AI mode from UI for now; keep backend key support.
-            "ai_generate": "이미지 크롭해서 생성하기",
+            "ai_generate": "AI 이미지 생성하기 (성공 건당 +1크레딧)",
         }
         return mapping.get(mode_key, mapping["crop"])
 
     @staticmethod
     def _image_mode_key_from_text(text: str) -> str:
-        mapping = {
-            "이미지 없이 생성하기": "no_image",
-            "이미지 크롭해서 생성하기": "crop",
-            "AI 이미지 생성하기": "ai_generate",
-        }
-        return mapping.get((text or "").strip(), "crop")
+        normalized = (text or "").strip()
+        if normalized.startswith("AI 이미지 생성하기"):
+            return "ai_generate"
+        if normalized.startswith("이미지 없이 생성하기"):
+            return "no_image"
+        if normalized.startswith("이미지 크롭해서 생성하기"):
+            return "crop"
+        return "crop"
 
     def _sync_image_mode_controls(self, *, source: str, mode_key: str) -> None:
         mode_text = self._image_mode_text(mode_key)
@@ -4556,6 +4687,25 @@ class NovaAILiteWindow(QWidget):
             blocked = self._image_mode_combo_compact.blockSignals(True)
             self._image_mode_combo_compact.setCurrentText(mode_text)
             self._image_mode_combo_compact.blockSignals(blocked)
+        self._refresh_typing_cost_hint_labels()
+
+    def _current_typing_cost_hint_text(self) -> str:
+        mode = getattr(self, "_typing_generation_mode", "problem")
+        image_mode = getattr(self, "_image_mode", "crop")
+        base_cost = self._typing_generation_base_cost(mode)
+        if image_mode == "ai_generate":
+            return (
+                f"기본 차감: {base_cost}크레딧. "
+                "AI 이미지 생성이 실제로 성공한 경우에만 이미지 1건당 1크레딧이 추가 차감됩니다."
+            )
+        return f"기본 차감: {base_cost}크레딧."
+
+    def _refresh_typing_cost_hint_labels(self) -> None:
+        text = self._current_typing_cost_hint_text()
+        if hasattr(self, "_typing_cost_hint_label"):
+            self._typing_cost_hint_label.setText(text)
+        if hasattr(self, "_typing_cost_hint_label_compact"):
+            self._typing_cost_hint_label_compact.setText(text)
 
     def _on_image_mode_changed(self) -> None:
         if not hasattr(self, "_image_mode_combo"):
@@ -5275,8 +5425,6 @@ def _normalize_runtime_error_message(message: str) -> str:
         )
 
     lower = text.lower()
-    if "openai_api_key is missing" in lower:
-        return "OPENAI_API_KEY가 설정되어 있지 않습니다. .env 파일을 확인해 주세요."
     if "gemini_api_key is missing" in lower:
         return "GEMINI_API_KEY가 설정되어 있지 않습니다. .env 파일을 확인해 주세요."
     if "insert_cropped_image" in lower and ("source image path" in lower or "원본 이미지 경로" in text):
@@ -5842,8 +5990,22 @@ def _clear_win32com_cache() -> None:
         pass
 
 
+def _clear_comtypes_cache() -> None:
+    """Remove stale comtypes generated wrappers that can trigger console popups."""
+    try:
+        import comtypes.client  # type: ignore
+        import shutil
+
+        cache_dir = getattr(comtypes.client, "gen_dir", None)
+        if cache_dir and Path(cache_dir).exists():
+            shutil.rmtree(cache_dir, ignore_errors=True)
+    except Exception:
+        pass
+
+
 def main() -> None:
     _clear_win32com_cache()
+    _clear_comtypes_cache()
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 

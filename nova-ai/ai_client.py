@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import os
 import sys
-import base64
-import io
 import re
 from pathlib import Path
 from typing import Optional
+from image_path_utils import load_pil_image
 
 def _debug(msg: str) -> None:
     if sys.stderr is not None:
@@ -32,6 +31,7 @@ from backend.firebase_profile import (
 
 
 MAX_IMAGE_DIM = 2048  # Higher cap to improve recognition
+DEFAULT_GEMINI_MODEL = "gemini-3.1-pro-preview"
 
 
 SYSTEM_PROMPT = """
@@ -93,9 +93,10 @@ MATH_CHOICES_EQUATION = True
 """.strip()
 
 try:
-    from dotenv import load_dotenv
+    from dotenv import dotenv_values, load_dotenv
 except Exception:
     load_dotenv = None
+    dotenv_values = None
 
 
 class AIClientError(RuntimeError):
@@ -103,75 +104,82 @@ class AIClientError(RuntimeError):
 
 
 def _load_env() -> None:
-    candidates = [
-        Path(__file__).resolve().parent / ".env",
-        Path.cwd() / ".env",
+    root_dir = Path(__file__).resolve().parent
+    runtime_root = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else root_dir
+    candidates: list[tuple[Path, bool]] = [
+        (runtime_root / ".env", False),
+        (root_dir / ".env", False),
+        (Path.cwd() / ".env", False),
+        (runtime_root / ".env.local", True),
+        (root_dir / ".env.local", True),
+        (Path.cwd() / ".env.local", True),
+        # Fallback: when only template file exists in installed directory.
+        (runtime_root / ".env.example", False),
+        (root_dir / ".env.example", False),
+        (Path.cwd() / ".env.example", False),
     ]
-    for path in candidates:
+    for path, override in candidates:
         if not path.exists():
             continue
+
+        existing_value = lambda key: (os.environ.get(key) or "").strip()
+
+        if dotenv_values is not None:
+            try:
+                loaded = dotenv_values(path)
+                for key, value in loaded.items():
+                    normalized_key = str(key or "").strip().lstrip("\ufeff")
+                    if not normalized_key:
+                        continue
+                    normalized_value = str(value or "").strip().strip('"').strip("'")
+                    if override or not existing_value(normalized_key):
+                        os.environ[normalized_key] = normalized_value
+                continue
+            except Exception:
+                pass
+
         if load_dotenv is not None:
-            load_dotenv(dotenv_path=path)
-            break
-        # Fallback: minimal .env parsing when python-dotenv is unavailable.
+            load_dotenv(dotenv_path=path, override=override)
+
         try:
             for line in path.read_text(encoding="utf-8").splitlines():
                 stripped = line.strip()
                 if not stripped or stripped.startswith("#") or "=" not in stripped:
                     continue
                 key, value = stripped.split("=", 1)
-                key = key.strip()
+                key = key.strip().lstrip("\ufeff")
                 value = value.strip().strip('"').strip("'")
-                if key and key not in os.environ:
+                if key and (override or not existing_value(key)):
                     os.environ[key] = value
         except Exception:
             pass
-        break
 
 
 def _resolve_model(model: Optional[str]) -> str:
     if model:
         return model
     env_model = (
-        os.getenv("OPENAI_CHAT_MODEL")
-        or os.getenv("NOVA_AI_MODEL")
+        os.getenv("GEMINI_CHAT_MODEL")
         or os.getenv("GEMINI_MODEL")
-        or os.getenv("LITEPRO_MODEL")
+        or os.getenv("GEMINI_SOLVE_MODEL")
+        or os.getenv("GEMINI_TRANSCRIBE_MODEL")
+        or os.getenv("NOVA_AI_MODEL")
     )
-    return env_model or "gpt-5-mini"
-
-
-def _is_openai_model(model: Optional[str]) -> bool:
-    normalized = (model or "").strip().lower()
-    return normalized.startswith(("gpt", "o1", "o3", "o4", "whisper", "dall-e"))
+    return env_model or DEFAULT_GEMINI_MODEL
 
 
 def _normalize_model_name(model: str) -> str:
     text = (model or "").strip()
     if not text:
         return text
-    if _is_openai_model(text):
-        return re.sub(r"\s+", "-", text.lower())
-    return text
+    return re.sub(r"\s+", "-", text.lower())
 
 
 class AIClient:
-    def _ensure_openai_client(self) -> None:
-        if self._openai is not None:
-            return
-        api_key = self.api_key if self.provider == "openai" else os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            raise AIClientError("OPENAI_API_KEY is missing.")
-        try:
-            from openai import OpenAI
-        except Exception as exc:
-            raise AIClientError("openai package is not installed.") from exc
-        self._openai = OpenAI(api_key=api_key)
-
     def _ensure_gemini_client(self) -> None:
         if self._genai is not None:
             return
-        api_key = self.api_key if self.provider == "gemini" else os.getenv("GEMINI_API_KEY")
+        api_key = self.api_key or os.getenv("GEMINI_API_KEY")
         if not api_key:
             raise AIClientError("GEMINI_API_KEY is missing.")
         try:
@@ -182,94 +190,58 @@ class AIClient:
         self._genai = genai
 
     @staticmethod
-    def _safe_openai_response_text(response: object) -> str:
+    def _safe_gemini_response_text(response: object) -> str:
+        if isinstance(response, str) and response.strip():
+            return response.strip()
+
         try:
-            output_text = getattr(response, "output_text", None)
-            if isinstance(output_text, str) and output_text.strip():
-                return output_text.strip()
+            text = getattr(response, "text", None)
+            if isinstance(text, str) and text.strip():
+                return text.strip()
+        except Exception:
+            pass
+
+        try:
+            texts: list[str] = []
+            for candidate in getattr(response, "candidates", []) or []:
+                content = getattr(candidate, "content", None)
+                for part in getattr(content, "parts", []) or []:
+                    part_text = getattr(part, "text", None)
+                    if isinstance(part_text, str) and part_text.strip():
+                        texts.append(part_text.strip())
+            if texts:
+                return "\n".join(texts).strip()
         except Exception:
             pass
 
         payload = None
-        try:
-            model_dump = getattr(response, "model_dump", None)
-            if callable(model_dump):
-                payload = model_dump()
-        except Exception:
-            payload = None
+        for attr_name in ("to_dict", "model_dump"):
+            try:
+                reader = getattr(response, attr_name, None)
+                if callable(reader):
+                    payload = reader()
+                    break
+            except Exception:
+                payload = None
 
         if isinstance(payload, dict):
             texts: list[str] = []
-            for item in payload.get("output", []) or []:
-                if not isinstance(item, dict):
+            for candidate in payload.get("candidates", []) or []:
+                if not isinstance(candidate, dict):
                     continue
-                if item.get("type") != "message":
+                content = candidate.get("content") or {}
+                if not isinstance(content, dict):
                     continue
-                for content in item.get("content", []) or []:
-                    if not isinstance(content, dict):
+                for part in content.get("parts", []) or []:
+                    if not isinstance(part, dict):
                         continue
-                    if content.get("type") not in {"output_text", "text"}:
-                        continue
-                    text = content.get("text")
-                    if isinstance(text, str) and text:
-                        texts.append(text)
+                    part_text = part.get("text")
+                    if isinstance(part_text, str) and part_text.strip():
+                        texts.append(part_text.strip())
             if texts:
-                return "".join(texts).strip()
+                return "\n".join(texts).strip()
 
         return ""
-
-    @staticmethod
-    def _safe_response_text(response: object) -> str:
-        chunks: list[str] = []
-
-        def _append_text(value: object) -> None:
-            if isinstance(value, str) and value:
-                chunks.append(value)
-
-        def _iter_parts(parts_obj: object) -> None:
-            try:
-                parts = list(parts_obj) if parts_obj is not None else []
-            except Exception:
-                parts = []
-            for part in parts:
-                text = None
-                try:
-                    text = getattr(part, "text", None)
-                except Exception:
-                    text = None
-                _append_text(text)
-
-        try:
-            text_prop = getattr(response, "text", None)
-            if isinstance(text_prop, str) and text_prop.strip():
-                return text_prop.strip()
-        except Exception as text_err:
-            _debug(f"[AI Debug] response.text 접근 실패, parts fallback 사용: {text_err}")
-
-        try:
-            _iter_parts(getattr(response, "parts", None))
-        except Exception:
-            pass
-
-        try:
-            candidates = getattr(response, "candidates", None)
-            try:
-                candidates = list(candidates) if candidates is not None else []
-            except Exception:
-                candidates = []
-            for candidate in candidates:
-                try:
-                    content = getattr(candidate, "content", None)
-                except Exception:
-                    content = None
-                try:
-                    _iter_parts(getattr(content, "parts", None))
-                except Exception:
-                    continue
-        except Exception:
-            pass
-
-        return "".join(chunks).strip()
 
     def __init__(
         self,
@@ -279,16 +251,11 @@ class AIClient:
     ) -> None:
         _load_env()
         self.model = _normalize_model_name(_resolve_model(model))
-        self.provider = "openai" if _is_openai_model(self.model) else "gemini"
+        self.provider = "gemini"
         self._genai = None
-        self._openai = None
 
-        if self.provider == "openai":
-            self.api_key = api_key or os.getenv("OPENAI_API_KEY")
-            self._ensure_openai_client()
-        else:
-            self.api_key = api_key or os.getenv("GEMINI_API_KEY")
-            self._ensure_gemini_client()
+        self.api_key = api_key or os.getenv("GEMINI_API_KEY")
+        self._ensure_gemini_client()
         self._check_usage = check_usage
 
     def _get_user_info(self) -> tuple[str | None, str]:
@@ -344,30 +311,19 @@ class AIClient:
         
         increment_ai_usage(uid)
 
-    def _encode_image_to_base64(self, image_path: str) -> Optional[str]:
+    def _prepare_gemini_image(self, image_path: str):
         try:
-            with open(image_path, "rb") as image_file:
-                return base64.b64encode(image_file.read()).decode("utf-8")
-        except Exception:
-            return None
-
-    def _prepare_openai_image_data_url(self, image_path: str) -> str:
-        try:
-            from PIL import Image  # type: ignore[import-not-found]
-        except Exception as exc:
-            raise AIClientError("Pillow package is required for OpenAI image requests.") from exc
-
-        try:
-            image = Image.open(image_path).convert("RGB")
+            image = load_pil_image(image_path, mode="RGB")
             max_dim = max(image.size)
             if max_dim > MAX_IMAGE_DIM:
                 scale = MAX_IMAGE_DIM / max_dim
                 new_size = (int(image.size[0] * scale), int(image.size[1] * scale))
+                from PIL import Image  # type: ignore[import-not-found]
+
                 image = image.resize(new_size, Image.LANCZOS)
-            buffer = io.BytesIO()
-            image.save(buffer, format="PNG")
-            encoded = base64.b64encode(buffer.getvalue()).decode("utf-8")
-            return f"data:image/png;base64,{encoded}"
+            return image
+        except ImportError as exc:
+            raise AIClientError("Pillow package is required for Gemini image requests.") from exc
         except Exception as exc:
             raise AIClientError(f"이미지 인코딩 실패: {exc}") from exc
 
@@ -377,74 +333,28 @@ class AIClient:
         image_path: Optional[str] = None,
         *,
         model_name: str,
+        reasoning_effort: Optional[str] = None,
     ) -> str:
         try:
-            model = self._genai.GenerativeModel(model_name)
+            self._ensure_gemini_client()
+            model = self._genai.GenerativeModel(model_name)  # type: ignore[union-attr]
+            content: list[object] = [prompt]
             if image_path:
-                from PIL import Image  # type: ignore[import-not-found]
-
-                image = Image.open(image_path).convert("RGB")
-                max_dim = max(image.size)
-                if max_dim > MAX_IMAGE_DIM:
-                    scale = MAX_IMAGE_DIM / max_dim
-                    new_size = (int(image.size[0] * scale), int(image.size[1] * scale))
-                    image = image.resize(new_size, Image.LANCZOS)
-                response = model.generate_content([prompt, image])
-            else:
-                response = model.generate_content(prompt)
-            
-            result_text = self._safe_response_text(response)
-            
+                content.append(self._prepare_gemini_image(image_path))
+            # The legacy google-generativeai SDK does not expose a stable reasoning-effort
+            # control for this preview model, so we keep the parameter for call-site
+            # compatibility and let the model decide internally.
+            _ = reasoning_effort
+            response = model.generate_content(content)
+            result_text = self._safe_gemini_response_text(response)
         except AIClientError:
             raise
         except Exception as exc:
-            _debug(f"[AI Debug] generate_content 예외: {exc}")
+            _debug(f"[AI Debug] Gemini response 예외: {exc}")
             raise AIClientError(str(exc)) from exc
 
         if not result_text.strip():
-            # 빈 결과일 때 디버그 정보 출력
-            _debug(f"[AI Debug] 빈 응답 받음")
-            if hasattr(response, "prompt_feedback"):
-                _debug(f"[AI Debug] Prompt feedback: {response.prompt_feedback}")
-            if hasattr(response, "candidates") and response.candidates:
-                for i, c in enumerate(response.candidates):
-                    if hasattr(c, "finish_reason"):
-                        _debug(f"[AI Debug] Candidate {i} finish_reason: {c.finish_reason}")
-                    if hasattr(c, "safety_ratings"):
-                        _debug(f"[AI Debug] Candidate {i} safety_ratings: {c.safety_ratings}")
-            return ""
-        
-        return result_text.strip()
-
-    def _generate_script_openai(
-        self,
-        prompt: str,
-        image_path: Optional[str] = None,
-        *,
-        model_name: str,
-    ) -> str:
-        try:
-            content: list[dict[str, str]] = [{"type": "input_text", "text": prompt}]
-            if image_path:
-                content.append(
-                    {
-                        "type": "input_image",
-                        "image_url": self._prepare_openai_image_data_url(image_path),
-                    }
-                )
-            response = self._openai.responses.create(  # type: ignore[union-attr]
-                model=model_name,
-                input=[{"role": "user", "content": content}],
-            )
-            result_text = self._safe_openai_response_text(response)
-        except AIClientError:
-            raise
-        except Exception as exc:
-            _debug(f"[AI Debug] OpenAI response 예외: {exc}")
-            raise AIClientError(str(exc)) from exc
-
-        if not result_text.strip():
-            _debug("[AI Debug] OpenAI 빈 응답 받음")
+            _debug("[AI Debug] Gemini 빈 응답 받음")
             return ""
         return result_text.strip()
 
@@ -454,27 +364,20 @@ class AIClient:
         image_path: Optional[str] = None,
         *,
         model_override: Optional[str] = None,
+        reasoning_effort: Optional[str] = None,
     ) -> str:
         if not prompt.strip():
             return ""
 
         self._check_usage_limit()
         model_name = _normalize_model_name((model_override or self.model or "").strip() or self.model)
-        provider = "openai" if _is_openai_model(model_name) else "gemini"
-        if provider == "openai":
-            self._ensure_openai_client()
-            result_text = self._generate_script_openai(
-                prompt,
-                image_path=image_path,
-                model_name=model_name,
-            )
-        else:
-            self._ensure_gemini_client()
-            result_text = self._generate_script_gemini(
-                prompt,
-                image_path=image_path,
-                model_name=model_name,
-            )
+        self._ensure_gemini_client()
+        result_text = self._generate_script_gemini(
+            prompt,
+            image_path=image_path,
+            model_name=model_name,
+            reasoning_effort=reasoning_effort,
+        )
 
         if result_text.strip():
             self._record_usage()
@@ -508,10 +411,9 @@ class AIClient:
     ) -> str:
         prompt = self.build_prompt(description, image_path=image_path, ocr_text=ocr_text)
         image_model = (
-            os.getenv("OPENAI_CHAT_MODEL")
-            or os.getenv("IMAGE_AI_MODEL")
-            or os.getenv("CHAT_AI_MODEL")
-            or os.getenv("NOVA_IMAGE_MODEL")
+            os.getenv("GEMINI_CHAT_MODEL")
+            or os.getenv("GEMINI_MODEL")
+            or os.getenv("NOVA_AI_MODEL")
             or ""
         ).strip()
         return self.generate_script(
@@ -558,15 +460,14 @@ class AIClient:
     def generate_explanation_for_image(self, image_path: str, ocr_text: str = "") -> str:
         prompt = self.build_explanation_prompt(ocr_text=ocr_text)
         explanation_model = (
-            os.getenv("OPENAI_SOLVE_MODEL")
-            or os.getenv("SOLVE_AI_MODEL")
-            or os.getenv("EXPLANATION_AI_MODEL")
-            or os.getenv("NOVA_AI_MODEL")
+            os.getenv("GEMINI_SOLVE_MODEL")
             or os.getenv("GEMINI_MODEL")
-            or "gpt-5.4"
+            or os.getenv("NOVA_AI_MODEL")
+            or DEFAULT_GEMINI_MODEL
         ).strip()
         return self.generate_script(
             prompt,
             image_path=image_path,
-            model_override=(explanation_model or "gpt-5.4"),
+            model_override=(explanation_model or DEFAULT_GEMINI_MODEL),
+            reasoning_effort="high",
         )

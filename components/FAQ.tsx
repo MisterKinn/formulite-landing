@@ -75,12 +75,9 @@ export default function FAQ() {
     return (
         <section id="faq" className="section-base">
             <div className="section-inner container-narrow">
-                <h2 className="benefits-title">
+                <h2 className="benefits-title faq-title">
                     자주 묻는 질문
                 </h2>
-                <p className="benefits-subtitle">
-                    Nova AI에 대해 자주 묻는 질문을 빠르게 확인하세요.
-                </p>
 
                 {/* Category tabs */}
                 <div className="faq-tabs">

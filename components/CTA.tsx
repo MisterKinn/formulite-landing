@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import ctaBackgroundImage from "../macos_hero_startframe__by51tsiyzaj6_large_2x.jpg";
 
 function getOS(): "Windows" | "macOS" | "Linux" | "Android" | "iOS" | "Other" {
     if (typeof window === "undefined") return "Other";
@@ -77,7 +78,15 @@ export default function CTA() {
     }, []);
 
     return (
-        <section className="section-cta">
+        <section
+            className="section-cta"
+            style={{
+                backgroundImage: `linear-gradient(rgba(0, 0, 0, 0.38), rgba(0, 0, 0, 0.38)), url(${ctaBackgroundImage.src})`,
+                backgroundSize: "cover",
+                backgroundPosition: "center",
+                backgroundRepeat: "no-repeat",
+            }}
+        >
             <div className="section-inner container-narrow text-center">
                 <h2 className="benefits-title mb-6">
                     <span className="text-gradient">{typedText}</span>

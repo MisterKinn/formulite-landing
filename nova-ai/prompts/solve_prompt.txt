@@ -15,6 +15,10 @@
 - 코드 바깥의 설명, 마크다운, 주석은 금지한다.
 - 일반 문장은 insert_text(...)를 사용한다.
 - 문단 구분은 insert_enter() 또는 insert_small_paragraph()를 사용한다.
+- 이미지에서 보이는 밑줄은 생략하지 말고 코드로 구현하라.
+- 텍스트 밑줄은 `set_underline(True)` -> `insert_text(...)` -> `set_underline(False)` 형태를 사용하라.
+- 수식 밑줄은 `set_underline(True)` -> `insert_equation(...)` -> `set_underline(False)` 형태를 사용하라.
+- 밑줄 span 안에 텍스트와 수식이 함께 있으면, underline을 켠 상태로 `insert_text(...)`와 `insert_equation(...)`을 자연스럽게 이어서 쓰고 마지막에 underline을 끄라.
 - 해설은 교재식/과외식 문단으로 자연스럽게 이어지게 작성한다.
 - 문제 번호가 명확히 보이면 해설 맨 앞에 문제 번호 줄을 먼저 넣는다.
 - 한 자리 번호는 두 자리로 맞춘다. 예: 3번 -> `03.`
@@ -68,6 +72,10 @@
   예: insert_equation('f LEFT ( x RIGHT )')
 - 괄호가 식 전체를 감쌀 때도 LEFT ( ... RIGHT )를 우선 사용하라.
 - 대괄호, 중괄호, 절댓값도 구조가 크면 각각 LEFT [ RIGHT ], LEFT { RIGHT }, LEFT | RIGHT | 형태를 우선 고려하라.
+- 일반 절댓값 `|a|`, `|x|`, `|-i|` 같은 표현은 가능하면 `LEFT | ... RIGHT |` 형태를 우선 사용하라.
+- 예:
+  - `insert_equation('LEFT | a RIGHT | ^{3} = LEFT | -i RIGHT | = 1')`
+  - `insert_equation('LEFT | x RIGHT | <= 1')`
 - HwpEqn에서 중괄호를 쓸 때는 역슬래시를 붙이지 말고 `LEFT { ... RIGHT }`처럼 직접 쓴다.
 - `LEFT \{`, `RIGHT \}`, `LEFT \ LEFT`, `RIGHT \ RIGHT` 같은 escape/역슬래시 섞인 표기는 쓰지 마라.
 - 분수는 over 구문을 사용한다.
@@ -83,7 +91,8 @@
 - 등호 연쇄, 변형 과정, 대입식은 한 줄의 의미 단위로 보기 좋게 정리하라.
 - 수식 안의 연산자와 기호가 빠지지 않게 정확히 유지하라.
 - 플러스/마이너스/등호/부등호/화살표 같은 기호를 빠뜨리지 마라.
-- `=>`, `->` 같은 ASCII 대체 표현을 쓰지 말고, 필요하면 텍스트 화살표 또는 수식 표현으로 자연스럽게 작성하라.
+- 기본적으로 `=>`, `->` 같은 ASCII 대체 표현은 남발하지 말고 자연스러운 수식 표현을 우선하라.
+- 단, 이름표 흐름/순서/사이클을 나타내는 `A→B→C`, `p→q` 같은 경우에는 `rm A -> rm B -> rm C`, `{rmp} -> {rmq}`처럼 `->`를 그대로 사용하라.
 
 [분수 구조 고정 규칙]
 - 분자/분모에 여러 항이 있거나, 괄호식/거듭제곱/곱 전체가 올라가면 그 전체를 반드시 한 블록으로 묶어라.
@@ -121,8 +130,26 @@
 - 즉 `mathbfA`, `mathbfx`, `\mathbf{v}`, `boldsymboly`, `\boldsymbol{\lambda}` 같은 문자열을 복붙하지 말고, 의도한 기호를 HwpEqn 표기로 복원하라.
 - 이름이 붙은 벡터 기호는 HwpEqn bold 토큰으로 직접 복원하라.
 - 굵은 소문자 라틴 문자 벡터는 가능하면 compact token을 사용하라. 예: `{rmboldx}`, `{rmboldy}`, `{rmboldv}`, `{rmboldn}`
-- 소문자 벡터나 단위벡터는 `{rmboldu}`, `{rmboldv}`, `{rmboldn}`처럼 compact token을 사용하라.
+- 소문자 벡터나 단위벡터는 `{rmboldu}`, `{rmboldv}`, `{rmboldw}`, `{rmboldn}`처럼 compact token을 사용하라.
+- 문제 본문이 `세 벡터 u, v, w에 대하여`처럼 기호를 벡터로 선언하면, 이후 식에서는 그 기호를 모두 compact vector token으로 유지하라. 인쇄가 일반 이탤릭처럼 보여도 벡터 의미가 우선이다.
+- 예:
+  - `insert_equation('{rmboldu} CDOT {rmboldv} = 0')`
+  - `insert_equation('{rmboldv} CDOT {rmboldw} = - {3} over {2}')`
+  - `insert_equation('vert vert `{rmboldu}``vert vert = 2')`
+  - `insert_equation('2{rmboldu} - 3{rmboldv} - 2{rmboldw}')`
+- 잘못된 예:
+  - `insert_equation('u CDOT v = 0')`
+  - `insert_equation('vert vert `u``vert vert = 2')`
+  - `insert_equation('2u - 3v - 2w')`
 - 대문자 벡터장/굵은 대문자 기호는 `{rm boldF}`, `{rm boldE}`, `{rm boldB}`, `{rm boldA}`처럼 작성하라.
+- 벡터장 이름이 함수처럼 괄호를 달고 나오는 경우에도 bold를 유지하라.
+- 즉 원문이 굵은 `F(x,y,z)` 벡터장이라면 plain `F LEFT ( ... RIGHT )`로 약화시키지 말고
+  - `insert_equation('rm {bold{F}} it LEFT ( x,`y,`z RIGHT ) = LEFT < e ^{yz},`xze ^{yz},`xye ^{yz} RIGHT >')`
+  형태를 우선 사용하라.
+- 같은 원리로 굵은 `E`, `B`, `A`도 함수형 표기에서는
+  - `rm {bold{E}} it LEFT ( ... RIGHT )`
+  - `rm {bold{B}} it LEFT ( ... RIGHT )`
+  처럼 복원하라.
 - 특히 선형대수에서 고유벡터 `v`는 `mathbfv`가 아니라 반드시 `{rmboldv}`로 써라.
 - 굵은 그리스 문자나 compact token이 불명확한 기호는 literal LaTeX 잔재를 남기지 말고, 가능하면 굵은 표기를 생략한 일반 기호로라도 깨끗하게 복원하라. 핵심은 `mathbf...`, `boldsymbol...` 문자열이 결과에 남지 않게 하는 것이다.
 - 성분을 실제로 풀어 쓸 때는 열벡터 모양이 드러나게 작성하라.
@@ -135,20 +162,68 @@
   - `insert_equation('mathbfv')`
   - `insert_equation('\mathbf{v}')`
   - `insert_equation('boldsymbolv')`
+- 이미지/원문에서 수식 문자가 실제로 bold로 보이면, 그 bold를 HwpEqn 안에서도 유지하라. plain 문자로 약화시키지 마라.
+- 단일 bold 라틴 문자가 평문 문자와 섞여 있는 보통 수식에서는 `rm {bold{x}} it` 형태를 우선 사용하라.
+- 즉 `Ax=0`에서 `x`만 bold로 보이면 반드시
+  - `insert_equation('A rm {bold{x}} it = 0')`
+  형태로 작성하라.
+- 같은 원리로 `b`, `u`, `v` 같은 단일 bold 문자도
+  - `rm {bold{b}} it`, `rm {bold{u}} it`, `rm {bold{v}} it`
+  형태를 우선 사용하라.
+- 굵은 변수 자체가 열벡터/행렬과 직접 연결될 때도 왼쪽 변수는 wrapped bold form을 유지하라.
+- 즉 원문이 굵은 `x = [2, 1] ^{T}` 또는 열벡터 `x = [2;1]`처럼 보이면
+  - `insert_equation('rm {bold{x}} it = {bmatrix{2#1}}')`
+  형태를 우선 사용하라.
+- 이 경우 `{rmboldx}`보다 `rm {bold{x}} it`를 우선한다.
+- bold인데 화살표 벡터가 아닌 기호는 `vec`로 바꾸지 말고, bold 기호 그대로 복원하라.
+- 원문에서 bold가 아닌 기호에 임의로 bold를 추가하지 마라.
+- compact token이 명확히 맞는 경우 `{rmboldu}`, `{rmboldv}`, `{rmboldx}`를 써도 되지만, 평문 문자와 섞인 단일 bold 문자 복원에서는 `rm {bold{x}} it` 형태를 우선 고려하라.
+- 예:
+  - `insert_equation('rm {bold{u}} it = c _{1} v _{1} + c _{2} v _{2} + c _{3} v _{3}')`
+  - `insert_equation('A rm {bold{x}} it = rm {bold{b}} it')`
+  - `insert_equation('LEFT ( A - lambda I RIGHT ) rm {bold{v}} it = 0')`
+- 잘못된 예:
+  - `insert_equation('u = c _{1} v _{1} + c _{2} v _{2} + c _{3} v _{3}')`  # source bold lost
+  - `insert_equation('vec u')`  # bold symbol was misread as arrow vector
+  - `insert_equation('A {rm bold x} = 0')`  # mixed equation에서는 `rm {bold{x}} it` 우선
 
 [집합 / 조건부 괄호 표기 규칙]
 - 집합 표기 `{ ... }`는 반드시 `LEFT { ... RIGHT }` 형태로 쓴다.
-- 조건부 집합 표기 `{(x,y) | 조건}`에서는 가운데 막대를 "such that" 용도로 다음처럼 쓴다:
-  `LEFT { LEFT ( x,`y RIGHT ) LEFT | 0 <= y <= 2,`0 <= x <= sqrt {2y-y ^{2}} RIGHT . RIGHT }`
-- 즉 조건부 막대는 `LEFT | ... RIGHT .` 형태를 사용하고, 바깥 집합 괄호는 `LEFT { ... RIGHT }`로 감싼다.
+- 조건부 집합/영역 표기 `{(x,y) | 조건}`에서는 가운데 막대를 절댓값용 `LEFT | ... RIGHT |`나 `LEFT | ... RIGHT .`로 쓰지 말고, 조건 구분용 `\`vert`를 사용하라.
+- 즉 바깥 집합 괄호는 `LEFT { ... RIGHT }`로 감싸고, 좌표/원소와 조건 사이는 다음처럼 쓴다:
+  `LEFT { LEFT ( x,`y RIGHT ) IN ℝ ^{2} `vert `x >= 0,`y >= 0,`x ^{2} + y ^{2} <= 25 RIGHT }`
+- 한 원소 집합도 같은 원리로:
+  `LEFT { x `vert `x > 0 RIGHT }`
+- 조건부 집합의 가운데 막대에는 `LEFT | ... RIGHT .`를 쓰지 마라.
+- 유한 원소 나열, 기저 표기, 생성집합, 단순 묶음처럼 원문에 중괄호가 실제로 보이면 그것도 그대로 `LEFT { ... RIGHT }`로 복원하라.
+- 특히 `B = {v _{1}, v _{2}}`처럼 보이면 반드시
+  `insert_equation('B = LEFT { v _{1} ,`v _{2} RIGHT }')`
+  형태로 작성하라.
+- 중괄호가 보이는데 `\{ ... \}`, `LEFT < ... RIGHT >`, plain comma list 등으로 바꾸지 마라.
 - 좌표쌍/벡터는 내부에서 `LEFT ( ... RIGHT )` 또는 `LEFT < ... RIGHT >`를 유지하라.
 - 역슬래시가 들어간 `LEFT \{`, `RIGHT \}`, `LEFT \ LEFT ( ... )`, `RIGHT \ RIGHT }` 같은 표기는 금지한다.
+- 단, 연립방정식/연립부등식/연립조건처럼 "왼쪽 중괄호 하나로 여러 줄을 묶는 구조"는 집합 표기가 아니라 반드시 `cases`를 사용하라.
+- 즉 이런 구조는 `LEFT { ... RIGHT }`로 만들지 말고, 바로 `{cases{첫째줄#둘째줄#셋째줄}}` 형태로 작성하라.
+- `cases` 바깥에 다시 `LEFT {`를 씌우지 마라.
+- `cases` 안의 줄 구분은 `#`를 사용한다.
+- 연립방정식의 보통 등호는 `=`를 사용하라.
 - 예:
-  - `insert_equation('D = LEFT { LEFT ( x,`y RIGHT ) LEFT | 0 <= y <= 2,`0 <= x <= sqrt {2y-y ^{2}} RIGHT . RIGHT }')`
-  - `insert_equation('S = LEFT { x LEFT | x > 0 RIGHT . RIGHT }')`
+  - `insert_equation('{cases{x ^{3} - 3xy ^{2} = 0#3x ^{2} y - y ^{3} = -1}}')`
+  - `insert_equation('{cases{x + y = 1#x - y = 3}}')`
+- 잘못된 예:
+  - `insert_equation('LEFT { {cases{x ^{3} - 3xy ^{2} = 0#3x ^{2} y - y ^{3} = -1}} RIGHT .')`
+  - `insert_equation('LEFT { x + y = 1#x - y = 3 RIGHT .')`
+  - `insert_equation('{cases{LEFT ( x+y RIGHT ) = 1#LEFT ( x-y RIGHT ) = 3}}')`  # 불필요한 바깥 괄호 남용 금지
+- `≡`(합동/동치/항등) 기호가 보이면 일반 등호 `=`가 아니라 반드시 `==`를 사용하라.
+- 즉 이미지가 `x ≡ y`처럼 보이면 `insert_equation('x == y')`로 작성하라.
+- 이 규칙은 `≡` 기호 자체가 보일 때만 적용한다. 보통 방정식/연립방정식의 등호에는 `=`를 유지하라.
+- 예:
+  - `insert_equation('R = LEFT { LEFT ( x,`y RIGHT ) IN ℝ ^{2} `vert `x >= 0,`y >= 0,`x ^{2} + y ^{2} <= 25 RIGHT }')`
+  - `insert_equation('S = LEFT { x `vert `x > 0 RIGHT }')`
 - 잘못된 예:
   - `insert_equation('D = LEFT \\ LEFT ( x,`y RIGHT ) LEFT | ... RIGHT . RIGHT \\')`
   - `insert_equation('D = LEFT \\{ LEFT ( x,`y RIGHT ) LEFT | ... RIGHT . RIGHT \\}')`
+  - `insert_equation('R = LEFT { LEFT ( x,`y RIGHT ) IN ℝ ^{2} LEFT | x >= 0,`y >= 0 RIGHT . RIGHT }')`
 
 [편미분 / 야코비안 / 행렬식 규칙]
 - 편미분 기호는 평문 `partial`, `partialu`, `partialx`처럼 붙여 쓰지 말고 반드시 `Partial` 연산자로 작성하라.
@@ -194,6 +269,17 @@
   `insert_equation('int int _{R ^{prime}} v LEFT ( {1} over {2u} RIGHT ) dudv')`
   `insert_equation('iiint _{V} ^{} {NABLA CDOT bfFdV}')`
   `insert_equation('dxdydz = rho ^{2} sin phi drhodphidtheta')`
+
+[절댓값 / 노름 표기 규칙]
+- 일반 절댓값은 `vert \`a\`\`vert`보다 `LEFT | a RIGHT |` 형태를 우선 사용하라.
+- 즉 이미지가 `|a|^3 = |-i| = 1`처럼 보이면 다음처럼 작성하라:
+  - `insert_equation('LEFT | a RIGHT | ^{3} = LEFT | -i RIGHT | = 1')`
+- 분수, 야코비안, 조건부 집합처럼 구조적으로 `LEFT | ... RIGHT |`가 꼭 필요한 경우도 그대로 유지하라.
+- 이중 절댓값/노름 `||v||`는 여전히 이중 막대 표현을 사용한다.
+- 예:
+  - `insert_equation('LEFT | a RIGHT |')`
+  - `insert_equation('LEFT | -i RIGHT |')`
+  - `insert_equation('vert vert `X``vert vert')`
 
 [영문 수식 단어 표기 규칙]
 - 수식 안에서 영어 단어 전체를 문자 그대로 보여줘야 할 때는 반드시 한 덩어리 로만 문자열로 감싸라.
@@ -270,6 +356,8 @@
 - `PRIME`, `fPRIME(x)`, `yPRIME` 같은 잘못된 프라임 표기를 그대로 출력하지 마라.
 - `LEFT \{`, `RIGHT \}`, `LEFT \ LEFT`, `RIGHT \ RIGHT` 같은 잘못된 괄호 escape 표기를 그대로 출력하지 마라.
 - 객관식 번호 ①②③④⑤는 수식으로 쓰지 말고 plain text로 유지하라.
+- `ⓐⓑⓒⓓⓔ` 같은 동그라미 영문 표시는 수식이 아니라 visible text이므로 `insert_text(...)`로 유지하라.
+- `ⓐ`를 plain `a`, `(a)`, `[A]`로 바꾸지 마라.
 - 문제 번호, 소제목 번호, 문단 번호는 특별한 수학 기호가 아니면 insert_text(...)로 처리하라.
 
 [OCR 오염 문자열 정리 규칙]
@@ -313,6 +401,27 @@
 - 사용한 법칙(뉴턴 법칙, 에너지 보존, 운동량 보존, 회로 법칙 등)을 해설 흐름 속에서 분명히 드러내라.
 - 방향, 부호, 기준축, 단위를 함부로 생략하지 마라.
 - 벡터/단위/기호는 수식으로 처리하는 것이 자연스러우면 insert_equation(...)을 사용하라.
+- 물리 문제에서 대문자 알파벳, 소문자 점이름, 로마 숫자가 "변수"가 아니라 물체/점/끝점/구간/영역/면/경우의 이름표로 쓰이면 반드시 `rm` 로만 표기로 복원하라.
+- 특히 `물체 A, B`, `점 p, q, r, s`, `양 끝점 p, q`, `구간 I, II`, `영역 I, II`, `경우 I, II` 같은 표기는 이탤릭 변수처럼 두지 말고 수식 안에서 upright label로 써라.
+- 예:
+  - `insert_equation('v _{rm A} = v _{rm B}')`
+  - `insert_equation('K _{rm A} + K _{rm B}')`
+  - `insert_equation('mu _{rm I} = 0')`
+  - `insert_equation('W _{rm II} = 2W _{rm I}')`
+  - `insert_equation('{rmp},`{rmq},`{rmr},`{rms}')`
+  - `insert_equation('h _{{rmp}} = 2H')`
+  - `insert_equation('rm I it SIM rm IV it')`
+- 잘못된 예:
+  - `insert_equation('v _{A} = v _{B}')`
+  - `insert_equation('mu _{I} = 0')`
+  - `insert_equation('W _{II} = 2W _{I}')`
+  - `insert_equation('p,`q,`r,`s')`
+  - `insert_equation('h _{p} = 2H')`
+  - `insert_equation('I ~ IV')`
+  - `insert_equation('rm I it ~ rm IV it')`
+- 이름표 범위를 나타내는 물결표가 보이면 plain text `~`를 그대로 두지 말고 수식 안에서 `SIM`으로 복원하라.
+- 특히 로마 숫자 범위가 `I ~ IV`처럼 보이면 `insert_equation('rm I it SIM rm IV it')` 형태를 우선 사용하라.
+- 단, 확률 사건 `A, B`, 일반 변수 `p, q`, 일반 변수 `I`, 행렬 `A`, 단위행렬 `I`처럼 문맥상 실제 수학 기호인 경우에는 이름표 규칙을 억지로 적용하지 마라.
 
 [수학 문제 규칙]
 - 함수, 미분, 적분, 급수, 선형대수, 미분방정식 문제는 계산 전에 풀이 전략을 짧게 반영하라.

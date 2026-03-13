@@ -46,7 +46,7 @@ const rows: Row[] = [
     {
         label: "월 비용 (하루 4h 기준)",
         assistant: "약 96만원",
-        nova: "19,900원",
+        nova: "29,900원",
         novaWin: true,
         assistantBad: true,
     },
@@ -59,7 +59,7 @@ const rows: Row[] = [
     {
         label: "수식 정확도",
         assistant: "숙련도에 따라 편차",
-        nova: "Gemini 3 Pro 추론 기반",
+        nova: "GPT 5.4 추론 기반",
         novaWin: true,
     },
     {
@@ -82,6 +82,7 @@ export default function CostComparison() {
             <div className="cc-inner">
                 {/* ── Header ── */}
                 <div className="cc-header">
+                    <div className="cc-badge">AI</div>
                     <h2 className="cc-title">조교를 고용하시겠습니까?</h2>
                     <p className="cc-subtitle">
                         조교 선생님이 수식을 직접 타이핑하면, 시급 12,000원 기준
@@ -99,7 +100,9 @@ export default function CostComparison() {
                             <span className="cc-col-title">조교 채용</span>
                         </div>
                         <div className="cc-col cc-col--nova">
-                            <span className="cc-col-title">Nova AI</span>
+                            <span className="cc-col-title gemini-title-gradient">
+                                Nova AI
+                            </span>
                         </div>
                     </div>
 
@@ -122,7 +125,7 @@ export default function CostComparison() {
                 </div>
 
                 <p className="cc-bottom-text">
-                    같은 업무량 기준, Nova AI는 조교 채용 대비 <strong>약 48배 저렴</strong>하며
+                    같은 업무량 기준, Nova AI는 조교 채용 대비 <strong>약 32배 저렴</strong>하며
                     <br />
                     <strong>오탈자 걱정이 전혀 없습니다.</strong>
                 </p>

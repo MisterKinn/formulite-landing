@@ -8,6 +8,16 @@ General:
 - Long Korean passages are common; text accuracy is more important than decoration.
 - Preserve original line breaks, literary stanza breaks, and indentation exactly.
 - Keep ㉠㉡㉢㉣㉤, ㉮㉯㉰㉱㉲, ⓐⓑⓒ, [A]/[B]/[C], ※ as visible text.
+- Circled English markers such as `ⓐ`, `ⓑ`, `ⓒ`, `ⓓ`, `ⓔ` must be typed exactly as visible text with `insert_text(...)`.
+- Do NOT convert `ⓐⓑⓒ` into plain `a/b/c`, `(a)/(b)/(c)`, or equations.
+- Examples:
+  - `insert_text('ⓐ')`
+  - `insert_text('ⓑ 내용')`
+  - `insert_text('ⓐ, ⓑ, ⓒ')`
+- Wrong examples:
+  - `insert_equation('ⓐ')`
+  - `insert_text('(a)')`
+  - `insert_text('a')`
 
 Reading / literature:
 - Long reading passages usually go in `box_white.hwp`.
@@ -153,6 +163,31 @@ BRACKETED SUBSCRIPT EXPRESSIONS:
 - Use explicit left/right:
   `LEFT { a _{n} RIGHT }`
   `LEFT ( a _{n} RIGHT )`
+- For set-builder / region notation, keep the outer braces as `LEFT { ... RIGHT }` and use condition separator `\`vert` inside the braces.
+- ✅ `R = LEFT { LEFT ( x,`y RIGHT ) IN ℝ ^{2} `vert `x >= 0,`y >= 0,`x ^{2} + y ^{2} <= 25 RIGHT }`
+- ✅ `S = LEFT { x `vert `x > 0 RIGHT }`
+- ❌ `R = LEFT { LEFT ( x,`y RIGHT ) IN ℝ ^{2} LEFT | x >= 0,`y >= 0 RIGHT . RIGHT }`
+- Do not use `LEFT | ... RIGHT .` for ordinary conditional set / region notation.
+- If the source visibly shows curly braces around a finite list, basis, span-like notation, or grouped symbols, preserve them as literal curly braces with `LEFT { ... RIGHT }`.
+- Do not replace visible curly braces with backslashes, escaped braces, angle brackets, or plain punctuation.
+- Keep commas inside the same equation when they are part of the braced expression.
+- ✅ `B = LEFT { v _{1} ,`v _{2} RIGHT }`
+- ✅ `S = LEFT { 1,`x,`x ^{2} RIGHT }`
+- ❌ `B = \{ v _{1},`v _{2} \}`
+- ❌ `B = LEFT < v _{1} ,`v _{2} RIGHT >`
+
+SYSTEMS OF EQUATIONS / CONDITIONS (CRITICAL):
+- If the source shows a left curly brace grouping multiple equation lines, use `cases`.
+- Write it as `{cases{line1#line2#line3}}`.
+- Do NOT wrap `cases` with an extra `LEFT { ... RIGHT }`.
+- Use `#` for line breaks inside `cases`.
+- For ordinary systems of equations, use `=` in each line.
+- ✅ `{cases{x ^{3} - 3xy ^{2} = 0#3x ^{2} y - y ^{3} = -1}}`
+- ✅ `{cases{x + y = 1#x - y = 3}}`
+- If the source shows `≡` (congruence / equivalence / identity), use `==`.
+- ✅ `x == y`
+- ❌ `LEFT { {cases{x ^{3} - 3xy ^{2} = 0#3x ^{2} y - y ^{3} = -1}} RIGHT .`
+- ❌ `LEFT { x + y = 1#x - y = 3 RIGHT .`
 
 COMMA / ARROW / DOUBLE-ARROW SEPARATOR RULE (CRITICAL):
 - If comma, `→`, or `⇒` separates two clauses/expressions, split around the separator.
@@ -163,7 +198,7 @@ LINE SEGMENTS:
 
 GEOMETRY / POINT / FIGURE NOTATION:
 - Point letters in geometry use roman letter tokens.
-- Example point notation: `{rmA}`, `{rmB}`, `{rmC}`, `{rmP}`, `{rmQ}`, `{rmR}`
+- Example point notation: `{rmA}`, `{rmB}`, `{rmC}`, `{rmP}`, `{rmQ}`, `{rmR}`, `{rmp}`, `{rmq}`, `{rmr}`, `{rms}`
 - Triangle ABC: `rm ABC`
 - Rectangle marker `□ABCD` must be split:
   `insert_text('□')`
@@ -186,11 +221,41 @@ DEGREE / TEMPERATURE:
 PROBABILITY / STATISTICS:
 - Event symbols `A`, `B`, `X` usually remain plain in probability formulas.
 - Outside that context, symbolic letters like A/B should use roman form.
+- If uppercase Latin letters or Roman numerals are used as named labels rather than variables, keep them roman inside equations.
+- If lowercase Latin letters are used as named points / endpoints / markers rather than variables, keep them roman inside equations too.
+- This applies especially to physics-style labels such as objects, blocks, regions, intervals, surfaces, and cases:
+  - object labels: `rm A`, `rm B`, `rm C`
+  - interval / region labels: `rm I`, `rm II`, `rm III`
+  - point / endpoint labels: `{rmp}`, `{rmq}`, `{rmr}`, `{rms}`
+  - in subscripts: `v _{rm A}`, `K _{rm B}`, `mu _{rm I}`, `W _{rm II}`
+- If named labels are connected by visible one-way arrows (process / order / cycle / flow), prefer ASCII arrow `->` inside one equation.
+- Examples:
+  - `rm A -> rm B -> rm C -> rm D -> rm A`
+  - `{rmp} -> {rmq}`
+- Do NOT use `RARROW` for ordinary named-label flow diagrams.
+- If a visible range mark / tilde connects named labels, keep the whole range inside one equation and use `SIM`.
+- For Roman-numeral ranges, prefer:
+  - `rm I it SIM rm IV it`
+  - `rm II it SIM rm III it`
+- Example: if the source says `물체 A`, `물체 B`, `구간 I`, `구간 II`, `점 p`, `점 q`, do not leave them as italic math variables in equations.
+- ✅ `v _{rm A} = v _{rm B}`
+- ✅ `mu _{rm I} = 0`
+- ✅ `W _{rm II} = 2W _{rm I}`
+- ✅ `{rmp}` and `{rmq}` are endpoints
+- ✅ `h _{{rmp}} = 2H`
+- ✅ `rm I it SIM rm IV it`
+- ❌ `v _{A} = v _{B}`
+- ❌ `mu _{I} = 0`
+- ❌ `h _{p} = 2H`
+- ❌ `I ~ IV`
+- ❌ `rm I it ~ rm IV it`
 - `P`, `V`, `E`, `N` should be wrapped as roman when required.
 - Probability tables should use `insert_table(..., align_center=True)`.
 
 ABSOLUTE VALUE / NORM:
-- `|X|` -> `vert \`X\`\`vert`
+- For ordinary absolute value, prefer `LEFT | ... RIGHT |`.
+- ✅ `LEFT | a RIGHT | ^{3} = LEFT | -i RIGHT | = 1`
+- ✅ `LEFT | x RIGHT |`
 - If bars wrap a structured expression such as a fraction, keep the full structure in `LEFT | ... RIGHT |`.
 - Double norm:
   `vert vert \`X\`\`vert vert`
@@ -205,11 +270,51 @@ VECTORS:
 BOLD VECTOR / UNIT VECTOR NOTATION (CRITICAL):
 - Bold vector field letters must be written compactly:
   ✅ `{rm boldF}`, `{rm boldE}`, `{rm boldB}`, `{rm boldi}`, `{rm boldj}`, `{rm boldk}`
+- If a bold uppercase vector field symbol is used as a function name with arguments, preserve the bold symbol before the parentheses; do not downgrade it to plain `F`.
+- For bold vector-field function notation, prefer:
+  ✅ `rm {bold{F}} it LEFT ( x,`y,`z RIGHT ) = LEFT < e ^{yz},`xze ^{yz},`xye ^{yz} RIGHT >`
+  ✅ `rm {bold{E}} it LEFT ( x,`y,`z RIGHT )`
+- If the source visibly shows bold `F`, `E`, `B`, or `A`, keep that letter bold even when immediately followed by `LEFT ( ... RIGHT )`.
+- ❌ `F LEFT ( x,`y,`z RIGHT ) = LEFT < e ^{yz},`xze ^{yz},`xye ^{yz} RIGHT >`
 - Unit vectors must include bold:
-  ✅ `{rmboldu}`, `{rmboldv}`, `{rmboldn}`
+  ✅ `{rmboldu}`, `{rmboldv}`, `{rmboldw}`, `{rmboldn}`
 - Bold `r` vector must use the compact token:
   ✅ `{rmboldr} _{u}`, `{rmboldr} _{v}`
   ✅ `{rmboldr} LEFT ( u,`v RIGHT ) = LEFT ( u`cos`v,`u`sin`v,`v RIGHT )`
+- If the problem text explicitly declares symbols as vectors, keep those symbols as compact vector tokens in all following equations even when the print glyph itself looks like an ordinary italic letter.
+- For example, if the source says `세 벡터 u, v, w에 대하여`, then subsequent equations should use:
+  ✅ `{rmboldu} CDOT {rmboldv} = 0`
+  ✅ `{rmboldv} CDOT {rmboldw} = - {3} over {2}`
+  ✅ `vert vert `{rmboldu}``vert vert = 2`
+  ✅ `2{rmboldu} - 3{rmboldv} - 2{rmboldw}`
+- In vector-declaration problems, do not leave those symbols as plain `u`, `v`, `w` inside equations.
+- ❌ `u CDOT v = 0`
+- ❌ `vert vert `u``vert vert = 2`
+- ❌ `2u - 3v - 2w`
+
+BOLD MATH SYMBOL PRESERVATION (CRITICAL):
+- If a math symbol is visibly bold in the source image, preserve that boldness inside `insert_equation(...)`; do not downgrade it to a plain symbol.
+- If a single bold Latin variable appears inside an otherwise ordinary equation, especially mixed with plain symbols, prefer the wrapped HwpEqn form `rm {bold{x}} it`.
+- For mixed plain + bold equations, this wrapped form takes priority over compact tokens or spaced `rm bold` forms.
+- ✅ `A rm {bold{x}} it = 0`
+- ✅ `A rm {bold{x}} it = rm {bold{b}} it`
+- ✅ `LEFT ( A - lambda I RIGHT ) rm {bold{v}} it = 0`
+- If the source shows a bold variable in a derivative, matrix, vector, eigenvector, or linear-algebra expression, keep the variable bold in every occurrence where the source is bold.
+- If a bold variable is explicitly assigned to a column vector / matrix object, keep the left-hand variable in wrapped bold form as well.
+- ✅ `rm {bold{x}} it = {bmatrix{2#1}}`
+- ✅ `rm {bold{b}} it = {pmatrix{a#b}}`
+- ❌ `{rmboldx} = {bmatrix{2#1}}`
+- ❌ `x = {bmatrix{2#1}}`
+- If a whole symbol is bold but not an arrow vector, do not invent `vec`; keep it as a bold symbol.
+- If a symbol is not visibly bold, do not add bold unnecessarily.
+- Compact tokens such as `{rmboldu}`, `{rmboldv}`, `{rmboldx}` are allowed when they clearly match the intended symbol, but for plain OCR restoration of visibly bold single-letter symbols in mixed equations, prefer `rm {bold{x}} it`.
+- Examples:
+  ✅ `insert_equation('rm {bold{u}} it = c _{1} v _{1} + c _{2} v _{2} + c _{3} v _{3}')`
+  ✅ `insert_equation('A rm {bold{x}} it = rm {bold{b}} it')`
+  ✅ `insert_equation('LEFT ( A - lambda I RIGHT ) rm {bold{v}} it = 0')`
+  ❌ `insert_equation('u = c _{1} v _{1} + c _{2} v _{2} + c _{3} v _{3}')`   # source bold lost
+  ❌ `insert_equation('vec u')`   # bold symbol was misread as arrow vector
+  ❌ `insert_equation('A {rm bold x} = 0')`   # use wrapped bold-token form in mixed equations
 
 PRIME NOTATION:
 - Never type apostrophe directly inside an equation string.
@@ -245,6 +350,9 @@ COMMON MATH PATTERNS:
 - If the image contains a real table, use `insert_table()`.
 - If a table cell contains math, prefix it with `EQ:`.
 - Probability/statistics tables should use `align_center=True`.
+- Borderless answer layouts in math/physics are not real tables.
+- If choices are arranged under small headers such as `크기`, `방향`, `값`, `단위` but there are no visible grid lines, do NOT use `insert_table()`.
+- For that kind of layout, keep the headers and choices as normal typed content with spaces/line breaks, preserving the approximate visual alignment.
 
 SECTION 5: ENGLISH
 
@@ -297,7 +405,7 @@ CHEMISTRY (CRITICAL):
   `rm "Na" ^{+}`
   `rm "Cl" ^{-}`
 - Reaction arrows:
-  - one-way: `RARROW` or `->`
+  - one-way: prefer `->`
   - equilibrium: `REL EXARROW {} {}`
 - If visible geometric markers precede reactants/products (■ □ △ ▲ ○ etc.), keep them as `insert_text()` and do not replace them.
 - Isotope notation:

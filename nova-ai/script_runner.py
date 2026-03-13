@@ -82,6 +82,15 @@ class ScriptRunner:
             "pi",
         )
         if not any(marker in s for marker in strong_markers):
+            if not re.search(r"[가-힣]", s):
+                plain_math_like = (
+                    re.search(r"\b[A-Z]\s*=\s*\{.+,.+\}", s)
+                    or re.search(r"\b[A-Z]\s*[A-Za-z](?:\s*_\{?\d+\}?)?\s*=\s*(?:0|[A-Za-z]|\{)", s)
+                    or re.search(r"\b[A-Z][A-Za-z](?:\s*_\{?\d+\}?)?\s*=\s*(?:0|[A-Za-z]|\{)", s)
+                    or re.search(r"RIGHT\s*\)\s*[A-Za-z](?:\s*_\{?\d+\}?)?\s*=\s*0", s)
+                )
+                if plain_math_like:
+                    return True
             return False
         return bool(
             re.search(
@@ -359,6 +368,228 @@ class ScriptRunner:
         pattern = re.compile(r"(insert_(?:equation|latex_equation)\()(['\"])(.*?)(\2\))", re.DOTALL)
 
         def repl(m: re.Match) -> str:
+            return f"{m.group(1)}{m.group(2)}{_fix(m.group(3))}{m.group(4)}"
+
+        return pattern.sub(repl, script)
+
+    def _normalize_named_label_ranges_in_equations(self, script: str) -> str:
+        """
+        Normalize visible range tildes between named labels inside equations.
+
+        Examples:
+        - rm I it ~ rm IV it -> rm I it SIM rm IV it
+        - rm II ~ rm III     -> rm II it SIM rm III it
+        """
+
+        def _fix(s: str) -> str:
+            range_mark = r"[~∼〜～]"
+            s = re.sub(
+                rf"\brm\s+([IVXLCDM]+)(?:\s+it)?\s*{range_mark}\s*rm\s+([IVXLCDM]+)(?:\s+it)?\b",
+                r"rm \1 it SIM rm \2 it",
+                s,
+                flags=re.IGNORECASE,
+            )
+            return s
+
+        pattern = re.compile(r"(insert_(?:equation|latex_equation)\()(['\"])(.*?)(\2\))", re.DOTALL)
+
+        def repl(m: re.Match) -> str:
+            return f"{m.group(1)}{m.group(2)}{_fix(m.group(3))}{m.group(4)}"
+
+        return pattern.sub(repl, script)
+
+    def _normalize_named_label_arrows_in_equations(self, script: str) -> str:
+        """
+        Normalize one-way arrows between named labels inside equations.
+
+        Examples:
+        - rm A RARROW rm B -> rm A -> rm B
+        - {rmp} RARROW {rmq} -> {rmp} -> {rmq}
+        """
+
+        def _fix(s: str) -> str:
+            label = r"(?:rm\s+(?:[A-Z]+|[IVXLCDM]+)(?:\s+it)?|\{rm[a-zA-Z]+\})"
+            arrow = r"(?:RARROW|rarrow|→)"
+            return re.sub(
+                rf"({label})\s*{arrow}\s*({label})",
+                r"\1 -> \2",
+                s,
+            )
+
+        pattern = re.compile(r"(insert_(?:equation|latex_equation)\()(['\"])(.*?)(\2\))", re.DOTALL)
+
+        def repl(m: re.Match) -> str:
+            return f"{m.group(1)}{m.group(2)}{_fix(m.group(3))}{m.group(4)}"
+
+        return pattern.sub(repl, script)
+
+    def _normalize_linear_algebra_bold_in_equations(self, script: str) -> str:
+        """
+        Normalize common linear-algebra bold notation inside insert_equation strings.
+        Examples:
+        - Ax = 0 -> A rm {bold{x}} it = 0
+        - A {rmboldx} = {rmboldb} -> A rm {bold{x}} it = rm {bold{b}} it
+        """
+
+        def _wrapped(letter: str) -> str:
+            return f"rm {{bold{{{letter.lower()}}}}} it"
+
+        def _wrapped_symbol(letter: str) -> str:
+            return f"rm {{bold{{{letter}}}}} it"
+
+        def _normalize_braced_basis(s: str) -> str:
+            basis_re = re.compile(r"\b([A-Z])\s*=\s*\{(.+,.+)\}")
+
+            def _basis_repl(m: re.Match[str]) -> str:
+                inner = re.sub(r"\s*,\s*", " ,`", m.group(2).strip())
+                return f"{m.group(1)} = LEFT {{ {inner} RIGHT }}"
+
+            return basis_re.sub(_basis_repl, s)
+
+        def _fix(s: str) -> str:
+            letters = "buvwnxyz"
+            for letter in letters:
+                wrapped = _wrapped(letter)
+                s = re.sub(
+                    rf"\brm\s*\{{\s*bold\s*\{{\s*{letter}\s*\}}\s*\}}(?!\s*it\b)",
+                    wrapped,
+                    s,
+                    flags=re.IGNORECASE,
+                )
+                s = re.sub(
+                    rf"\{{\s*rm\s+bold\s*{letter}\s*\}}",
+                    wrapped,
+                    s,
+                    flags=re.IGNORECASE,
+                )
+                s = re.sub(
+                    rf"\brm\s+bold\s*{letter}\b",
+                    wrapped,
+                    s,
+                    flags=re.IGNORECASE,
+                )
+                s = re.sub(
+                    rf"\{{\s*rmbold{letter}\s*\}}",
+                    wrapped,
+                    s,
+                    flags=re.IGNORECASE,
+                )
+                s = re.sub(
+                    rf"\brmbold{letter}\b",
+                    wrapped,
+                    s,
+                    flags=re.IGNORECASE,
+                )
+
+            # If a vector variable is assigned to a matrix/column-vector object,
+            # prefer wrapped bold lhs form (e.g. x = [2;1]).
+            s = re.sub(
+                r"(?<![A-Za-z])([buvwnxyz])(?=\s*=\s*\{(?:bmatrix|pmatrix|matrix|dmatrix)\{)",
+                lambda m: _wrapped(m.group(1)),
+                s,
+            )
+
+            s = _normalize_braced_basis(s)
+
+            s = re.sub(
+                r"\b([FEBA])(?=\s*LEFT\s*\(.*?=\s*LEFT\s*<)",
+                lambda m: _wrapped_symbol(m.group(1)),
+                s,
+                flags=re.DOTALL,
+            )
+
+            def _matrix_vec_repl(m: re.Match[str]) -> str:
+                return f"{m.group(1)} {_wrapped(m.group(2))}"
+
+            s = re.sub(
+                r"\b([A-Z])\s*([buvwnxyz])(?=\s*=)",
+                _matrix_vec_repl,
+                s,
+            )
+            s = re.sub(
+                r"\b([A-Z])([buvwnxyz])(?=\s*=)",
+                _matrix_vec_repl,
+                s,
+            )
+            s = re.sub(
+                r"(RIGHT\s*\)|\))\s*([buvwnxyz])(?=\s*=)",
+                lambda m: f"{m.group(1)} {_wrapped(m.group(2))}",
+                s,
+            )
+            if re.search(r"\b[A-Z]\s+rm\s*\{\s*bold\{[buvwnxyz]\}\s*\}\s*it", s):
+                s = re.sub(
+                    r"(=\s*)([buvwnxyz])(?=\s*$)",
+                    lambda m: f"{m.group(1)}{_wrapped(m.group(2))}",
+                    s,
+                )
+            return s
+
+        pattern = re.compile(r"(insert_(?:equation|latex_equation)\()(['\"])(.*?)(\2\))", re.DOTALL)
+
+        def repl(m: re.Match[str]) -> str:
+            return f"{m.group(1)}{m.group(2)}{_fix(m.group(3))}{m.group(4)}"
+
+        return pattern.sub(repl, script)
+
+    def _normalize_declared_vector_tokens_in_equations(self, script: str) -> str:
+        """
+        If the problem text declares symbols as vectors (e.g. "세 벡터 u, v, w"),
+        normalize those symbols to compact HwpEqn vector tokens inside equations.
+        """
+
+        vector_hint = bool(re.search(r"벡터|내적", script))
+        if not vector_hint:
+            return script
+
+        vector_token_map = {
+            "u": "{rmboldu}",
+            "v": "{rmboldv}",
+            "w": "{rmboldw}",
+            "n": "{rmboldn}",
+            "r": "{rmboldr}",
+        }
+
+        def _replace_standalone_symbol(s: str, symbol: str, replacement: str) -> str:
+            return re.sub(
+                rf"(?<![A-Za-z]){symbol}(?![A-Za-z])",
+                replacement,
+                s,
+            )
+
+        def _fix(s: str) -> str:
+            has_vector_markers = bool(
+                re.search(r"CDOT|vert\s+vert|LEFT\s*<|RIGHT\s*>|TIMES", s)
+            )
+            symbol_hits = {
+                symbol
+                for symbol in vector_token_map
+                if re.search(rf"(?<![A-Za-z]){symbol}(?![A-Za-z])", s)
+            }
+            if not symbol_hits:
+                return s
+
+            # When vector semantics are obvious in the equation, or the whole
+            # script is a vector problem, prefer compact vector tokens.
+            if has_vector_markers or vector_hint:
+                for symbol, replacement in vector_token_map.items():
+                    s = re.sub(
+                        rf"rm\s*\{{\s*bold\s*\{{\s*{symbol}\s*\}}\s*\}}\s*it",
+                        replacement,
+                        s,
+                        flags=re.IGNORECASE,
+                    )
+                    s = re.sub(
+                        rf"\{{\s*rmbold{symbol}\s*\}}",
+                        replacement,
+                        s,
+                        flags=re.IGNORECASE,
+                    )
+                    s = _replace_standalone_symbol(s, symbol, replacement)
+            return s
+
+        pattern = re.compile(r"(insert_(?:equation|latex_equation)\()(['\"])(.*?)(\2\))", re.DOTALL)
+
+        def repl(m: re.Match[str]) -> str:
             return f"{m.group(1)}{m.group(2)}{_fix(m.group(3))}{m.group(4)}"
 
         return pattern.sub(repl, script)
@@ -1106,12 +1337,17 @@ class ScriptRunner:
 
     def _normalize_choice_leading_space(self, lines: List[str]) -> List[str]:
         """
-        Ensure choices start with insert_text('①') (no leading space).
+        Normalize choice prefixes:
+        - remove leading space before ①
+        - replace OCR separators like /, \\, | after ①②③④⑤ with one plain space
         """
         out: List[str] = []
         # Match insert_text(' ①') or insert_text(" ①")
         leading_choice_re = re.compile(
             r"^(?P<prefix>\s*insert_text\(\s*['\"])\s+①(?P<suffix>['\"]\s*\)\s*)$"
+        )
+        choice_sep_re = re.compile(
+            r"^(?P<indent>\s*insert_(?:text|equation)\(\s*['\"])(?P<body>.*?)(?P<suffix>['\"]\s*\)\s*)$"
         )
         for line in lines:
             stripped = line.strip()
@@ -1119,8 +1355,109 @@ class ScriptRunner:
             if m:
                 out.append(f"{m.group('prefix')}①{m.group('suffix')}")
                 continue
+            m2 = choice_sep_re.match(line)
+            if m2:
+                body = m2.group("body")
+                normalized_body = re.sub(
+                    r"([①②③④⑤])\s*[\\/|]+\s*",
+                    r"\1 ",
+                    body,
+                )
+                if normalized_body != body:
+                    out.append(f"{m2.group('indent')}{normalized_body}{m2.group('suffix')}")
+                    continue
             out.append(line)
         return out
+
+    def _demote_circled_english_markers_from_equations(self, lines: List[str]) -> List[str]:
+        """
+        Circled English markers like ⓐⓑⓒ are visible text, not equations.
+        If the model emits them via insert_equation(...), convert them back to
+        insert_text(...) unless the payload clearly contains real math syntax.
+        """
+        out: List[str] = []
+        eq_re = re.compile(
+            r"^(?P<indent>\s*)insert_equation\(\s*(?P<quote>['\"])(?P<body>.*?)(?P=quote)\s*\)\s*$"
+        )
+        circled_re = re.compile(r"[ⓐⓑⓒⓓⓔ]")
+        math_marker_re = re.compile(
+            r"(=|LEFT|RIGHT|over|sqrt|\^\{|_\{|CDOT|TIMES|matrix|pmatrix|bmatrix|dmatrix|[0-9][+\-*/])"
+        )
+        for line in lines:
+            m = eq_re.match(line)
+            if not m:
+                out.append(line)
+                continue
+            body = m.group("body")
+            if not circled_re.search(body):
+                out.append(line)
+                continue
+            if math_marker_re.search(body):
+                out.append(line)
+                continue
+            out.append(f"{m.group('indent')}insert_text({m.group('quote')}{body}{m.group('quote')})")
+        return out
+
+    def _relocate_late_image_block_before_question(self, lines: List[str]) -> List[str]:
+        """
+        Preserve visual reading order for common exam layouts:
+        stem text -> figure/image block -> question sentence -> choices.
+
+        If a standalone image block was generated after the question/choices,
+        move it back before the trailing question sentence.
+        """
+        structural_markers = (
+            "insert_template(",
+            "focus_placeholder(",
+            "insert_box()",
+            "insert_view_box()",
+            "exit_box()",
+        )
+        if any(any(marker in line.strip() for marker in structural_markers) for line in lines):
+            return lines
+
+        image_re = re.compile(r"^\s*insert_(?:cropped_image|generated_image)\(")
+        content_re = re.compile(r"^\s*insert_(?:text|equation)\(")
+        choice_re = re.compile(r"^\s*insert_(?:text|equation)\(\s*['\"].*①")
+        question_re = re.compile(
+            r"(이에\s*대한|제시한\s*내용|옳은\s*학생|옳은\s*것|옳지\s*않은|알맞은\s*것|"
+            r"고른\s*것은|있는\s*대로|물음에\s*답|고르시오|\?\s*$)"
+        )
+
+        image_idxs = [i for i, line in enumerate(lines) if image_re.match(line.strip())]
+        if len(image_idxs) != 1:
+            return lines
+        img_idx = image_idxs[0]
+
+        question_idx = -1
+        choice_idx = -1
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if choice_idx < 0 and choice_re.match(stripped):
+                choice_idx = i
+            if question_idx < 0 and content_re.match(stripped):
+                text_match = re.search(r"['\"](.+?)['\"]", stripped)
+                if text_match and question_re.search(text_match.group(1)):
+                    question_idx = i
+        if question_idx < 0 or choice_idx < 0:
+            return lines
+        if not (question_idx < choice_idx < img_idx):
+            return lines
+
+        # Move only a standalone image block, including nearby blank/paragraph lines.
+        start = img_idx
+        while start > 0 and lines[start - 1].strip() in ("", "insert_enter()", "insert_paragraph()"):
+            start -= 1
+        end = img_idx + 1
+        while end < len(lines) and (
+            image_re.match(lines[end].strip())
+            or lines[end].strip() in ("", "insert_enter()", "insert_paragraph()")
+        ):
+            end += 1
+
+        block = lines[start:end]
+        remaining = lines[:start] + lines[end:]
+        return remaining[:question_idx] + block + remaining[question_idx:]
 
     def _drop_unused_choices_placeholder(self, lines: List[str]) -> List[str]:
         """
@@ -1468,11 +1805,28 @@ class ScriptRunner:
         cleaned = self._sanitize_unterminated_equation_strings(cleaned)
         # Normalize prime notation inside equation strings
         cleaned = self._normalize_primes_in_equations(cleaned)
+        # Normalize named-label ranges such as rm I it SIM rm IV it
+        cleaned = self._normalize_named_label_ranges_in_equations(cleaned)
+        # Normalize named-label flow arrows to ASCII one-way arrows
+        cleaned = self._normalize_named_label_arrows_in_equations(cleaned)
+        # Normalize common linear-algebra bold / brace notation
+        cleaned = self._normalize_linear_algebra_bold_in_equations(cleaned)
+        # Normalize semantically declared vectors to compact vector tokens
+        cleaned = self._normalize_declared_vector_tokens_in_equations(cleaned)
         expanded_lines: List[str] = []
         for line in self._repair_multiline_calls(cleaned.split("\n")):
             for sub_line in self._split_concat_calls(line):
                 expanded_lines.append(sub_line)
         expanded_lines = self._promote_math_insert_text_calls(expanded_lines)
+        expanded_lines = self._normalize_linear_algebra_bold_in_equations(
+            "\n".join(expanded_lines)
+        ).split("\n")
+        expanded_lines = self._normalize_named_label_arrows_in_equations(
+            "\n".join(expanded_lines)
+        ).split("\n")
+        expanded_lines = self._normalize_declared_vector_tokens_in_equations(
+            "\n".join(expanded_lines)
+        ).split("\n")
         expanded_lines = self._rewrite_header_template_flow(expanded_lines)
         expanded_lines = self._normalize_placeholders(expanded_lines)
         expanded_lines = self._normalize_box_paragraphs(expanded_lines)
@@ -1480,6 +1834,8 @@ class ScriptRunner:
         expanded_lines = self._ensure_exit_after_plain_box(expanded_lines)
         expanded_lines = self._drop_enter_after_exit_box(expanded_lines)
         expanded_lines = self._normalize_choice_leading_space(expanded_lines)
+        expanded_lines = self._demote_circled_english_markers_from_equations(expanded_lines)
+        expanded_lines = self._relocate_late_image_block_before_question(expanded_lines)
         expanded_lines = self._drop_unused_choices_placeholder(expanded_lines)
         expanded_lines = self._ensure_score_right_align(expanded_lines)
         expanded_lines = self._sanitize_tabs(expanded_lines)

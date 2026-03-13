@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import time
 from pathlib import Path
 from typing import Optional, Dict, Any, Tuple
@@ -41,11 +42,16 @@ from backend.oauth_desktop import (
 def _load_env_vars() -> None:
     """Load env vars from .env and .env.local files if present."""
     root_dir = Path(__file__).resolve().parent.parent
-    env_path = root_dir / ".env"
-    env_local_path = root_dir / ".env.local"
+    runtime_root = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else root_dir
+    env_candidates = [
+        (runtime_root / ".env", False),
+        (root_dir / ".env", False),
+        (runtime_root / ".env.local", True),
+        (root_dir / ".env.local", True),
+    ]
 
     # Load .env first, then .env.local so local values override.
-    for path, override in ((env_path, False), (env_local_path, True)):
+    for path, override in env_candidates:
         if not path.exists():
             continue
 

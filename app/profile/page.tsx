@@ -1,7 +1,6 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
 import { getAuth, deleteUser } from "firebase/auth";
 import { getFirebaseAppOrNull } from "../../firebaseConfig";
 import { getFirestore, doc, deleteDoc, getDoc } from "firebase/firestore";
@@ -13,7 +12,6 @@ import "../mobile.css";
 
 import { Navbar } from "../../components/Navbar";
 import Footer from "../../components/Footer";
-import Pricing from "../../components/Pricing";
 import dynamic from "next/dynamic";
 const Sidebar = dynamic(() => import("../../components/Sidebar"), {
     ssr: false,
@@ -263,9 +261,9 @@ function ProfileContent() {
     const [email, setEmail] = useState("");
     const [status, setStatus] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const [activeTab, setActiveTab] = useState<
-        "profile" | "subscription" | "payment"
-    >("profile");
+    const [activeTab, setActiveTab] = useState<"profile" | "payment">(
+        "profile",
+    );
     const billingCycle: "yearly" = "yearly";
     const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
     const [deleting, setDeleting] = useState<boolean>(false);
@@ -441,22 +439,14 @@ function ProfileContent() {
     useEffect(() => {
         // First, check URL query parameter
         const tabParam = searchParams?.get("tab");
-        if (
-            tabParam === "subscription" ||
-            tabParam === "payment" ||
-            tabParam === "profile"
-        ) {
+        if (tabParam === "payment" || tabParam === "profile") {
             setActiveTab(tabParam);
             return;
         }
 
         // Then, check sessionStorage
         const savedTab = sessionStorage.getItem("profileTab");
-        if (
-            savedTab === "subscription" ||
-            savedTab === "payment" ||
-            savedTab === "profile"
-        ) {
+        if (savedTab === "payment" || savedTab === "profile") {
             setActiveTab(savedTab);
             sessionStorage.removeItem("profileTab");
         }
@@ -645,6 +635,73 @@ function ProfileContent() {
                   limit: fallbackLimitByPlan(fallbackPlanId),
                   plan: fallbackPlanId,
               });
+    const profileDisplayName =
+        authUser?.displayName?.trim() || email.split("@")[0] || "사용자";
+    const profileInitial = profileDisplayName.charAt(0).toUpperCase();
+    const remainingQuestions = questionUsage
+        ? Math.max(0, questionUsage.limit - questionUsage.currentUsage)
+        : null;
+    const usageProgress = questionUsage
+        ? Math.min(
+              Math.round(
+                  (questionUsage.currentUsage / Math.max(1, questionUsage.limit)) *
+                      100,
+              ),
+              100,
+          )
+        : 0;
+    const billingStartDate =
+        subscription?.billingStartDate || subscription?.startDate || null;
+    const completedPayments = paymentHistory.filter((payment) => {
+        const paymentStatus = String(payment?.status || "").toUpperCase();
+        return paymentStatus === "DONE";
+    });
+    const totalPaidAmount = completedPayments.reduce(
+        (sum, payment) => sum + Number(payment?.amount || 0),
+        0,
+    );
+    const subscriptionStatus = String(
+        subscription?.status || (effectivePlanId === "free" ? "free" : "active"),
+    ).toLowerCase();
+    const subscriptionStatusLabel =
+        subscriptionStatus === "cancelled"
+            ? "해지 예정"
+            : subscriptionStatus === "suspended"
+              ? "일시정지"
+              : effectivePlanId === "free"
+                ? "무료 이용 중"
+                : "이용 중";
+    const subscriptionStatusTone =
+        subscriptionStatus === "cancelled"
+            ? "cancelled"
+            : subscriptionStatus === "suspended"
+              ? "suspended"
+              : effectivePlanId === "free"
+                ? "free"
+                : "active";
+    const formatDateLabel = (
+        value?: string | Date | null,
+        includeTime = false,
+    ) => {
+        if (!value) return "-";
+        const parsed = value instanceof Date ? value : new Date(value);
+        if (Number.isNaN(parsed.getTime())) return "-";
+        return includeTime
+            ? parsed.toLocaleString("ko-KR", {
+                  year: "numeric",
+                  month: "long",
+                  day: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+              })
+            : parsed.toLocaleDateString("ko-KR", {
+                  year: "numeric",
+                  month: "long",
+                  day: "numeric",
+              });
+    };
+    const formatCurrency = (value: number) =>
+        `${value.toLocaleString("ko-KR")}원`;
 
     // 구독 결제 처리
     const handleSubscribe = async (plan: PlanData) => {
@@ -890,83 +947,65 @@ function ProfileContent() {
 
             <main className="profile-container">
                 <div className="profile-layout">
-                    {/* 사이드 네비게이션 */}
                     <aside className="profile-sidebar">
-                        <nav className="profile-nav">
-                            <button
-                                className={`profile-nav-item ${
-                                    activeTab === "profile" ? "active" : ""
-                                }`}
-                                onClick={() => setActiveTab("profile")}
-                            >
-                                <svg
-                                    width="18"
-                                    height="18"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    strokeWidth="1.5"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
+                        <div className="profile-sidebar-card">
+                            <span className="profile-sidebar-kicker">
+                                My Page
+                            </span>
+                            <strong className="profile-sidebar-email">
+                                {email || authUser?.email || "계정 확인 중"}
+                            </strong>
+                            <p className="profile-sidebar-copy">
+                                계정 정보와 결제 상태를 한 곳에서 관리하세요.
+                            </p>
+
+                            <nav className="profile-nav">
+                                <button
+                                    className={`profile-nav-item ${
+                                        activeTab === "profile" ? "active" : ""
+                                    }`}
+                                    onClick={() => setActiveTab("profile")}
                                 >
-                                    <circle cx="12" cy="8" r="4" />
-                                    <path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2" />
-                                </svg>
-                                <span>프로필</span>
-                            </button>
-                            <button
-                                className={`profile-nav-item ${
-                                    activeTab === "subscription" ? "active" : ""
-                                }`}
-                                onClick={() => setActiveTab("subscription")}
-                            >
-                                <svg
-                                    width="18"
-                                    height="18"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    strokeWidth="1.5"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
+                                    <svg
+                                        width="18"
+                                        height="18"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        strokeWidth="1.5"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                    >
+                                        <circle cx="12" cy="8" r="4" />
+                                        <path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2" />
+                                    </svg>
+                                    <span>프로필</span>
+                                </button>
+                                <button
+                                    className={`profile-nav-item ${
+                                        activeTab === "payment" ? "active" : ""
+                                    }`}
+                                    onClick={() => setActiveTab("payment")}
                                 >
-                                    <rect
-                                        x="2"
-                                        y="5"
-                                        width="20"
-                                        height="14"
-                                        rx="2"
-                                    />
-                                    <line x1="2" y1="10" x2="22" y2="10" />
-                                </svg>
-                                <span>요금제</span>
-                            </button>
-                            <button
-                                className={`profile-nav-item ${
-                                    activeTab === "payment" ? "active" : ""
-                                }`}
-                                onClick={() => setActiveTab("payment")}
-                            >
-                                <svg
-                                    width="18"
-                                    height="18"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    strokeWidth="1.5"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                >
-                                    <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
-                                </svg>
-                                <span>결제내역</span>
-                            </button>
-                        </nav>
+                                    <svg
+                                        width="18"
+                                        height="18"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        strokeWidth="1.5"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                    >
+                                        <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+                                    </svg>
+                                    <span>결제내역</span>
+                                </button>
+                            </nav>
+                        </div>
                     </aside>
 
-                    {/* 메인 콘텐츠 */}
                     <section className="profile-main">
-                        {/* Mobile top tabs: 프로필 / 요금제 / 계정 설정 */}
                         <nav
                             className="profile-top-nav"
                             role="tablist"
@@ -995,37 +1034,6 @@ function ProfileContent() {
                                 </svg>
                                 <span>프로필</span>
                             </button>
-
-                            <button
-                                role="tab"
-                                aria-selected={activeTab === "subscription"}
-                                className={`profile-nav-item ${
-                                    activeTab === "subscription" ? "active" : ""
-                                }`}
-                                onClick={() => setActiveTab("subscription")}
-                            >
-                                <svg
-                                    width="18"
-                                    height="18"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    strokeWidth="1.5"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                >
-                                    <rect
-                                        x="2"
-                                        y="5"
-                                        width="20"
-                                        height="14"
-                                        rx="2"
-                                    />
-                                    <line x1="2" y1="10" x2="22" y2="10" />
-                                </svg>
-                                <span>요금제</span>
-                            </button>
-
                             <button
                                 role="tab"
                                 aria-selected={activeTab === "payment"}
@@ -1048,69 +1056,401 @@ function ProfileContent() {
                                 </svg>
                                 <span>결제내역</span>
                             </button>
-
                         </nav>
 
+                        <section className="profile-hero-card">
+                            <div className="profile-hero-main">
+                                <div className="profile-hero-avatar">
+                                    {authUser?.photoURL ? (
+                                        <img
+                                            src={authUser.photoURL}
+                                            alt="프로필 이미지"
+                                            className="profile-hero-avatar-img"
+                                        />
+                                    ) : (
+                                        <span>{profileInitial}</span>
+                                    )}
+                                </div>
+                                <div className="profile-hero-copy">
+                                    <span className="profile-hero-kicker">
+                                        Nova AI 마이페이지
+                                    </span>
+                                    <h1 className="profile-hero-title">
+                                        {profileDisplayName}
+                                    </h1>
+                                    <p className="profile-hero-subtitle">
+                                        {email || authUser?.email || "로그인 정보를 불러오는 중입니다."}
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="profile-hero-stats">
+                                <div className="profile-stat-card">
+                                    <span>이용 중 플랜</span>
+                                    <strong>{effectivePlanInfo.name}</strong>
+                                    <p>{subscriptionStatusLabel}</p>
+                                </div>
+                                <div className="profile-stat-card">
+                                    <span>남은 질문수</span>
+                                    <strong>
+                                        {remainingQuestions !== null
+                                            ? `${remainingQuestions}회`
+                                            : "-"}
+                                    </strong>
+                                    <p>
+                                        전체 한도{" "}
+                                        {questionUsage
+                                            ? `${questionUsage.limit}회`
+                                            : "확인 중"}
+                                    </p>
+                                </div>
+                                <div className="profile-stat-card">
+                                    <span>다음 갱신일</span>
+                                    <strong>
+                                        {formatDateLabel(planExpiryDate)}
+                                    </strong>
+                                    <p>
+                                        {billingStartDate
+                                            ? `시작일 ${formatDateLabel(
+                                                  billingStartDate,
+                                              )}`
+                                            : "결제 기준으로 자동 갱신됩니다"}
+                                    </p>
+                                </div>
+                            </div>
+                        </section>
+
+                        {error && (
+                            <div className="profile-alert profile-alert-error">
+                                <svg
+                                    width="16"
+                                    height="16"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                >
+                                    <circle cx="12" cy="12" r="10" />
+                                    <line x1="12" y1="8" x2="12" y2="12" />
+                                    <line
+                                        x1="12"
+                                        y1="16"
+                                        x2="12.01"
+                                        y2="16"
+                                    />
+                                </svg>
+                                <span>{error}</span>
+                            </div>
+                        )}
+                        {status && (
+                            <div className="profile-alert profile-alert-success">
+                                <svg
+                                    width="16"
+                                    height="16"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                >
+                                    <polyline points="20 6 9 17 4 12" />
+                                </svg>
+                                <span>{status}</span>
+                            </div>
+                        )}
+
                         {activeTab === "profile" ? (
-                            <>
-                                <div className="profile-form">
-                                    <div className="profile-section">
-                                        <h2 className="profile-section-title">
-                                            기본 정보
-                                        </h2>
-                                        <div className="profile-field">
-                                            <label className="profile-label">
+                            <div className="profile-card-stack">
+                                <section className="profile-card">
+                                    <div className="profile-card-head">
+                                        <div>
+                                            <h2>계정 정보</h2>
+                                            <p>
+                                                기본 프로필과 현재 이용 상태를
+                                                확인합니다.
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div className="profile-info-grid">
+                                        <div className="profile-info-item">
+                                            <span className="profile-info-label">
                                                 이메일
-                                            </label>
-                                            <input
-                                                type="email"
-                                                className="profile-input profile-input-disabled"
-                                                value={email || ""}
-                                                disabled
-                                            />
-                                            <p className="profile-hint">
-                                                이메일은 변경할 수 없습니다
+                                            </span>
+                                            <strong>{email || "-"}</strong>
+                                            <p>
+                                                로그인 식별자로 사용되며 변경할 수
+                                                없습니다.
+                                            </p>
+                                        </div>
+                                        <div className="profile-info-item">
+                                            <span className="profile-info-label">
+                                                현재 플랜
+                                            </span>
+                                            <strong>{effectivePlanInfo.name}</strong>
+                                            <p>
+                                                {effectivePlanInfo.description}
+                                            </p>
+                                        </div>
+                                        <div className="profile-info-item">
+                                            <span className="profile-info-label">
+                                                다음 갱신일
+                                            </span>
+                                            <strong>
+                                                {formatDateLabel(planExpiryDate)}
+                                            </strong>
+                                            <p>
+                                                정기 결제 또는 이용 만료 시점을
+                                                안내합니다.
+                                            </p>
+                                        </div>
+                                    </div>
+                                </section>
+
+                                <section className="profile-card">
+                                    <div className="profile-card-head">
+                                        <div>
+                                            <h2>구독 및 사용량</h2>
+                                            <p>
+                                                플랜 상태와 질문 사용량을 한 번에
+                                                관리합니다.
+                                            </p>
+                                        </div>
+                                        <span
+                                            className={`profile-status-badge ${subscriptionStatusTone}`}
+                                        >
+                                            {subscriptionStatusLabel}
+                                        </span>
+                                    </div>
+
+                                    <div className="profile-subscription-card">
+                                        <div className="profile-subscription-top">
+                                            <div className="profile-subscription-plan">
+                                                <span
+                                                    className={`profile-subscription-plan-icon ${effectivePlanId}`}
+                                                >
+                                                    {getPlanIcon(
+                                                        isPlanResolving
+                                                            ? undefined
+                                                            : effectivePlanId,
+                                                    )}
+                                                </span>
+                                                <div>
+                                                    <span className="profile-subscription-plan-name">
+                                                        {effectivePlanInfo.name}
+                                                    </span>
+                                                    <span className="profile-subscription-plan-desc">
+                                                        {effectivePlanInfo.description}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <div className="profile-subscription-expiry">
+                                                <span className="profile-subscription-expiry-label">
+                                                    만료일
+                                                </span>
+                                                <span className="profile-subscription-expiry-value">
+                                                    {formatDateLabel(
+                                                        planExpiryDate,
+                                                    )}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        <div className="profile-subscription-meta-grid">
+                                            <div className="profile-info-item compact">
+                                                <span className="profile-info-label">
+                                                    청구 시작일
+                                                </span>
+                                                <strong>
+                                                    {formatDateLabel(
+                                                        billingStartDate,
+                                                    )}
+                                                </strong>
+                                            </div>
+                                            <div className="profile-info-item compact">
+                                                <span className="profile-info-label">
+                                                    전체 질문 한도
+                                                </span>
+                                                <strong>
+                                                    {questionUsage
+                                                        ? `${questionUsage.limit}회`
+                                                        : "-"}
+                                                </strong>
+                                            </div>
+                                            <div className="profile-info-item compact">
+                                                <span className="profile-info-label">
+                                                    남은 질문수
+                                                </span>
+                                                <strong>
+                                                    {remainingQuestions !== null
+                                                        ? `${remainingQuestions}회`
+                                                        : "-"}
+                                                </strong>
+                                            </div>
+                                        </div>
+
+                                        <div className="profile-usage-block">
+                                            <div className="profile-usage-head">
+                                                <span>질문 사용량</span>
+                                                <strong>
+                                                    {questionUsage
+                                                        ? `${questionUsage.currentUsage} / ${questionUsage.limit}`
+                                                        : "확인 중"}
+                                                </strong>
+                                            </div>
+                                            <div className="profile-usage-track">
+                                                <div
+                                                    className={`profile-usage-fill ${
+                                                        questionUsage &&
+                                                        questionUsage.currentUsage >=
+                                                            questionUsage.limit
+                                                            ? "limit"
+                                                            : ""
+                                                    }`}
+                                                    style={{
+                                                        width: `${usageProgress}%`,
+                                                    }}
+                                                />
+                                            </div>
+                                            <div className="profile-usage-meta">
+                                                <span>
+                                                    사용{" "}
+                                                    {questionUsage
+                                                        ? `${questionUsage.currentUsage}회`
+                                                        : "-"}
+                                                </span>
+                                                <span>
+                                                    남음{" "}
+                                                    {remainingQuestions !== null
+                                                        ? `${remainingQuestions}회`
+                                                        : "-"}
+                                                </span>
+                                            </div>
+                                            {questionUsage &&
+                                                questionUsage.currentUsage >=
+                                                    questionUsage.limit && (
+                                                    <p className="profile-usage-warning">
+                                                        사용 한도에 도달했습니다.
+                                                        플랜을 업그레이드해 계속
+                                                        이용할 수 있습니다.
+                                                    </p>
+                                                )}
+                                        </div>
+
+                                        <div className="profile-subscription-actions">
+                                            <button
+                                                type="button"
+                                                className="profile-btn profile-btn-upgrade"
+                                                onClick={() =>
+                                                    router.push("/pricing")
+                                                }
+                                            >
+                                                요금제 보러가기
+                                            </button>
+                                            {effectivePlanId !== "free" &&
+                                                (subscription?.status ===
+                                                "cancelled" ? (
+                                                    <div className="profile-subscription-cancelled">
+                                                        <svg
+                                                            width="16"
+                                                            height="16"
+                                                            viewBox="0 0 24 24"
+                                                            fill="none"
+                                                            stroke="currentColor"
+                                                            strokeWidth="2"
+                                                            strokeLinecap="round"
+                                                            strokeLinejoin="round"
+                                                        >
+                                                            <circle
+                                                                cx="12"
+                                                                cy="12"
+                                                                r="10"
+                                                            />
+                                                            <line
+                                                                x1="12"
+                                                                y1="8"
+                                                                x2="12"
+                                                                y2="12"
+                                                            />
+                                                            <line
+                                                                x1="12"
+                                                                y1="16"
+                                                                x2="12.01"
+                                                                y2="16"
+                                                            />
+                                                        </svg>
+                                                        <span>
+                                                            구독이 취소되어
+                                                            만료일까지 이용할 수
+                                                            있습니다.
+                                                        </span>
+                                                    </div>
+                                                ) : (
+                                                    <div className="profile-cancel-sub-wrap">
+                                                        <button
+                                                            type="button"
+                                                            className="profile-btn profile-btn-cancel-sub"
+                                                            onClick={
+                                                                handleCancelSubscription
+                                                            }
+                                                        >
+                                                            구독 취소하기
+                                                        </button>
+                                                        <span className="profile-cancel-sub-tooltip">
+                                                            다음 회차의 결제가
+                                                            진행되지 않습니다.
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                        </div>
+                                    </div>
+                                </section>
+
+                                <section className="profile-card">
+                                    <div className="profile-card-head">
+                                        <div>
+                                            <h2>보안 및 세션</h2>
+                                            <p>
+                                                비밀번호와 현재 로그인 상태를
+                                                관리합니다.
                                             </p>
                                         </div>
                                     </div>
 
-                                    <div className="profile-section">
-                                        <h2 className="profile-section-title">
-                                            보안
-                                        </h2>
-                                        <div className="profile-setting-item">
+                                    <div className="profile-action-list">
+                                        <div className="profile-action-row">
                                             <div className="profile-setting-info">
                                                 <span className="profile-setting-label">
-                                                    비밀번호
+                                                    비밀번호 변경
                                                 </span>
                                                 <span className="profile-setting-desc">
-                                                    계정 비밀번호를 변경합니다
+                                                    계정 비밀번호를 새로
+                                                    설정합니다.
                                                 </span>
                                             </div>
                                             <button
                                                 type="button"
                                                 className="profile-btn profile-btn-secondary"
                                                 onClick={() =>
-                                                    (window.location.href =
-                                                        "/password-reset")
+                                                    router.push(
+                                                        "/password-reset",
+                                                    )
                                                 }
                                             >
                                                 변경하기
                                             </button>
                                         </div>
-                                    </div>
 
-                                    <div className="profile-section">
-                                        <h2 className="profile-section-title">
-                                            세션
-                                        </h2>
-                                        <div className="profile-setting-item">
+                                        <div className="profile-action-row">
                                             <div className="profile-setting-info">
                                                 <span className="profile-setting-label">
                                                     로그아웃
                                                 </span>
                                                 <span className="profile-setting-desc">
-                                                    현재 기기에서 로그아웃합니다
+                                                    현재 기기에서 안전하게
+                                                    로그아웃합니다.
                                                 </span>
                                             </div>
                                             <button
@@ -1122,72 +1462,9 @@ function ProfileContent() {
                                             </button>
                                         </div>
                                     </div>
+                                </section>
 
-                                    <div className="profile-section">
-                                        <h2 className="profile-section-title">
-                                            구독 관리
-                                        </h2>
-                                        <div className="profile-subscription-card">
-                                            <div className="profile-subscription-info">
-                                                <div className="profile-subscription-plan">
-                                                    <span className="profile-subscription-plan-icon">
-                                                        {getPlanIcon(isPlanResolving ? undefined : effectivePlanId)}
-                                                    </span>
-                                                    <div>
-                                                        <span className="profile-subscription-plan-name">
-                                                            {effectivePlanInfo.name}
-                                                        </span>
-                                                        <span className="profile-subscription-plan-desc">
-                                                            {effectivePlanInfo.description}
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                                {planExpiryDate && (
-                                                    <div className="profile-subscription-expiry">
-                                                        <span className="profile-subscription-expiry-label">만료일</span>
-                                                        <span className="profile-subscription-expiry-value">
-                                                            {planExpiryDate.toLocaleDateString("ko-KR")}
-                                                        </span>
-                                                    </div>
-                                                )}
-                                            </div>
-                                            <div className="profile-subscription-actions">
-                                                <button
-                                                    type="button"
-                                                    className="profile-btn profile-btn-upgrade"
-                                                    onClick={() => setActiveTab("subscription")}
-                                                >
-                                                    요금제 업그레이드
-                                                </button>
-                                                {effectivePlanId !== "free" && (
-                                                    subscription?.status === "cancelled" ? (
-                                                        <div className="profile-subscription-cancelled">
-                                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                                <circle cx="12" cy="12" r="10" />
-                                                                <line x1="12" y1="8" x2="12" y2="12" />
-                                                                <line x1="12" y1="16" x2="12.01" y2="16" />
-                                                            </svg>
-                                                            <span>구독이 취소되었습니다. 만료일까지 서비스를 이용할 수 있습니다.</span>
-                                                        </div>
-                                                    ) : (
-                                                        <div className="profile-cancel-sub-wrap">
-                                                            <button
-                                                                type="button"
-                                                                className="profile-btn profile-btn-cancel-sub"
-                                                                onClick={handleCancelSubscription}
-                                                            >
-                                                                구독 취소하기
-                                                            </button>
-                                                            <span className="profile-cancel-sub-tooltip">
-                                                                다음 회차의 결제가 일어나지 않습니다.
-                                                            </span>
-                                                        </div>
-                                                    )
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-
+                                <section className="profile-card profile-card-danger">
                                     <div className="danger-zone">
                                         <h2 className="danger-title">
                                             위험 영역
@@ -1198,8 +1475,8 @@ function ProfileContent() {
                                                     계정 삭제
                                                 </span>
                                                 <span className="danger-desc">
-                                                    계정과 모든 데이터가 영구적으로
-                                                    삭제됩니다
+                                                    계정과 저장된 데이터가
+                                                    영구적으로 삭제됩니다.
                                                 </span>
                                             </div>
                                             <button
@@ -1214,633 +1491,203 @@ function ProfileContent() {
                                             </button>
                                         </div>
                                     </div>
-
-                                    {error && (
-                                        <div className="profile-alert profile-alert-error">
-                                            <svg
-                                                width="16"
-                                                height="16"
-                                                viewBox="0 0 24 24"
-                                                fill="none"
-                                                stroke="currentColor"
-                                                strokeWidth="2"
-                                                strokeLinecap="round"
-                                                strokeLinejoin="round"
-                                            >
-                                                <circle
-                                                    cx="12"
-                                                    cy="12"
-                                                    r="10"
-                                                />
-                                                <line
-                                                    x1="12"
-                                                    y1="8"
-                                                    x2="12"
-                                                    y2="12"
-                                                />
-                                                <line
-                                                    x1="12"
-                                                    y1="16"
-                                                    x2="12.01"
-                                                    y2="16"
-                                                />
-                                            </svg>
-                                            <span>{error}</span>
-                                        </div>
-                                    )}
-                                    {status && (
-                                        <div className="profile-alert profile-alert-success">
-                                            <svg
-                                                width="16"
-                                                height="16"
-                                                viewBox="0 0 24 24"
-                                                fill="none"
-                                                stroke="currentColor"
-                                                strokeWidth="2"
-                                                strokeLinecap="round"
-                                                strokeLinejoin="round"
-                                            >
-                                                <polyline points="20 6 9 17 4 12" />
-                                            </svg>
-                                            <span>{status}</span>
-                                        </div>
-                                    )}
-                                </div>
-                            </>
-                        ) : activeTab === "subscription" ? (
-                            <>
-                                {/* 요금제 카드 */}
-                                <div className="profile-form">
-                                    <div className="profile-section profile-section--main-pricing">
-                                        <Pricing />
-                                    </div>
-                                </div>
-
-                                {/* 알림 메시지 */}
-                                {error && (
-                                    <div className="profile-alert profile-alert-error">
-                                        <svg
-                                            width="16"
-                                            height="16"
-                                            viewBox="0 0 24 24"
-                                            fill="none"
-                                            stroke="currentColor"
-                                            strokeWidth="2"
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                        >
-                                            <circle
-                                                cx="12"
-                                                cy="12"
-                                                r="10"
-                                            />
-                                            <line
-                                                x1="12"
-                                                y1="8"
-                                                x2="12"
-                                                y2="12"
-                                            />
-                                            <line
-                                                x1="12"
-                                                y1="16"
-                                                x2="12.01"
-                                                y2="16"
-                                            />
-                                        </svg>
-                                        <span>{error}</span>
-                                    </div>
-                                )}
-                            </>
-                        ) : activeTab === "payment" ? (
-                            <>
-                                {/* 현재 플랜 요약 */}
-                                <div className="current-plan-card payment-flat-section">
-                                    <div className="current-plan-header">
-                                        <div className="current-plan-left">
-                                            <div className="current-plan-text">
-                                                <div className="current-plan-title">
-                                                    <span className="current-plan-name">
-                                                        {effectivePlanInfo.name}
-                                                    </span>
-                                                </div>
-
-                                                <span className="current-plan-desc">
-                                                    {effectivePlanInfo.description}
-                                                </span>
-                                            </div>
-                                        </div>
-
-                                        <div className="current-plan-center">
-                                            {(subscription?.billingStartDate ||
-                                                subscription?.startDate) && (
-                                                <div className="current-plan-center-item">
-                                                    <span className="label">
-                                                        청구 시작일
-                                                    </span>
-                                                    <span className="value">
-                                                        {new Date(
-                                                            subscription?.billingStartDate ||
-                                                                subscription?.startDate,
-                                                        ).toLocaleDateString(
-                                                            "ko-KR",
-                                                        )}
-                                                    </span>
-                                                </div>
-                                            )}
-
-                                            <div className="current-plan-center-item">
-                                                <span className="label">
-                                                    요금제 만료 시점
-                                                </span>
-                                                <span className="value">
-                                                    {planExpiryDate
-                                                        ? planExpiryDate.toLocaleDateString(
-                                                              "ko-KR",
-                                                          )
-                                                        : "-"}
-                                                </span>
-                                            </div>
-                                        </div>
-
-                                        <div className="current-plan-right">
-                                            {subscription &&
-                                                subscription.plan !==
-                                                    "free" && (
-                                                    <button
-                                                        onClick={
-                                                            handleCancelSubscription
-                                                        }
-                                                        className="current-plan-cancel-btn current-plan-cancel-outline"
-                                                        disabled={
-                                                            subscription.status ===
-                                                            "cancelled"
-                                                        }
-                                                        aria-disabled={
-                                                            subscription.status ===
-                                                            "cancelled"
-                                                        }
-                                                    >
-                                                        {subscription.status ===
-                                                        "cancelled"
-                                                            ? "취소됨"
-                                                            : "구독 취소"}
-                                                    </button>
-                                                )}
-                                        </div>
-                                    </div>
-
-                                    {/* Mobile-only stacked dates */}
-                                    {(subscription ||
-                                        subscription?.billingStartDate ||
-                                        subscription?.nextBillingDate) && (
-                                        <div
-                                            className="current-plan-dates-mobile"
-                                            aria-hidden={false}
-                                        >
-                                            {(subscription?.billingStartDate ||
-                                                subscription?.startDate) && (
-                                                <div className="current-plan-dates-item">
-                                                    <span className="label">
-                                                        청구 시작일
-                                                    </span>
-                                                    <span className="value">
-                                                        {new Date(
-                                                            subscription?.billingStartDate ||
-                                                                subscription?.startDate,
-                                                        ).toLocaleDateString(
-                                                            "ko-KR",
-                                                        )}
-                                                    </span>
-                                                </div>
-                                            )}
-
-                                            <div className="current-plan-dates-item">
-                                                <span className="label">
-                                                    요금제 만료 시점
-                                                </span>
-                                                <span className="value">
-                                                    {planExpiryDate
-                                                        ? planExpiryDate.toLocaleDateString(
-                                                              "ko-KR",
-                                                          )
-                                                        : "-"}
-                                                </span>
-                                            </div>
-
-                                            {subscription &&
-                                                subscription.plan !==
-                                                    "free" && (
-                                                    <button
-                                                        onClick={
-                                                            handleCancelSubscription
-                                                        }
-                                                        className="current-plan-cancel-btn-mobile current-plan-cancel-outline"
-                                                        aria-disabled={
-                                                            subscription.status ===
-                                                            "cancelled"
-                                                        }
-                                                        disabled={
-                                                            subscription.status ===
-                                                            "cancelled"
-                                                        }
-                                                    >
-                                                        {subscription.status ===
-                                                        "cancelled"
-                                                            ? "취소됨"
-                                                            : "구독 취소"}
-                                                    </button>
-                                                )}
-                                        </div>
-                                    )}
-
-                                    <div className="current-plan-meta">
-                                        <div className="current-plan-meta-item">
-                                            <span className="label">
-                                                요금제 만료 시점
-                                            </span>
-                                            <span className="value">
-                                                {planExpiryDate
-                                                    ? planExpiryDate.toLocaleDateString(
-                                                          "ko-KR",
-                                                      )
-                                                    : "-"}
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* AI Usage Stats */}
-                                <div className="current-plan-card payment-flat-section">
-                                        <div className="current-plan-header">
-                                            <div className="current-plan-left">
-                                                <div className="current-plan-icon usage">
-                                                    <svg
-                                                        width="20"
-                                                        height="20"
-                                                        viewBox="0 0 24 24"
-                                                        fill="none"
-                                                        stroke="currentColor"
-                                                        strokeWidth="2"
-                                                        strokeLinecap="round"
-                                                        strokeLinejoin="round"
-                                                    >
-                                                        <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
-                                                    </svg>
-                                                </div>
-                                                <div className="current-plan-text">
-                                                    <div className="current-plan-title">
-                                                        <span className="current-plan-name">
-                                                            AI 호출 사용량
-                                                        </span>
-                                                    </div>
-                                                    <span className="current-plan-desc">
-                                                        현재 질문수{" "}
-                                                        <strong>
-                                                            {questionUsage
-                                                                ? questionUsage.currentUsage
-                                                                : "-"}
-                                                            회
-                                                        </strong>{" "}
-                                                        · 남은 질문수{" "}
-                                                        <strong>
-                                                            {questionUsage
-                                                                ? Math.max(
-                                                                      0,
-                                                                      questionUsage.limit -
-                                                                          questionUsage.currentUsage,
-                                                                  )
-                                                                : "-"}
-                                                            회
-                                                        </strong>
-                                                    </span>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {/* Usage Progress Bar */}
-                                        <div
-                                            style={{
-                                                width: "100%",
-                                                height: "6px",
-                                                backgroundColor: "#1a1a1a",
-                                                borderRadius: "3px",
-                                                overflow: "hidden",
-                                                marginTop: "1rem",
-                                            }}
-                                        >
-                                            <div
-                                                style={{
-                                                    width: `${Math.min(
-                                                        questionUsage
-                                                            ? (questionUsage.currentUsage /
-                                                                  Math.max(
-                                                                      1,
-                                                                      questionUsage.limit,
-                                                                  )) *
-                                                                  100
-                                                            : 0,
-                                                        100,
-                                                    )}%`,
-                                                    height: "100%",
-                                                    backgroundColor:
-                                                        questionUsage &&
-                                                        questionUsage.currentUsage >=
-                                                            questionUsage.limit
-                                                            ? "#ef4444"
-                                                            : "#3b82f6",
-                                                    borderRadius: "3px",
-                                                    transition:
-                                                        "width 0.3s ease",
-                                                }}
-                                            />
-                                        </div>
-
-                                        {questionUsage &&
-                                            questionUsage.currentUsage >=
-                                                questionUsage.limit && (
-                                            <p
-                                                style={{
-                                                    marginTop: "0.75rem",
-                                                    color: "#ef4444",
-                                                    fontSize: "13px",
-                                                    fontWeight: "500",
-                                                }}
-                                            >
-                                                사용 한도에 도달했습니다. 플랜을
-                                                업그레이드하여 계속 이용하세요.
+                                </section>
+                            </div>
+                        ) : (
+                            <div className="profile-card-stack">
+                                <section className="profile-card">
+                                    <div className="profile-card-head">
+                                        <div>
+                                            <h2>결제 요약</h2>
+                                            <p>
+                                                현재 플랜과 결제 현황을 빠르게
+                                                확인합니다.
                                             </p>
+                                        </div>
+                                        {effectivePlanId !== "free" && (
+                                            <button
+                                                type="button"
+                                                className="profile-btn profile-btn-cancel-sub"
+                                                onClick={handleCancelSubscription}
+                                                disabled={
+                                                    subscription?.status ===
+                                                    "cancelled"
+                                                }
+                                            >
+                                                {subscription?.status ===
+                                                "cancelled"
+                                                    ? "취소됨"
+                                                    : "구독 취소"}
+                                            </button>
                                         )}
                                     </div>
 
-                                {/* Payment History */}
-                                <div className="current-plan-card payment-flat-section">
-                                    <div className="current-plan-header">
-                                        <div className="current-plan-left">
-                                            <div className="current-plan-text">
-                                                <div className="current-plan-title">
-                                                    <span className="current-plan-name">
-                                                        결제 내역
-                                                    </span>
-                                                </div>
-                                                <span className="current-plan-desc">
-                                                    최근 결제 내역
-                                                </span>
-                                            </div>
+                                    <div className="profile-info-grid">
+                                        <div className="profile-info-item">
+                                            <span className="profile-info-label">
+                                                현재 플랜
+                                            </span>
+                                            <strong>{effectivePlanInfo.name}</strong>
+                                            <p>{effectivePlanInfo.description}</p>
+                                        </div>
+                                        <div className="profile-info-item">
+                                            <span className="profile-info-label">
+                                                청구 시작일
+                                            </span>
+                                            <strong>
+                                                {formatDateLabel(
+                                                    billingStartDate,
+                                                )}
+                                            </strong>
+                                            <p>최초 또는 최근 갱신 기준입니다.</p>
+                                        </div>
+                                        <div className="profile-info-item">
+                                            <span className="profile-info-label">
+                                                다음 갱신일
+                                            </span>
+                                            <strong>
+                                                {formatDateLabel(planExpiryDate)}
+                                            </strong>
+                                            <p>
+                                                {subscriptionStatusLabel} 상태로
+                                                표시됩니다.
+                                            </p>
+                                        </div>
+                                    </div>
+                                </section>
+
+                                <section className="profile-card">
+                                    <div className="profile-card-head">
+                                        <div>
+                                            <h2>결제 통계</h2>
+                                            <p>
+                                                결제 횟수와 누적 결제 금액을
+                                                보여줍니다.
+                                            </p>
                                         </div>
                                     </div>
 
-                                    <div
-                                        style={{
-                                            display: "flex",
-                                            gap: "1.25rem",
-                                            marginTop: "1rem",
-                                            paddingTop: "1rem",
-                                            borderTop: "1px solid #1a1a1a",
-                                            flexWrap: "wrap",
-                                        }}
-                                    >
-                                        <p
-                                            style={{
-                                                margin: 0,
-                                                fontSize: "0.875rem",
-                                                color: "#a1a1aa",
-                                            }}
-                                        >
-                                            현재 질문수:{" "}
-                                            <strong style={{ color: "#eee" }}>
-                                                {questionUsage
-                                                    ? `${questionUsage.currentUsage}회`
+                                    <div className="profile-info-grid">
+                                        <div className="profile-info-item compact">
+                                            <span className="profile-info-label">
+                                                결제 완료
+                                            </span>
+                                            <strong>
+                                                {completedPayments.length}건
+                                            </strong>
+                                        </div>
+                                        <div className="profile-info-item compact">
+                                            <span className="profile-info-label">
+                                                누적 결제액
+                                            </span>
+                                            <strong>
+                                                {formatCurrency(totalPaidAmount)}
+                                            </strong>
+                                        </div>
+                                        <div className="profile-info-item compact">
+                                            <span className="profile-info-label">
+                                                남은 질문수
+                                            </span>
+                                            <strong>
+                                                {remainingQuestions !== null
+                                                    ? `${remainingQuestions}회`
                                                     : "-"}
                                             </strong>
-                                        </p>
-                                        <p
-                                            style={{
-                                                margin: 0,
-                                                fontSize: "0.875rem",
-                                                color: "#a1a1aa",
-                                            }}
-                                        >
-                                            남은 질문수:{" "}
-                                            <strong style={{ color: "#22c55e" }}>
-                                                {questionUsage
-                                                    ? `${Math.max(
-                                                          0,
-                                                          questionUsage.limit -
-                                                              questionUsage.currentUsage,
-                                                      )}회`
-                                                    : "-"}
-                                            </strong>
-                                        </p>
+                                        </div>
+                                    </div>
+                                </section>
+
+                                <section className="profile-card">
+                                    <div className="profile-card-head">
+                                        <div>
+                                            <h2>결제 내역</h2>
+                                            <p>
+                                                최근 결제와 환불 이력을 시간순으로
+                                                확인합니다.
+                                            </p>
+                                        </div>
                                     </div>
 
                                     {loadingPayments ? (
-                                        <p
-                                            style={{
-                                                padding: "1rem 0",
-                                                color: "#555",
-                                                fontSize: "0.875rem",
-                                            }}
-                                        >
-                                            로딩 중...
-                                        </p>
+                                        <div className="profile-empty-state">
+                                            결제 정보를 불러오는 중입니다.
+                                        </div>
                                     ) : paymentHistory.length === 0 ? (
-                                        <p
-                                            style={{
-                                                padding: "1rem 0",
-                                                color: "#555",
-                                                fontSize: "0.875rem",
-                                            }}
-                                        >
-                                            결제 내역이 없습니다.
-                                        </p>
+                                        <div className="profile-empty-state">
+                                            아직 결제 내역이 없습니다.
+                                        </div>
                                     ) : (
-                                        <div style={{ marginTop: "1rem" }}>
-                                            {paymentHistory.map((payment) => (
-                                                <div
-                                                    key={payment.paymentKey}
-                                                    style={{
-                                                        display: "flex",
-                                                        justifyContent:
-                                                            "space-between",
-                                                        alignItems: "center",
-                                                        padding: "12px 0",
-                                                        borderBottom:
-                                                            "1px solid #1a1a1a",
-                                                    }}
-                                                >
-                                                    <div>
-                                                        <p
-                                                            style={{
-                                                                fontWeight: 500,
-                                                                marginBottom:
-                                                                    "4px",
-                                                                color: "#eee",
-                                                                fontSize:
-                                                                    "0.875rem",
-                                                            }}
-                                                        >
-                                                            {payment.orderName}
-                                                        </p>
-                                                        <p
-                                                            style={{
-                                                                fontSize:
-                                                                    "0.8125rem",
-                                                                color: "#555",
-                                                            }}
-                                                        >
-                                                            결제 코드:{" "}
-                                                            {payment.orderId ||
-                                                                payment.paymentKey}
-                                                        </p>
-                                                        <p
-                                                            style={{
-                                                                fontSize:
-                                                                    "0.8125rem",
-                                                                color: "#555",
-                                                            }}
-                                                        >
-                                                            {new Date(
-                                                                payment.approvedAt,
-                                                            ).toLocaleDateString(
-                                                                "ko-KR",
-                                                                {
-                                                                    year: "numeric",
-                                                                    month: "long",
-                                                                    day: "numeric",
-                                                                },
-                                                            )}{" "}
-                                                            {new Date(
-                                                                payment.approvedAt,
-                                                            ).toLocaleTimeString(
-                                                                "ko-KR",
-                                                                {
-                                                                    hour: "2-digit",
-                                                                    minute: "2-digit",
-                                                                },
-                                                            )}
-                                                            {payment.card
-                                                                ?.company &&
-                                                                ` · ${payment.card.company}`}
-                                                        </p>
-                                                    </div>
-                                                    <div
-                                                        style={{
-                                                            textAlign: "right",
-                                                        }}
+                                        <div className="profile-payment-list">
+                                            {paymentHistory.map((payment) => {
+                                                const isRefunded =
+                                                    String(
+                                                        payment.status || "",
+                                                    ).toUpperCase() ===
+                                                    "REFUNDED";
+
+                                                return (
+                                                    <article
+                                                        key={payment.paymentKey}
+                                                        className="profile-payment-row"
                                                     >
-                                                        <p
-                                                            style={{
-                                                                fontWeight: 600,
-                                                                marginBottom:
-                                                                    "4px",
-                                                                fontSize:
-                                                                    "0.875rem",
-                                                                color:
-                                                                    payment.status ===
-                                                                    "REFUNDED"
-                                                                        ? "#ef4444"
-                                                                        : "#eee",
-                                                            }}
-                                                        >
-                                                            {payment.status ===
-                                                            "REFUNDED" ? (
+                                                        <div className="profile-payment-main">
+                                                            <div className="profile-payment-title-row">
+                                                                <strong className="profile-payment-title">
+                                                                    {
+                                                                        payment.orderName
+                                                                    }
+                                                                </strong>
                                                                 <span
-                                                                    style={{
-                                                                        textDecoration:
-                                                                            "line-through",
-                                                                    }}
+                                                                    className={`profile-payment-status ${
+                                                                        isRefunded
+                                                                            ? "refunded"
+                                                                            : "done"
+                                                                    }`}
                                                                 >
-                                                                    {payment.amount?.toLocaleString()}
-                                                                    원
+                                                                    {isRefunded
+                                                                        ? "환불됨"
+                                                                        : "결제 완료"}
                                                                 </span>
-                                                            ) : (
-                                                                `${payment.amount?.toLocaleString()}원`
-                                                            )}
-                                                        </p>
-                                                        {payment.status ===
-                                                        "REFUNDED" ? (
-                                                            <span
-                                                                style={{
-                                                                    fontSize:
-                                                                        "12px",
-                                                                    color: "#ef4444",
-                                                                    fontWeight: 500,
-                                                                }}
+                                                            </div>
+                                                            <p className="profile-payment-meta">
+                                                                {formatDateLabel(
+                                                                    payment.approvedAt,
+                                                                    true,
+                                                                )}
+                                                                {payment.card
+                                                                    ?.company &&
+                                                                    ` · ${payment.card.company}`}
+                                                            </p>
+                                                            <p className="profile-payment-meta">
+                                                                주문번호{" "}
+                                                                {payment.orderId ||
+                                                                    payment.paymentKey}
+                                                            </p>
+                                                        </div>
+                                                        <div className="profile-payment-side">
+                                                            <strong
+                                                                className={`profile-payment-amount ${
+                                                                    isRefunded
+                                                                        ? "refunded"
+                                                                        : ""
+                                                                }`}
                                                             >
-                                                                환불됨
-                                                            </span>
-                                                        ) : (
-                                                            <span
-                                                                style={{
-                                                                    fontSize:
-                                                                        "12px",
-                                                                    color: "#22c55e",
-                                                                    fontWeight: 500,
-                                                                }}
-                                                            >
-                                                                결제 완료
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            ))}
+                                                                {formatCurrency(
+                                                                    Number(
+                                                                        payment.amount ||
+                                                                            0,
+                                                                    ),
+                                                                )}
+                                                            </strong>
+                                                        </div>
+                                                    </article>
+                                                );
+                                            })}
                                         </div>
                                     )}
-                                </div>
-
-                                {/* 알림 메시지 */}
-                                {error && (
-                                    <div className="profile-alert profile-alert-error">
-                                        <svg
-                                            width="16"
-                                            height="16"
-                                            viewBox="0 0 24 24"
-                                            fill="none"
-                                            stroke="currentColor"
-                                            strokeWidth="2"
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                        >
-                                            <circle
-                                                cx="12"
-                                                cy="12"
-                                                r="10"
-                                            />
-                                            <line
-                                                x1="12"
-                                                y1="8"
-                                                x2="12"
-                                                y2="12"
-                                            />
-                                            <line
-                                                x1="12"
-                                                y1="16"
-                                                x2="12.01"
-                                                y2="16"
-                                            />
-                                        </svg>
-                                        <span>{error}</span>
-                                    </div>
-                                )}
-                                {status && (
-                                    <div className="profile-alert profile-alert-success">
-                                        <svg
-                                            width="16"
-                                            height="16"
-                                            viewBox="0 0 24 24"
-                                            fill="none"
-                                            stroke="currentColor"
-                                            strokeWidth="2"
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                        >
-                                            <polyline points="20 6 9 17 4 12" />
-                                        </svg>
-                                        <span>{status}</span>
-                                    </div>
-                                )}
-                            </>
-                        ) : null}
+                                </section>
+                            </div>
+                        )}
                     </section>
                 </div>
             </main>

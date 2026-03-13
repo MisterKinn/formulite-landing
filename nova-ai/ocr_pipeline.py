@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from typing import Optional
+from image_path_utils import load_pil_image
 
 MAX_IMAGE_DIM = 2048  # Higher cap to improve OCR accuracy
 
@@ -25,7 +26,7 @@ def extract_text(image_path: str) -> str:
     if tesseract_cmd:
         pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
 
-    image = Image.open(image_path).convert("RGB")
+    image = load_pil_image(image_path, mode="RGB")
     max_dim = max(image.size)
     if max_dim > MAX_IMAGE_DIM:
         scale = MAX_IMAGE_DIM / max_dim

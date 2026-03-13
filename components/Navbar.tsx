@@ -8,14 +8,10 @@ import { inferPlanFromAmount } from "@/lib/userData";
 export function Navbar() {
     const { isAuthenticated, avatar, logout, user } = useAuth();
     const [isScrolled, setIsScrolled] = useState(false);
+    const navRef = useRef<HTMLElement | null>(null);
     const [displayName, setDisplayName] = useState<string | null>(null);
     const [userPlan, setUserPlan] = useState<string | null>(null);
     const [planResolved, setPlanResolved] = useState(false);
-    const [aiUsage, setAiUsage] = useState<{
-        currentUsage: number;
-        limit: number;
-        remaining: number;
-    } | null>(null);
 
     const normalizePlan = (
         value?: unknown,
@@ -76,7 +72,6 @@ export function Navbar() {
                 if (mounted) {
                     setDisplayName(null);
                     setUserPlan(null);
-                    setAiUsage(null);
                     setPlanResolved(false);
                 }
                 return;
@@ -110,11 +105,6 @@ export function Navbar() {
                 if (res.ok) {
                     const data = await res.json();
                     if (mounted) {
-                        setAiUsage({
-                            currentUsage: data.currentUsage,
-                            limit: data.limit,
-                            remaining: data.remaining,
-                        });
                         const apiPlan = normalizePlan(data.plan);
                         setUserPlan((prev) => {
                             const prevPlan = normalizePlan(prev);
@@ -170,44 +160,6 @@ export function Navbar() {
             mounted = false;
         };
     }, [user]);
-
-    useEffect(() => {
-        let mounted = true;
-        async function refreshUsage() {
-            if (!user) return;
-            try {
-                const res = await fetch(
-                    `/api/ai/check-limit?userId=${user.uid}&t=${Date.now()}`,
-                    { cache: "no-store" },
-                );
-                if (!res.ok) return;
-                const data = await res.json();
-                if (!mounted) return;
-                setAiUsage({
-                    currentUsage: data.currentUsage,
-                    limit: data.limit,
-                    remaining: data.remaining,
-                });
-                const apiPlan = normalizePlan(data.plan);
-                setUserPlan((prev) => {
-                    const prevPlan = normalizePlan(prev);
-                    return getPlanRank(apiPlan) > getPlanRank(prevPlan)
-                        ? apiPlan
-                        : prevPlan;
-                });
-                setPlanResolved(true);
-            } catch (err) {
-                // non-fatal
-            }
-        }
-
-        refreshUsage();
-        const timer = window.setInterval(refreshUsage, 15000);
-        return () => {
-            mounted = false;
-            window.clearInterval(timer);
-        };
-    }, [user]);
     const [menuOpen, setMenuOpen] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
 
@@ -249,8 +201,32 @@ export function Navbar() {
         return () => window.removeEventListener("scroll", handleScroll);
     }, []);
 
+    useEffect(() => {
+        const element = navRef.current;
+        if (!element) return;
+
+        const updateNavbarHeight = () => {
+            document.documentElement.style.setProperty(
+                "--navbar-height",
+                `${element.getBoundingClientRect().height}px`,
+            );
+        };
+
+        updateNavbarHeight();
+
+        const resizeObserver = new ResizeObserver(updateNavbarHeight);
+        resizeObserver.observe(element);
+        window.addEventListener("resize", updateNavbarHeight);
+
+        return () => {
+            resizeObserver.disconnect();
+            window.removeEventListener("resize", updateNavbarHeight);
+        };
+    }, []);
+
     return (
         <nav
+            ref={navRef}
             className={`navbar animate-fade-in ${
                 isScrolled ? "navbar--scrolled" : ""
             }`}
@@ -270,7 +246,7 @@ export function Navbar() {
                     <a href="/#exam-typing" className="nav-link">
                         {"\uC2DC\uD5D8\uC9C0 \uD0C0\uC774\uD551"}
                     </a>
-                    <a href="/#pricing" className="nav-link">
+                    <a href="/pricing" className="nav-link">
                         {"\uC694\uAE08\uC81C"}
                     </a>
                     <a href="/notices" className="nav-link">
@@ -317,61 +293,6 @@ export function Navbar() {
                             </button>
                             {menuOpen && (
                                 <div className="nav-profile-dropdown">
-                                    {/* Daily usage */}
-                                    {aiUsage && (
-                                        <div className="nav-usage-section">
-                                            <div className="nav-usage-header">
-                                                <svg
-                                                    width="14"
-                                                    height="14"
-                                                    viewBox="0 0 24 24"
-                                                    fill="none"
-                                                    stroke="currentColor"
-                                                    strokeWidth="2"
-                                                    strokeLinecap="round"
-                                                    strokeLinejoin="round"
-                                                >
-                                                    <path d="M12 20V10" />
-                                                    <path d="M18 20V4" />
-                                                    <path d="M6 20v-4" />
-                                                </svg>
-                                                <span>{"\uC624\uB298 \uC0AC\uC6A9\uB7C9"}</span>
-                                            </div>
-                                            <div className="nav-usage-bar-bg">
-                                                <div
-                                                    className="nav-usage-bar-fill"
-                                                    style={{
-                                                        width: `${Math.min(
-                                                            (aiUsage.currentUsage /
-                                                                aiUsage.limit) *
-                                                                100,
-                                                            100,
-                                                        )}%`,
-                                                        backgroundColor:
-                                                            aiUsage.currentUsage >=
-                                                            aiUsage.limit
-                                                                ? "#ef4444"
-                                                                : "#3b82f6",
-                                                    }}
-                                                />
-                                            </div>
-                                            <div className="nav-usage-info">
-                                                <span className="nav-usage-remaining">
-                                                    {"\uB0A8\uC740 \uD69F\uC218: "}
-                                                    <strong>
-                                                        {aiUsage.remaining}
-                                                    </strong>
-                                                </span>
-                                                <span className="nav-usage-total">
-                                                    {aiUsage.currentUsage} /{" "}
-                                                    {aiUsage.limit}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    )}
-                                    {aiUsage && (
-                                        <div className="nav-profile-dropdown-divider"></div>
-                                    )}
                                     <a
                                         href="/profile"
                                         className="nav-profile-dropdown-item"
@@ -390,42 +311,6 @@ export function Navbar() {
                                             <path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2" />
                                         </svg>
                                         <span>{"\uD504\uB85C\uD544"}</span>
-                                    </a>
-                                    <a
-                                        href="/profile"
-                                        className="nav-profile-dropdown-item"
-                                        onClick={() => {
-                                            sessionStorage.setItem(
-                                                "profileTab",
-                                                "subscription",
-                                            );
-                                        }}
-                                    >
-                                        <svg
-                                            width="16"
-                                            height="16"
-                                            viewBox="0 0 24 24"
-                                            fill="none"
-                                            stroke="currentColor"
-                                            strokeWidth="1.5"
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                        >
-                                            <rect
-                                                x="2"
-                                                y="5"
-                                                width="20"
-                                                height="14"
-                                                rx="2"
-                                            />
-                                            <line
-                                                x1="2"
-                                                y1="10"
-                                                x2="22"
-                                                y2="10"
-                                            />
-                                        </svg>
-                                        <span>{"\uC694\uAE08\uC81C"}</span>
                                     </a>
                                     <a
                                         href="/profile"

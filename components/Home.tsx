@@ -1,6 +1,9 @@
 "use client";
 import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import processImage1 from "../001.png";
+import processImage2 from "../002.png";
+import processImage3 from "../003.png";
 
 function getOS(): "Windows" | "macOS" | "Linux" | "Android" | "iOS" | "Other" {
     if (typeof window === "undefined") return "Other";
@@ -88,52 +91,90 @@ const ArrowRightIcon = () => (
 export default function Home() {
     const router = useRouter();
     const [os, setOS] = useState<ReturnType<typeof getOS>>("Other");
+    const [isEventStripVisible, setIsEventStripVisible] = useState(true);
     const [typedText, setTypedText] = useState("");
     const [isProcessShowcaseVisible, setIsProcessShowcaseVisible] = useState(false);
+    const [activeProcessIndex, setActiveProcessIndex] = useState(0);
+    const [isProcessAutoplaying, setIsProcessAutoplaying] = useState(true);
     const [selectedProcessImage, setSelectedProcessImage] = useState<{
         src: string;
         alt: string;
     } | null>(null);
     const processShowcaseRef = useRef<HTMLDivElement | null>(null);
+    const processCarouselRef = useRef<HTMLDivElement | null>(null);
+    const eventStripRef = useRef<HTMLDivElement | null>(null);
     const fullText = "Nova AI";
     const processSteps = [
         {
             step: "1",
             label: "1. 사진업로드",
-            image: "/main1.png",
+            image: processImage1.src,
             alt: "사진 드래그앤드롭",
             description:
-                "사진을 드래그 앤 드롭 또는 Ctrl C+V로 넣어주세요. 여러 개의 이미지 파일이 등록 가능합니다.",
+                "사진을 드래그 앤 드롭 또는 Ctrl C+V로 넣어주세요.\n여러 개의 이미지 파일이 등록 가능합니다.",
         },
         {
             step: "2",
             label: "2. AI 코드 생성",
-            image: "/main2.png",
+            image: processImage2.src,
             alt: "AI 코드 생성 중",
             description:
-                "보내기 버튼을 누르면 AI 코드가 생성되며, 코드 보내기, 코드 재입력, 코드 삭제가 가능합니다.",
+                "보내기 버튼을 누르면 AI 코드가 생성되며,\n글씨와 수식 폰트를 수정할 수 있습니다.",
         },
         {
             step: "3",
-            label: "3. 자동 타이핑",
-            image: "/main3.png",
-            alt: "타이핑 진행 중",
-            description:
-                "병렬로 호출된 AI가 코드를 저장하고, 순서대로 위에서 아래로 내용을 입력합니다.",
-        },
-        {
-            step: "4",
-            label: "4. 완성된 문서",
-            image: "/main4.png",
+            label: "3. 완성된 문서",
+            image: processImage3.src,
             alt: "한글 문서 결과",
             description:
-                "완벽한 정확도로 완성된 문서를 확인해보세요.",
+                "완벽한 정확도로 완성된 문서를 확인해보세요.\n이것이 노바AI의 기술력입니다.",
+            isHighlightedDescription: true,
         },
     ];
 
     useEffect(() => {
         setOS(getOS());
     }, []);
+
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+
+        const dismissed = window.localStorage.getItem("home-event-strip-dismissed");
+        if (dismissed === "true") {
+            setIsEventStripVisible(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        const root = document.documentElement;
+        const element = eventStripRef.current;
+
+        if (!isEventStripVisible || !element) {
+            root.style.setProperty("--home-event-strip-height", "0px");
+            return () => {
+                root.style.setProperty("--home-event-strip-height", "0px");
+            };
+        }
+
+        const updateEventStripHeight = () => {
+            root.style.setProperty(
+                "--home-event-strip-height",
+                `${element.getBoundingClientRect().height}px`,
+            );
+        };
+
+        updateEventStripHeight();
+
+        const resizeObserver = new ResizeObserver(updateEventStripHeight);
+        resizeObserver.observe(element);
+        window.addEventListener("resize", updateEventStripHeight);
+
+        return () => {
+            resizeObserver.disconnect();
+            window.removeEventListener("resize", updateEventStripHeight);
+            root.style.setProperty("--home-event-strip-height", "0px");
+        };
+    }, [isEventStripVisible]);
 
     const handleDownload = (downloadUrl: string) => {
         // Start the download
@@ -218,9 +259,96 @@ export default function Home() {
         return () => observer.disconnect();
     }, []);
 
+    const handleProcessScroll = () => {
+        const container = processCarouselRef.current;
+        if (!container) return;
+
+        const slides = Array.from(
+            container.querySelectorAll<HTMLElement>("[data-process-slide]"),
+        );
+        if (!slides.length) return;
+
+        const containerCenter = container.scrollLeft + container.clientWidth / 2;
+        let nextActiveIndex = 0;
+        let closestDistance = Number.POSITIVE_INFINITY;
+
+        slides.forEach((slide, index) => {
+            const slideCenter = slide.offsetLeft + slide.clientWidth / 2;
+            const distance = Math.abs(slideCenter - containerCenter);
+
+            if (distance < closestDistance) {
+                closestDistance = distance;
+                nextActiveIndex = index;
+            }
+        });
+
+        setActiveProcessIndex(nextActiveIndex);
+    };
+
+    const scrollToProcess = (index: number) => {
+        const container = processCarouselRef.current;
+        if (!container) return;
+
+        const slides = container.querySelectorAll<HTMLElement>("[data-process-slide]");
+        const targetSlide = slides[index];
+        if (!targetSlide) return;
+
+        const nextLeft =
+            targetSlide.offsetLeft - (container.clientWidth - targetSlide.clientWidth) / 2;
+
+        container.scrollTo({
+            left: nextLeft,
+            behavior: "smooth",
+        });
+        setActiveProcessIndex(index);
+    };
+
+    const handleCloseEventStrip = () => {
+        setIsEventStripVisible(false);
+        if (typeof window !== "undefined") {
+            window.localStorage.setItem("home-event-strip-dismissed", "true");
+        }
+    };
+
+    useEffect(() => {
+        if (!isProcessAutoplaying || !isProcessShowcaseVisible) return;
+
+        const intervalId = window.setInterval(() => {
+            const nextIndex = (activeProcessIndex + 1) % processSteps.length;
+            scrollToProcess(nextIndex);
+        }, 4000);
+
+        return () => window.clearInterval(intervalId);
+    }, [activeProcessIndex, isProcessAutoplaying, isProcessShowcaseVisible, processSteps.length]);
+
     return (
         <section id="home" className="hero">
             <div className="hero-gradient-bg" />
+            {isEventStripVisible && (
+                <div ref={eventStripRef} className="event-strip">
+                    <div className="container">
+                        <div className="event-strip__inner">
+                            <div className="event-strip__content">
+                                <p className="event-strip__text">
+                                    오픈 특가 이벤트, 연간 결제 30% 할인 이벤트
+                                </p>
+                                <a href="#pricing" className="event-strip__link">
+                                    더 알아보기
+                                    <ArrowRightIcon />
+                                </a>
+                            </div>
+                            <button
+                                type="button"
+                                className="event-strip__close"
+                                onClick={handleCloseEventStrip}
+                                aria-label="이벤트 배너 닫기"
+                            >
+                                ×
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
             <div className="container">
                 <div className="hero-stack">
                     <h1 className="title hero">
@@ -231,11 +359,10 @@ export default function Home() {
                         <span className="typing-cursor"></span>
                         에게 맡기세요
                     </h1>
-                    <p className="subtitle">
-                        당신의 아이디어가 귀찮은 수식 입력으로 인해 끊기지
-                        않도록,
+                    <p className="subtitle hero-subtitle-emphasis">
+                        더 이상 내신 기출문제집 타이핑에 시간쓰지 마세요.
                         <br />
-                        Nova AI가 한글 파일을 자동으로 편집하고 관리합니다.
+                        Nova AI가 압도적인 타이핑을 보여드리겠습니다.
                     </p>
 
                     <div className="hero-actions">
@@ -320,27 +447,29 @@ export default function Home() {
             <div ref={processShowcaseRef} className="process-showcase">
                 <div className="process-showcase-shell">
                     <h2 className="process-showcase-title">이렇게 타이핑이 진행됩니다</h2>
-                    <p className="process-showcase-subtitle">사진을 넣고, AI가 수식을 생성하고, 한글 파일에 자동 타이핑합니다.</p>
-                    <div className="process-showcase-grid">
+                    <div
+                        ref={processCarouselRef}
+                        className="process-showcase-carousel"
+                        onScroll={handleProcessScroll}
+                    >
                         {processSteps.map((item, index) => (
-                            <div
+                            <article
                                 key={item.step}
                                 className={`process-showcase-item ${
                                     isProcessShowcaseVisible
                                         ? "process-showcase-item--visible"
                                         : ""
+                                } ${
+                                    activeProcessIndex === index
+                                        ? "process-showcase-item--active"
+                                        : ""
                                 }`}
                                 style={{
                                     animationDelay: `${index * 180}ms`,
                                 }}
+                                data-process-slide
                             >
                                 <div className="process-showcase-card">
-                                    <div className="process-showcase-copy">
-                                        <div className="process-showcase-head">
-                                            <p className="process-showcase-label">{item.label}</p>
-                                        </div>
-                                        <p className="process-showcase-desc">{item.description}</p>
-                                    </div>
                                     <button
                                         type="button"
                                         className="process-showcase-img-button"
@@ -353,10 +482,67 @@ export default function Home() {
                                         aria-label={`${item.label} 이미지 확대 보기`}
                                     >
                                         <img src={item.image} alt={item.alt} className="process-showcase-img" />
+                                        <div className="process-showcase-copy">
+                                            <div className="process-showcase-head">
+                                                <p className="process-showcase-label">{item.label}</p>
+                                            </div>
+                                            <p
+                                                className={`process-showcase-desc ${
+                                                    item.isHighlightedDescription
+                                                        ? "process-showcase-desc--highlight"
+                                                        : ""
+                                                }`}
+                                            >
+                                                {item.description}
+                                            </p>
+                                        </div>
                                     </button>
                                 </div>
-                            </div>
+                            </article>
                         ))}
+                    </div>
+                    <div className="process-showcase-controls">
+                        <div className="process-showcase-dots" aria-label="진행 단계 선택">
+                            {processSteps.map((item, index) => (
+                                <button
+                                    key={item.step}
+                                    type="button"
+                                    className={`process-showcase-dot ${
+                                        activeProcessIndex === index
+                                            ? "process-showcase-dot--active"
+                                            : ""
+                                    }`}
+                                    onClick={() => scrollToProcess(index)}
+                                    aria-label={`${item.label} 보기`}
+                                    aria-pressed={activeProcessIndex === index}
+                                />
+                            ))}
+                        </div>
+                        <button
+                            type="button"
+                            className="process-showcase-autoplay"
+                            onClick={() => setIsProcessAutoplaying((prev) => !prev)}
+                            aria-label={
+                                isProcessAutoplaying
+                                    ? "자동 회전 일시정지"
+                                    : "자동 회전 시작"
+                            }
+                            aria-pressed={isProcessAutoplaying}
+                        >
+                            {isProcessAutoplaying ? (
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                    <rect x="6" y="5" width="4" height="14" rx="1.5" fill="currentColor" />
+                                    <rect x="14" y="5" width="4" height="14" rx="1.5" fill="currentColor" />
+                                </svg>
+                            ) : (
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                    <path
+                                        d="M8 6.5c0-1.2.97-1.94 2.01-1.37l8.23 4.5c1.05.57 1.05 2.08 0 2.65l-8.23 4.5C8.97 17.35 8 16.61 8 15.4V6.5z"
+                                        fill="currentColor"
+                                    />
+                                </svg>
+                            )}
+                        </button>
                     </div>
                 </div>
             </div>

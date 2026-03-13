@@ -1686,10 +1686,10 @@ class ChatWorker(QThread):
             pass
 
         chat_model = (
-            os.getenv("OPENAI_CHAT_MODEL")
-            or os.getenv("CHAT_AI_MODEL")
+            os.getenv("GEMINI_CHAT_MODEL")
+            or os.getenv("GEMINI_MODEL")
             or ""
-        ).strip() or "gpt-5-mini"
+        ).strip() or "gemini-3.1-pro-preview"
         actions = self._infer_local_actions(message)
         has_attachments = bool(self._attachment_paths)
 

@@ -13,7 +13,6 @@ try {
   $envFile = Join-Path $projectRoot ".env"
   $requirementsFile = Join-Path $projectRoot "requirements.txt"
   $setupPy = Join-Path $projectRoot "setup.py"
-  $promptFile = Join-Path $projectRoot "prompts\image_instructions_prompt.txt"
   $venvPath = Join-Path $projectRoot ".venv"
   $venvPython = Join-Path $venvPath "Scripts\python.exe"
 
@@ -23,10 +22,6 @@ try {
 
   if (-not (Test-Path $setupPy)) {
     throw "Missing setup.py at $setupPy"
-  }
-
-  if (-not (Test-Path $promptFile)) {
-    throw "Missing prompt file at $promptFile"
   }
 
   if (Test-Path $envFile) {
@@ -39,7 +34,7 @@ try {
       $parts = $line.Split("=", 2)
       if ($parts.Count -ne 2) { continue }
 
-      $name = $parts[0].Trim()
+      $name = $parts[0].Trim().Trim([char]0xFEFF)
       $value = $parts[1].Trim().Trim('"').Trim("'")
       if ($name.Length -eq 0) { continue }
 
@@ -49,12 +44,6 @@ try {
       }
     }
 
-    if (-not $env:GEMINI_MODEL -and $env:LITEPRO_MODEL) {
-      [System.Environment]::SetEnvironmentVariable("GEMINI_MODEL", $env:LITEPRO_MODEL, "Process")
-      if ($PersistEnv) {
-        [System.Environment]::SetEnvironmentVariable("GEMINI_MODEL", $env:LITEPRO_MODEL, "User")
-      }
-    }
   }
   else {
     Write-Warning ".env not found. Continuing, but AI/OCR features may fail."

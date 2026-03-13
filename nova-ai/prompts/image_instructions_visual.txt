@@ -19,12 +19,22 @@ Do NOT use `insert_cropped_image(...)` for:
 - choice numbers ①②③④⑤
 - highlighted text only
 - colored text only
+- an entire boxed passage/body when the box contains readable text
+
+Mixed text + figure boxes:
+- If a boxed area contains both readable text and a visual figure, type the text and crop only the figure.
+- Do not crop the whole box just because a figure exists somewhere inside it.
+- The presence of one car/graph/diagram inside a box does NOT justify turning the whole boxed content into a single image.
 
 HIGHLIGHT / COLOR / STYLE:
 - If a span has only highlight, use `insert_highlighted_text(...)`.
 - If a span has only text color, use `insert_colored_text(...)`.
 - If a span has two or more visible styles together (bold/underline/italic/strike/color/highlight), use one `insert_styled_text(...)`.
 - Otherwise use normal `insert_text(...)`.
+- If the visible style is underline, preserve it in code instead of dropping it.
+- For underlined text, prefer `set_underline(True/False)` around only the underlined span.
+- For underlined equations, keep the equation as `insert_equation(...)` and surround that call with `set_underline(True/False)`.
+- Do NOT turn an underlined text span into `insert_cropped_image(...)` just to preserve the underline.
 
 TABLE RECONSTRUCTION (CRITICAL):
 - Prefer `insert_table(...)` over turning a table into an image.
@@ -38,6 +48,9 @@ TABLE RECONSTRUCTION (CRITICAL):
 - Use visible width strings such as `0.2mm`, `0.3mm`, `0.5mm`.
 - If a table cell contains math, use `EQ:` inside that cell value.
 - Do not invent invisible colors or borders.
+- Use `insert_table(...)` ONLY for real tables with actual cell/grid structure.
+- Do NOT use `insert_table(...)` for borderless alignment layouts, multi-column choices, or header-like labels that are merely positioned on the page.
+- If the source looks like "two columns of choices under text headers" but has no real table borders, reproduce it with plain typing and spacing, not a table.
 
 Compact table examples:
 insert_table(2, 4, cell_data=[
@@ -71,10 +84,17 @@ Crop rules:
 3) Keep labels inside the figure crop if they belong to the figure.
 4) If there are multiple figures, crop them separately.
 5) Coordinates must be decimal ratios between `0.0` and `1.0`.
+6) Make the crop as tight as possible around the actual figure/diagram, while still keeping essential labels/arrows.
+7) Do NOT include nearby stem text, question text, choice lines, score labels, or large blank margins unless they truly belong to the figure.
+8) If the figure sits inside a larger box/container, crop the figure itself, not the whole surrounding box.
 
 Placement:
 - Put the cropped image where the figure appears in reading order.
 - Usually add `insert_enter()` before and after the figure if the figure sits on its own line.
+- If a large figure/block appears between the stem and the final question sentence or choices, insert the image at that exact middle position.
+- Do NOT delay a figure until after the question sentence or after the answer choices when the source shows the figure earlier.
+- Common exam order to preserve:
+  stem text -> figure/image block -> question sentence -> choices
 
 Compact crop example:
 insert_text('26. 그림과 같이 ...')

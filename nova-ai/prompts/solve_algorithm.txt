@@ -47,6 +47,12 @@
 - 설명문은 가능하면 한 문장씩 끊어서 작성하라.
 - 설명문이 마침표(`.`)로 끝나면, 다음 설명문을 같은 `insert_text(...)` 안에 계속 붙이지 말고 다음 줄에서 시작하라.
 - 즉 `insert_text('...입니다. 다음으로 ...')`처럼 한 줄에 여러 설명문을 길게 붙이지 마라.
+- 이미지에서 보이는 밑줄은 생략하지 말고 코드로 구현하라.
+- 텍스트 밑줄:
+  `set_underline(True)` -> `insert_text(...)` -> `set_underline(False)`
+- 수식 밑줄:
+  `set_underline(True)` -> `insert_equation(...)` -> `set_underline(False)`
+- 밑줄 span 안에 텍스트와 수식이 함께 있으면, underline을 켠 상태로 `insert_text(...)`와 `insert_equation(...)`을 이어서 쓰고 마지막에 underline을 끄라.
 - 줄글만으로 이해가 어렵고 그림이 실제로 학습을 돕는 경우에는 `insert_python_figure("""...""")`를 사용할 수 있다.
 - 특히 `고유값/고유벡터`, `행렬 선형변환`, `자코비안/변수변환`, `그래프 개형`, `힘 방향/자유물체도`가 핵심인 해설에서는 `insert_python_figure("""...""")`를 적극적으로 우선 고려하라.
 - 단, 그림 사양을 문제에서 정확히 복원할 수 있을 때만 사용하라. 확신이 낮으면 그림을 생략하라.
@@ -84,23 +90,72 @@
 - LaTeX 벡터/굵은글씨 잔재 `\mathbf{...}`, `mathbf...`, `\boldsymbol{...}`, `boldsymbol...`는 그대로 출력하지 말고 HwpEqn 기호로 복원하라.
 - `mathbfA`, `mathbfx`, `\mathbf{v}`, `boldsymboly` 같은 문자열을 수식 결과에 남기지 마라.
 - 고유벡터 `v`는 반드시 `{rmboldv}`로 쓰고, 단위벡터 `u, v, n`은 `{rmboldu}`, `{rmboldv}`, `{rmboldn}`처럼 작성하라.
+- 문제에서 `벡터 u, v, w`처럼 직접 선언된 기호는 이후 모든 식에서 `{rmboldu}`, `{rmboldv}`, `{rmboldw}`처럼 compact token으로 유지하라.
+- 예:
+  `insert_equation('{rmboldu} CDOT {rmboldv} = 0')`
+  `insert_equation('vert vert `{rmboldw}``vert vert = sqrt {3}')`
+  `insert_equation('2{rmboldu} - 3{rmboldv} - 2{rmboldw}')`
 - 굵은 소문자 벡터는 `{rmboldx}`, `{rmboldy}`, `{rmboldv}`처럼 compact token을 우선 사용하라.
 - 대문자 벡터/굵은 대문자 기호는 `{rm boldF}`, `{rm boldE}`, `{rm boldB}`, `{rm boldA}`처럼 작성하라.
+- 굵은 벡터장 이름이 함수처럼 괄호와 함께 나오면 bold를 유지한 채 함수 이름으로 써라.
+- 예:
+  `insert_equation('rm {bold{F}} it LEFT ( x,`y,`z RIGHT ) = LEFT < e ^{yz},`xze ^{yz},`xye ^{yz} RIGHT >')`
 - compact token이 분명하지 않은 경우에도 `mathbf...`, `boldsymbol...` 문자열을 남기지 말고 가장 자연스러운 일반 기호나 bold 토큰으로 정리하라.
+- 단, 단일 bold 라틴 문자가 일반 문자와 섞여 있는 보통 수식에서는 `rm {bold{x}} it` 형태를 우선 사용하라.
+- 예:
+  `insert_equation('A rm {bold{x}} it = 0')`
+  `insert_equation('A rm {bold{x}} it = rm {bold{b}} it')`
+- 굵은 `x`, `b` 같은 변수가 열벡터/행렬에 직접 할당될 때도 왼쪽 변수는 wrapped bold form을 유지하라.
+- 예:
+  `insert_equation('rm {bold{x}} it = {bmatrix{2#1}}')`
+  `insert_equation('rm {bold{b}} it = {pmatrix{a#b}}')`
 - 예:
   `insert_equation('{rm boldA} {rmboldx} = {rmboldb}')`
   `insert_equation('LEFT ( A - lambda I RIGHT ) {rmboldv} = 0')`
   `insert_equation('{rmboldv} = {pmatrix{x#y#z}}')`
 - 미분소는 붙여 쓰지 말고 구조를 분리하라. `dxdydz`가 필요하면 `dx dy dz`, `drhodphidtheta`가 필요하면 `d rho d phi d theta`처럼 쓴다.
 - 집합/조건부 표기에서는 중괄호를 `LEFT { ... RIGHT }`로 직접 쓰고, 역슬래시 escape를 넣지 마라.
+- `ⓐⓑⓒⓓⓔ` 같은 동그라미 영문 표시는 수식이 아니라 visible text로 유지하라.
 - 예:
-  `insert_equation('D = LEFT { LEFT ( x,`y RIGHT ) LEFT | 0 <= y <= 2,`0 <= x <= sqrt {2y-y ^{2}} RIGHT . RIGHT }')`
+  `insert_text('ⓐ')`
+  `insert_text('ⓑ 내용')`
+- 조건부 집합/영역의 가운데 막대는 `LEFT | ... RIGHT .`가 아니라 조건 구분용 `\`vert`로 써라.
+- 예:
+  `insert_equation('R = LEFT { LEFT ( x,`y RIGHT ) IN ℝ ^{2} `vert `x >= 0,`y >= 0,`x ^{2} + y ^{2} <= 25 RIGHT }')`
+  `insert_equation('S = LEFT { x `vert `x > 0 RIGHT }')`
+- `LEFT | ... RIGHT .` 형태로 조건부 집합 막대를 쓰지 마라.
+- 유한 집합, 기저 표기, 생성집합처럼 중괄호가 실제로 보이는 수식도 그대로 `LEFT { ... RIGHT }`로 복원하라.
+- 예:
+  `insert_equation('B = LEFT { v _{1} ,`v _{2} RIGHT }')`
+- `\{ v _{1},`v _{2} \}` 같은 역슬래시 escape 형태나 `LEFT < ... RIGHT >` 같은 다른 괄호로 바꾸지 마라.
+- 단, 연립방정식/연립부등식/연립조건처럼 왼쪽 중괄호 하나로 여러 줄을 묶는 구조는 집합 표기가 아니라 `cases`를 사용하라.
+- 즉 연립식은 `LEFT { ... RIGHT }`가 아니라 `{cases{첫째줄#둘째줄}}` 형태를 우선 사용하라.
+- `cases` 바깥에 다시 `LEFT {`를 씌우지 마라.
+- `cases` 안의 보통 등호는 `=`를 사용하라.
+- 예:
+  `insert_equation('{cases{x ^{3} - 3xy ^{2} = 0#3x ^{2} y - y ^{3} = -1}}')`
+  `insert_equation('{cases{x + y = 1#x - y = 3}}')`
+- `≡`(합동/동치/항등) 기호가 보이면 그때는 `==`를 사용하라.
+- 예:
+  `insert_equation('x == y')`
+- 일반 절댓값은 가능하면 `LEFT | ... RIGHT |` 형태를 우선 사용하라.
+- 예:
+  `insert_equation('LEFT | a RIGHT | ^{3} = LEFT | -i RIGHT | = 1')`
+- 이중 막대 노름은 `vert vert ... vert vert`를 유지하라.
 - `quad`, `qquad` 같은 LaTeX 공백 명령은 그대로 출력하지 말고, 쉼표/공백 또는 backtick 공백으로 자연스럽게 바꿔라.
 
 [물리 문제 추가 규칙]
 - 어떤 법칙(뉴턴 법칙, 에너지 보존, 운동량 보존, 가우스 법칙, 회로 법칙 등)을 쓰는지 먼저 선언하라.
 - 방향, 부호, 기준축, 단위를 반드시 명시하라.
 - 필요한 경우 간단한 상황 해석을 먼저 제시하라.
+- 물리 문제에서 `A`, `B`, `C`, `I`, `II` 같은 문자뿐 아니라 `p`, `q`, `r`, `s` 같은 소문자 점이름이 물체/점/끝점/구간/영역/경우의 이름표라면 변수처럼 이탤릭으로 두지 말고 `rm` 로만 표기를 유지하라.
+- 예를 들어 `물체 A, B`, `구간 I, II`, `점 p, q`, `양 끝점 p, q`가 보이면 수식에서는 `v _{rm A}`, `K _{rm B}`, `mu _{rm I}`, `W _{rm II}`, `{rmp}`, `{rmq}`처럼 쓴다.
+- `v _{A}`, `mu _{I}`, `W _{II}`, `p`, `q`처럼 plain italic 기호로 약화시키지 마라.
+- 이름표들이 화살표로 순서/흐름/사이클처럼 연결되어 있으면 `RARROW` 대신 `->`를 써라.
+- 예: `rm A -> rm B -> rm C -> rm D -> rm A`, `{rmp} -> {rmq}`
+- 이름표 범위를 나타내는 물결표가 보이면 `~`를 그대로 두지 말고 수식 안에서 `SIM`으로 복원하라.
+- 특히 `I ~ IV` 같은 로마 숫자 범위는 `rm I it SIM rm IV it`처럼 쓴다.
+- 단, 확률 사건 `A`, 행렬 `A`, 단위행렬 `I`, 일반 변수 `p`, `q`처럼 실제 수학 기호인 경우에는 문맥에 맞게 일반 표기를 유지하라.
 - 수식 안에서 `Divergence`, `Gradient`, `Laplacian` 같은 영어 단어를 문자 그대로 보여줘야 하면 `{rm "Divergence"}`처럼 전체를 한 덩어리 로만 문자열로 넣어라.
 - 영어 단어를 `DIVIDE ergence`처럼 잘못 쪼개거나, 연산자 토큰으로 오인되게 만들지 마라.
 

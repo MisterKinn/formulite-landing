@@ -76,7 +76,7 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
 [Code]
-// 설치 후 .env 파일이 없으면 .env.example을 .env로 복사
+// 설치 후 .env.example 내용을 .env로 동기화
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   EnvExample, EnvFile: String;
@@ -85,9 +85,7 @@ begin
   begin
     EnvExample := ExpandConstant('{app}\.env.example');
     EnvFile := ExpandConstant('{app}\.env');
-    if FileExists(EnvExample) and (not FileExists(EnvFile)) then
-    begin
+    if FileExists(EnvExample) then
       CopyFile(EnvExample, EnvFile, False);
-    end;
   end;
 end;
