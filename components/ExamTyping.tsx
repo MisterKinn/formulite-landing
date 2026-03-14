@@ -5,6 +5,7 @@ import examScene2 from "../un2.png";
 import examScene3 from "../un3.png";
 import examScene4 from "../int4.png";
 import examScene5 from "../int5.png";
+import examScene6 from "../int6.png";
 
 interface ExamItem {
     image: string;
@@ -56,6 +57,13 @@ const items: ExamItem[] = [
         buttonLabel: "진하게+밑줄",
         title: "진하게+밑줄 효과",
         caption: "강조가 필요한 문장에 진하게와 밑줄 효과를 자연스럽게 적용합니다.",
+    },
+    {
+        image: examScene6.src,
+        alt: "한자 타이핑 예시",
+        buttonLabel: "한자 타이핑",
+        title: "한자 타이핑",
+        caption: "한자가 포함된 긴 지문도 자연스럽고 정확하게 타이핑합니다.",
     },
 ];
 

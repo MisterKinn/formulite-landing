@@ -623,8 +623,8 @@ Preserve semantics and layout, but normalize rendering to clean exam-print style
             pass
 
         model_name = _normalize_model_name((
-            os.getenv("GEMINI_IMAGE_MODEL")
-            or os.getenv("GEMINI_MODEL")
+            os.getenv("GEMINI_MODEL")
+            or os.getenv("GEMINI_IMAGE_MODEL")
             or DEFAULT_GEMINI_MODEL
         ).strip())
         if "image" not in model_name:
@@ -1498,18 +1498,6 @@ class CredentialsLoginDialog(QDialog):
         cancel_btn.clicked.connect(self.reject)
         btn_row.addWidget(cancel_btn)
 
-        signup_btn = QPushButton("회원가입")
-        signup_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        signup_btn.setFixedHeight(42)
-        signup_btn.setStyleSheet(
-            "QPushButton { background-color: #f9fafb; color: #4f46e5; border: 1px solid #dbeafe;"
-            "  border-radius: 12px; font-size: 13px; font-weight: 700; padding: 0 18px; }"
-            "QPushButton:hover { background-color: #eef2ff; border: 1px solid #c7d2fe; }"
-            "QPushButton:pressed { background-color: #e0e7ff; border: 1px solid #a5b4fc; }"
-        )
-        signup_btn.clicked.connect(self._open_signup_page)
-        btn_row.addWidget(signup_btn)
-
         login_btn = QPushButton("로그인")
         login_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         login_btn.setFixedHeight(42)
@@ -1542,9 +1530,6 @@ class CredentialsLoginDialog(QDialog):
             self.set_error("이메일과 비밀번호를 모두 입력해주세요.")
             return
         self.accept()
-
-    def _open_signup_page(self) -> None:
-        webbrowser.open("https://www.nova-ai.work/login?mode=signup")
 
     def set_error(self, message: str) -> None:
         text = str(message or "").strip()
