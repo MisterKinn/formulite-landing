@@ -64,6 +64,228 @@ def _get_user_file_path() -> Path:
     return _get_user_data_dir() / "user_account.json"
 
 
+def get_callback_url(host: str = "localhost") -> str:
+    """Build the desktop OAuth callback URL."""
+    return f"http://{host}:{CALLBACK_PORT}{CALLBACK_PATH}"
+
+
+def build_login_url(
+    *,
+    redirect_uri: Optional[str] = None,
+    force_account_switch: bool = True,
+    source: str = "desktop",
+) -> str:
+    """Build the web login URL used by the desktop app."""
+    login_params = {
+        "redirect_uri": redirect_uri or get_callback_url(),
+        "source": source,
+    }
+    if force_account_switch:
+        login_params["force_account_switch"] = "1"
+    return f"{LOGIN_URL}?{urlencode(login_params)}"
+
+
+def is_oauth_callback_url(url: str) -> bool:
+    """Return True when the URL matches the desktop OAuth callback."""
+    parsed = urlparse(url or "")
+    if parsed.path != CALLBACK_PATH:
+        return False
+
+    if parsed.netloc:
+        host = str(parsed.hostname or "").strip().lower()
+        if host not in {"localhost", "127.0.0.1"}:
+            return False
+        port = parsed.port or CALLBACK_PORT
+        if port != CALLBACK_PORT:
+            return False
+
+    return True
+
+
+def _extract_user_data_from_params(params: Dict[str, list[str]]) -> Dict[str, Any]:
+    incoming_plan = params.get("plan", [""])[0]
+    incoming_tier = params.get("tier", [""])[0]
+    normalized_plan = _normalize_plan_tier(incoming_plan or incoming_tier, "free")
+
+    return {
+        "uid": params.get("uid", [""])[0],
+        "name": params.get("name", [""])[0],
+        "email": params.get("email", [""])[0],
+        "tier": normalized_plan,
+        "plan": normalized_plan,
+        "photo_url": params.get("photo_url", [""])[0],
+        "handle": params.get("handle", [""])[0],
+        "idToken": params.get("idToken", [""])[0],
+        "refreshToken": params.get("refreshToken", [""])[0],
+    }
+
+
+def _sync_user_profile_after_login(user_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Refresh cached plan/tier from Firebase after a successful login."""
+    if not user_data.get("uid"):
+        return user_data
+
+    save_user(user_data)
+
+    try:
+        from backend.firebase_profile import refresh_user_profile_from_firebase
+
+        profile = refresh_user_profile_from_firebase()
+        if profile:
+            normalized_plan = _normalize_plan_tier(
+                profile.get("plan") or profile.get("tier"),
+                user_data.get("plan") or user_data.get("tier") or "free",
+            )
+            user_data["plan"] = normalized_plan
+            user_data["tier"] = normalized_plan
+            save_user(user_data)
+    except Exception:
+        pass
+
+    return user_data
+
+
+def complete_login_from_callback_url(callback_url: str) -> Optional[Dict[str, Any]]:
+    """Parse a desktop callback URL, persist the user, and return the result."""
+    if not is_oauth_callback_url(callback_url):
+        return None
+
+    parsed = urlparse(callback_url)
+    user_data = _extract_user_data_from_params(parse_qs(parsed.query))
+    if not user_data.get("uid"):
+        return None
+
+    return _sync_user_profile_after_login(user_data)
+
+
+def _resolve_firebase_api_key() -> str:
+    """Resolve the Firebase Web API key used for email/password auth."""
+    try:
+        from backend.firebase_profile import FIREBASE_CONFIG
+
+        api_key = str((FIREBASE_CONFIG or {}).get("apiKey") or "").strip()
+        if api_key:
+            return api_key
+    except Exception:
+        pass
+
+    return str(
+        os.getenv("FIREBASE_API_KEY")
+        or os.getenv("NEXT_PUBLIC_FIREBASE_API_KEY")
+        or ""
+    ).strip()
+
+
+def _map_email_password_auth_error(raw_code: str) -> str:
+    code = str(raw_code or "").strip().upper()
+    if code in {
+        "INVALID_LOGIN_CREDENTIALS",
+        "INVALID_PASSWORD",
+        "EMAIL_NOT_FOUND",
+        "INVALID_EMAIL",
+        "USER_NOT_FOUND",
+    }:
+        return "이메일 또는 비밀번호가 올바르지 않습니다."
+    if code in {"TOO_MANY_ATTEMPTS_TRY_LATER", "TOO_MANY_ATTEMPTS"}:
+        return "로그인 시도가 너무 많습니다. 잠시 후 다시 시도해주세요."
+    if code in {"USER_DISABLED"}:
+        return "비활성화된 계정입니다. 관리자에게 문의해주세요."
+    return "로그인에 실패했습니다. 다시 시도해주세요."
+
+
+def login_with_email_password(
+    email: str,
+    password: str,
+    timeout: int = 20,
+) -> Dict[str, Any]:
+    """Authenticate the desktop app with Firebase email/password login."""
+    normalized_email = str(email or "").strip().lower()
+    if not normalized_email or not str(password or ""):
+        raise ValueError("이메일과 비밀번호를 입력해주세요.")
+
+    api_key = _resolve_firebase_api_key()
+    if not api_key:
+        raise RuntimeError("Firebase 로그인 설정이 누락되었습니다.")
+
+    try:
+        import requests
+    except Exception as exc:
+        raise RuntimeError("로그인 모듈을 불러오지 못했습니다.") from exc
+
+    auth_url = (
+        "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword"
+        f"?key={api_key}"
+    )
+    response = requests.post(
+        auth_url,
+        json={
+            "email": normalized_email,
+            "password": password,
+            "returnSecureToken": True,
+        },
+        timeout=timeout,
+        headers={"Content-Type": "application/json"},
+    )
+
+    try:
+        payload = response.json()
+    except Exception:
+        payload = {}
+
+    if response.status_code != 200:
+        error_code = (
+            payload.get("error", {}).get("message")
+            if isinstance(payload, dict)
+            else ""
+        )
+        raise RuntimeError(_map_email_password_auth_error(str(error_code or "")))
+
+    id_token = str(payload.get("idToken") or "")
+    refresh_token = str(payload.get("refreshToken") or "")
+    uid = str(payload.get("localId") or "")
+    if not uid or not id_token:
+        raise RuntimeError("로그인 응답이 올바르지 않습니다.")
+
+    name = str(payload.get("displayName") or "").strip()
+    photo_url = str(payload.get("photoUrl") or "").strip()
+    account_email = str(payload.get("email") or normalized_email).strip().lower()
+
+    lookup_url = (
+        "https://identitytoolkit.googleapis.com/v1/accounts:lookup"
+        f"?key={api_key}"
+    )
+    try:
+        lookup_response = requests.post(
+            lookup_url,
+            json={"idToken": id_token},
+            timeout=timeout,
+            headers={"Content-Type": "application/json"},
+        )
+        if lookup_response.status_code == 200:
+            lookup_payload = lookup_response.json()
+            users = lookup_payload.get("users") if isinstance(lookup_payload, dict) else None
+            if isinstance(users, list) and users:
+                account = users[0] or {}
+                name = str(account.get("displayName") or name).strip()
+                photo_url = str(account.get("photoUrl") or photo_url).strip()
+                account_email = str(account.get("email") or account_email).strip().lower()
+    except Exception:
+        pass
+
+    user_data = {
+        "uid": uid,
+        "name": name or account_email.split("@")[0],
+        "email": account_email,
+        "tier": "free",
+        "plan": "free",
+        "photo_url": photo_url,
+        "handle": "",
+        "idToken": id_token,
+        "refreshToken": refresh_token,
+    }
+    return _sync_user_profile_after_login(user_data)
+
+
 def get_stored_user() -> Optional[Dict[str, Any]]:
     """
     Returns the cached user from user_account.json, or None if not logged in.
@@ -139,28 +361,9 @@ class OAuthCallbackHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         
         if parsed.path == CALLBACK_PATH:
-            # Parse query parameters
-            params = parse_qs(parsed.query)
-            incoming_plan = params.get("plan", [""])[0]
-            incoming_tier = params.get("tier", [""])[0]
-            normalized_plan = _normalize_plan_tier(incoming_plan or incoming_tier, "free")
-            
-            # Extract user data from callback
-            user_data = {
-                "uid": params.get("uid", [""])[0],
-                "name": params.get("name", [""])[0],
-                "email": params.get("email", [""])[0],
-                "tier": normalized_plan,
-                "plan": normalized_plan,
-                "photo_url": params.get("photo_url", [""])[0],
-                "handle": params.get("handle", [""])[0],
-                "idToken": params.get("idToken", [""])[0],
-                "refreshToken": params.get("refreshToken", [""])[0],
-            }
-            
-            if user_data["uid"]:
-                # Save user data
-                save_user(user_data)
+            user_data = complete_login_from_callback_url(self.path)
+
+            if user_data and user_data["uid"]:
                 OAuthCallbackHandler.user_data = user_data
                 
                 # Send success response
@@ -413,15 +616,8 @@ def start_oauth_flow(timeout: int = 300) -> Optional[Dict[str, Any]]:
     # Build login URL with redirect.
     # force_account_switch=1 asks the web login page to sign out any
     # existing browser session first so users can choose a different account.
-    redirect_uri = f"http://localhost:{CALLBACK_PORT}{CALLBACK_PATH}"
-    login_params = urlencode(
-        {
-            "redirect_uri": redirect_uri,
-            "force_account_switch": "1",
-            "source": "desktop",
-        }
-    )
-    login_url = f"{LOGIN_URL}?{login_params}"
+    redirect_uri = get_callback_url()
+    login_url = build_login_url(redirect_uri=redirect_uri)
     
     # Open browser
     try:
@@ -440,24 +636,7 @@ def start_oauth_flow(timeout: int = 300) -> Optional[Dict[str, Any]]:
     except Exception:
         pass
     
-    # After login, sync tier from Firebase
-    user_data = OAuthCallbackHandler.user_data
-    if user_data and user_data.get("uid"):
-        try:
-            from backend.firebase_profile import refresh_user_profile_from_firebase
-            profile = refresh_user_profile_from_firebase()
-            if profile:
-                normalized_plan = _normalize_plan_tier(
-                    profile.get("plan") or profile.get("tier"),
-                    user_data.get("plan") or user_data.get("tier") or "free",
-                )
-                user_data["plan"] = normalized_plan
-                user_data["tier"] = normalized_plan
-                save_user(user_data)
-        except Exception:
-            pass
-    
-    return user_data
+    return OAuthCallbackHandler.user_data
 
 
 def is_logged_in() -> bool:

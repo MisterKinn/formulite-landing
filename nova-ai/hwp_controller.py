@@ -2991,37 +2991,88 @@ class HwpController:
                         flat[i : i + cols] for i in range(0, len(flat), cols)
                     ]
                 occupied = [[False for _ in range(cols)] for _ in range(rows)]
+
+                def _fit_span_to_free(
+                    row_index: int,
+                    col_index: int,
+                    requested_rowspan: int,
+                    requested_colspan: int,
+                ) -> tuple[int, int]:
+                    max_rowspan = max(1, min(int(requested_rowspan), rows - row_index))
+                    max_colspan = max(1, min(int(requested_colspan), cols - col_index))
+
+                    fitted_colspan = 1
+                    for next_col in range(col_index + 1, col_index + max_colspan):
+                        if occupied[row_index][next_col]:
+                            break
+                        fitted_colspan += 1
+
+                    fitted_rowspan = 1
+                    for next_row in range(row_index + 1, row_index + max_rowspan):
+                        blocked = False
+                        for scan_col in range(col_index, col_index + fitted_colspan):
+                            if occupied[next_row][scan_col]:
+                                blocked = True
+                                break
+                        if blocked:
+                            break
+                        fitted_rowspan += 1
+
+                    return fitted_rowspan, fitted_colspan
+
+                def _place_cell_value(row_index: int, col_index: int, raw_value: Any) -> int:
+                    if col_index < 0 or col_index >= cols:
+                        return 1
+                    if occupied[row_index][col_index]:
+                        return 1
+                    if raw_value is None:
+                        occupied[row_index][col_index] = True
+                        return 1
+
+                    spec = _normalize_cell_value(raw_value)
+                    requested_rowspan = max(1, min(int(spec["rowspan"]), rows - row_index))
+                    requested_colspan = max(1, min(int(spec["colspan"]), cols - col_index))
+                    rowspan, colspan = _fit_span_to_free(
+                        row_index, col_index, requested_rowspan, requested_colspan
+                    )
+                    spec["rowspan"] = rowspan
+                    spec["colspan"] = colspan
+                    table_specs[(row_index, col_index)] = spec
+                    style_params = _extract_style_params(spec)
+                    if style_params:
+                        style_specs[(row_index, col_index)] = spec
+                    for rr in range(row_index, row_index + rowspan):
+                        for cc in range(col_index, col_index + colspan):
+                            occupied[rr][cc] = True
+                    if rowspan > 1 or colspan > 1:
+                        merge_specs.append((row_index, col_index, row_index + rowspan - 1, col_index + colspan - 1))
+                    return colspan
+
                 if isinstance(cell_data, list):
                     max_rows = min(rows, len(cell_data))
                     for r in range(max_rows):
                         row = cell_data[r]
                         if not isinstance(row, list):
                             row = [row]
+                        unoccupied_cols = [cc for cc in range(cols) if not occupied[r][cc]]
+                        # If this row carries placeholders for already-covered cells,
+                        # interpret values by absolute column index to prevent shifts.
+                        use_absolute_mapping = bool(unoccupied_cols) and (
+                            len(row) >= cols or len(row) > len(unoccupied_cols)
+                        )
+                        if use_absolute_mapping:
+                            for c in range(min(cols, len(row))):
+                                _place_cell_value(r, c, row[c])
+                            continue
+
                         c = 0
                         for raw_value in row:
                             while c < cols and occupied[r][c]:
                                 c += 1
                             if c >= cols:
                                 break
-                            if raw_value is None:
-                                occupied[r][c] = True
-                                c += 1
-                                continue
-                            spec = _normalize_cell_value(raw_value)
-                            rowspan = max(1, min(int(spec["rowspan"]), rows - r))
-                            colspan = max(1, min(int(spec["colspan"]), cols - c))
-                            spec["rowspan"] = rowspan
-                            spec["colspan"] = colspan
-                            table_specs[(r, c)] = spec
-                            style_params = _extract_style_params(spec)
-                            if style_params:
-                                style_specs[(r, c)] = spec
-                            for rr in range(r, r + rowspan):
-                                for cc in range(c, c + colspan):
-                                    occupied[rr][cc] = True
-                            if rowspan > 1 or colspan > 1:
-                                merge_specs.append((r, c, r + rowspan - 1, c + colspan - 1))
-                            c += colspan
+                            consumed_cols = _place_cell_value(r, c, raw_value)
+                            c += max(1, consumed_cols)
                 if merged_cells:
                     for merge_value in merged_cells:
                         merge_spec = _normalize_merge_spec(merge_value)

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getAuth, onAuthStateChanged, signOut, User } from "firebase/auth";
 import {
@@ -8,6 +8,7 @@ import {
     Home,
     LayoutDashboard,
     LogOut,
+    Megaphone,
     TrendingUp,
     Users,
 } from "lucide-react";
@@ -82,6 +83,13 @@ interface Payment {
     card?: { company: string; number: string };
 }
 
+interface UpdateManifestForm {
+    latestVersion: string;
+    minSupportedVersion: string;
+    downloadUrl: string;
+    releaseNotes: string;
+}
+
 const EDITABLE_PLANS = ["free", "go", "plus", "pro"] as const;
 type EditablePlan = (typeof EDITABLE_PLANS)[number];
 const PLAN_LABELS: Record<string, string> = {
@@ -101,7 +109,7 @@ export default function AdminPage() {
     const [firebaseAuthChecked, setFirebaseAuthChecked] = useState(false);
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<
-        "dashboard" | "users" | "payments"
+        "dashboard" | "users" | "payments" | "updates"
     >("dashboard");
 
     // Dashboard state
@@ -124,6 +132,17 @@ export default function AdminPage() {
     const [paymentStatusFilter, setPaymentStatusFilter] = useState("");
     const [paymentStartDate, setPaymentStartDate] = useState("");
     const [paymentEndDate, setPaymentEndDate] = useState("");
+    const [updateForm, setUpdateForm] = useState<UpdateManifestForm>({
+        latestVersion: "",
+        minSupportedVersion: "",
+        downloadUrl: "",
+        releaseNotes: "",
+    });
+    const [updateLoading, setUpdateLoading] = useState(false);
+    const [updateSaving, setUpdateSaving] = useState(false);
+    const [updateStatusMessage, setUpdateStatusMessage] = useState("");
+    const [updateErrorMessage, setUpdateErrorMessage] = useState("");
+    const [forceMandatoryUpdate, setForceMandatoryUpdate] = useState(false);
 
     // Delete state
     const [deletingPaymentKey, setDeletingPaymentKey] = useState<string | null>(
@@ -432,6 +451,43 @@ export default function AdminPage() {
         setLoading(!(portalAuthChecked && firebaseAuthChecked));
     }, [portalAuthChecked, firebaseAuthChecked]);
 
+    const fetchUpdateManifest = useCallback(async () => {
+        setUpdateLoading(true);
+        setUpdateErrorMessage("");
+        try {
+            const authorization = await getAdminAuthHeader();
+            if (!authorization) return;
+            const response = await fetch("/api/admin/update-manifest", {
+                headers: { Authorization: authorization },
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(
+                    data?.error || "업데이트 설정을 불러오지 못했습니다.",
+                );
+            }
+            setUpdateForm({
+                latestVersion: String(data.latestVersion || ""),
+                minSupportedVersion: String(data.minSupportedVersion || ""),
+                downloadUrl: String(data.downloadUrl || ""),
+                releaseNotes: String(data.releaseNotes || ""),
+            });
+            setForceMandatoryUpdate(
+                !!data.minSupportedVersion &&
+                    data.minSupportedVersion === data.latestVersion,
+            );
+        } catch (error) {
+            console.error("Failed to fetch update manifest:", error);
+            setUpdateErrorMessage(
+                error instanceof Error
+                    ? error.message
+                    : "업데이트 설정을 불러오지 못했습니다.",
+            );
+        } finally {
+            setUpdateLoading(false);
+        }
+    }, [getAdminAuthHeader]);
+
     // Fetch stats
     useEffect(() => {
         if (!authUser && !adminSessionToken) return;
@@ -547,6 +603,11 @@ export default function AdminPage() {
         paymentEndDate,
     ]);
 
+    useEffect(() => {
+        if (!authUser && !adminSessionToken) return;
+        fetchUpdateManifest();
+    }, [authUser, adminSessionToken, fetchUpdateManifest]);
+
     if (loading) {
         return (
             <div className="admin-loading">
@@ -657,7 +718,84 @@ export default function AdminPage() {
             icon: <CreditCard size={16} />,
             count: paymentsTotal,
         },
+        {
+            key: "updates" as const,
+            label: "업데이트 공지",
+            icon: <Megaphone size={16} />,
+        },
     ];
+
+    const handleSaveUpdateManifest = async (
+        event: FormEvent<HTMLFormElement>,
+    ) => {
+        event.preventDefault();
+        setUpdateStatusMessage("");
+        setUpdateErrorMessage("");
+
+        const latestVersion = updateForm.latestVersion.trim();
+        const downloadUrl = updateForm.downloadUrl.trim();
+        const minSupportedVersion = forceMandatoryUpdate
+            ? latestVersion
+            : updateForm.minSupportedVersion.trim();
+
+        if (!latestVersion) {
+            setUpdateErrorMessage("최신 버전을 입력해주세요. 예: 1.0.1");
+            return;
+        }
+        if (!downloadUrl) {
+            setUpdateErrorMessage("설치파일 다운로드 링크를 입력해주세요.");
+            return;
+        }
+        if (!minSupportedVersion) {
+            setUpdateErrorMessage("최소 지원 버전을 입력해주세요.");
+            return;
+        }
+
+        setUpdateSaving(true);
+        try {
+            const authorization = await getAdminAuthHeader();
+            if (!authorization) throw new Error("관리자 인증이 필요합니다.");
+            const response = await fetch("/api/admin/update-manifest", {
+                method: "PUT",
+                headers: {
+                    Authorization: authorization,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    latestVersion,
+                    minSupportedVersion,
+                    downloadUrl,
+                    releaseNotes: updateForm.releaseNotes.trim(),
+                }),
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || "업데이트 공지 저장에 실패했습니다.");
+            }
+            setUpdateForm({
+                latestVersion: String(data.manifest?.latestVersion || latestVersion),
+                minSupportedVersion: String(
+                    data.manifest?.minSupportedVersion || minSupportedVersion,
+                ),
+                downloadUrl: String(data.manifest?.downloadUrl || downloadUrl),
+                releaseNotes: String(
+                    data.manifest?.releaseNotes || updateForm.releaseNotes.trim(),
+                ),
+            });
+            setUpdateStatusMessage(
+                "업데이트 공지가 저장되었습니다. 앱 실행 시 사용자에게 안내됩니다.",
+            );
+        } catch (error) {
+            console.error("Failed to save update manifest:", error);
+            setUpdateErrorMessage(
+                error instanceof Error
+                    ? error.message
+                    : "업데이트 공지 저장에 실패했습니다.",
+            );
+        } finally {
+            setUpdateSaving(false);
+        }
+    };
 
     return (
         <div className="admin-container">
@@ -707,14 +845,18 @@ export default function AdminPage() {
                                 ? "서비스 운영 현황"
                                 : activeTab === "users"
                                   ? "사용자 관리"
-                                  : "결제 관리"}
+                                  : activeTab === "payments"
+                                    ? "결제 관리"
+                                    : "업데이트 공지"}
                         </h2>
                         <p>
                             {activeTab === "dashboard"
                                 ? "핵심 지표와 매출 흐름을 실시간으로 확인합니다."
                                 : activeTab === "users"
                                   ? "회원 상태, 플랜, 결제 주기 기준 사용량을 한 화면에서 관리합니다."
-                                  : "결제 상태와 환불 이력을 빠르게 검토합니다."}
+                                  : activeTab === "payments"
+                                    ? "결제 상태와 환불 이력을 빠르게 검토합니다."
+                                    : "최신 버전과 설치 링크를 저장하면 앱에서 자동 안내됩니다."}
                         </p>
                     </div>
                     <div className="admin-header-actions">
@@ -1335,6 +1477,134 @@ export default function AdminPage() {
                                         </tbody>
                                     </table>
                                 </div>
+                            )}
+                        </div>
+                    )}
+
+                    {activeTab === "updates" && (
+                        <div className="admin-panel admin-updates-panel">
+                            <div className="admin-panel-head">
+                                <h3>업데이트 공지 등록</h3>
+                                <p>사용자 앱 실행 시 업데이트 팝업으로 안내됩니다.</p>
+                            </div>
+                            {updateLoading ? (
+                                <div className="admin-loading-inline">
+                                    <div className="admin-spinner" />
+                                </div>
+                            ) : (
+                                <form
+                                    className="admin-update-form"
+                                    onSubmit={handleSaveUpdateManifest}
+                                >
+                                    <label className="admin-update-field">
+                                        <span>최신 버전</span>
+                                        <input
+                                            type="text"
+                                            placeholder="예: 1.0.1"
+                                            value={updateForm.latestVersion}
+                                            onChange={(e) =>
+                                                setUpdateForm((prev) => ({
+                                                    ...prev,
+                                                    latestVersion: e.target.value,
+                                                }))
+                                            }
+                                        />
+                                    </label>
+                                    <label className="admin-update-field">
+                                        <span>최소 지원 버전</span>
+                                        <input
+                                            type="text"
+                                            placeholder="예: 1.0.0"
+                                            value={
+                                                forceMandatoryUpdate
+                                                    ? updateForm.latestVersion
+                                                    : updateForm.minSupportedVersion
+                                            }
+                                            onChange={(e) =>
+                                                setUpdateForm((prev) => ({
+                                                    ...prev,
+                                                    minSupportedVersion: e.target.value,
+                                                }))
+                                            }
+                                            disabled={forceMandatoryUpdate}
+                                        />
+                                    </label>
+                                    <label className="admin-update-checkbox">
+                                        <input
+                                            type="checkbox"
+                                            checked={forceMandatoryUpdate}
+                                            onChange={(e) =>
+                                                setForceMandatoryUpdate(
+                                                    e.target.checked,
+                                                )
+                                            }
+                                        />
+                                        <span>
+                                            필수 업데이트로 지정
+                                            <small>
+                                                (체크 시 최소 지원 버전을 최신 버전과
+                                                동일하게 저장)
+                                            </small>
+                                        </span>
+                                    </label>
+                                    <label className="admin-update-field">
+                                        <span>설치파일 다운로드 링크</span>
+                                        <input
+                                            type="url"
+                                            placeholder="https://..."
+                                            value={updateForm.downloadUrl}
+                                            onChange={(e) =>
+                                                setUpdateForm((prev) => ({
+                                                    ...prev,
+                                                    downloadUrl: e.target.value,
+                                                }))
+                                            }
+                                        />
+                                    </label>
+                                    <label className="admin-update-field">
+                                        <span>공지 문구</span>
+                                        <textarea
+                                            rows={4}
+                                            placeholder="예: 로그인 오류 수정 및 성능 개선"
+                                            value={updateForm.releaseNotes}
+                                            onChange={(e) =>
+                                                setUpdateForm((prev) => ({
+                                                    ...prev,
+                                                    releaseNotes: e.target.value,
+                                                }))
+                                            }
+                                        />
+                                    </label>
+                                    <div className="admin-update-actions">
+                                        <button
+                                            type="button"
+                                            className="admin-update-secondary-btn"
+                                            onClick={() => void fetchUpdateManifest()}
+                                            disabled={updateSaving}
+                                        >
+                                            새로고침
+                                        </button>
+                                        <button
+                                            type="submit"
+                                            className="admin-update-primary-btn"
+                                            disabled={updateSaving}
+                                        >
+                                            {updateSaving
+                                                ? "저장 중..."
+                                                : "업데이트 공지 저장"}
+                                        </button>
+                                    </div>
+                                    {updateStatusMessage && (
+                                        <p className="admin-update-success">
+                                            {updateStatusMessage}
+                                        </p>
+                                    )}
+                                    {updateErrorMessage && (
+                                        <p className="admin-update-error">
+                                            {updateErrorMessage}
+                                        </p>
+                                    )}
+                                </form>
                             )}
                         </div>
                     )}

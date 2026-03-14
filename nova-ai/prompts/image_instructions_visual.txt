@@ -40,6 +40,12 @@ TABLE RECONSTRUCTION (CRITICAL):
 - Prefer `insert_table(...)` over turning a table into an image.
 - Use structured cell objects for merge/style when needed.
 - Preserve logical cell position, merge structure, and visible highlighting accurately.
+- Before generating code, count the base grid first after mentally splitting merged cells.
+- Determine exact `rows` and `cols` before writing `insert_table(rows, cols, ...)`.
+- Fill all visible texts (including far-right headers and top-level headers) before final merge decisions.
+- Then apply merge metadata (`rowspan`/`colspan` or `merged_cells`) so merged structure matches the source.
+- Re-check by scanning each row and each column once more; no header/body label may disappear.
+- If a row has cells covered by vertical merges from previous rows, do not shift subsequent cells.
 - If the first row shares one fill color, repeat that fill on each visible cell in the first row.
 - If only one cell is colored, apply style only to that cell.
 - If outside borders differ from inside borders, use side-specific border keys.
@@ -62,6 +68,23 @@ insert_table(3, 4, cell_data=[
     [{"text": "구분", "rowspan": 2, "align": "center"}, "2024", "2025", "비고"],
     [None, "상반기", "하반기", ""],
     ["A", "10", "12", "증가"],
+], align_center=True)
+
+# Example for a two-level header with side rowspans:
+# 1) count base grid first (e.g., 6 rows x 6 cols),
+# 2) type text in logical cells,
+# 3) apply merges without losing rightmost header text.
+insert_table(6, 6, cell_data=[
+    [
+        {"text": "세포", "rowspan": 2, "align": "center"},
+        {"text": "대립유전자", "colspan": 4, "align": "center"},
+        {"text": "X 염색체 수", "rowspan": 2, "align": "center"},
+    ],
+    [None, "A", "b", "㉠", "㉡", None],
+    ["I", "?", "×", "×", "×", "?"],
+    ["II", "?", "×", "○", "×", "ⓐ"],
+    ["III", "○", "?", "×", "○", "?"],
+    ["IV", "?", "?", "?", "×", "ⓑ"],
 ], align_center=True)
 
 insert_table(2, 2, cell_data=[

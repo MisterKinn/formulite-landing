@@ -3,6 +3,7 @@ from __future__ import annotations
 import concurrent.futures
 import ast
 import base64
+import json
 import os
 import re
 import sys
@@ -14,7 +15,10 @@ import textwrap
 import time
 import uuid
 import wave
+import webbrowser
 from pathlib import Path
+from urllib import error as urllib_error
+from urllib import request as urllib_request
 
 # Allow running this file directly (python gui_app.py) by ensuring the
 # package parent directory is on sys.path.
@@ -66,7 +70,12 @@ from layout_detector import detect_container, crop_inside_rect
 from image_path_utils import load_pil_image
 from prompt_loader import get_image_generation_prompt
 from script_runner import ScriptRunner, ScriptCancelled
-from backend.oauth_desktop import get_stored_user, start_oauth_flow, logout_user, is_logged_in
+from backend.oauth_desktop import (
+    get_stored_user,
+    is_logged_in,
+    login_with_email_password,
+    logout_user,
+)
 from backend.firebase_profile import (
     refresh_user_profile_from_firebase,
     get_ai_usage,
@@ -82,15 +91,21 @@ from backend.firebase_profile import (
 
 
 class LoginWorker(QThread):
-    """OAuth ????? ????????????"""
-    finished = Signal(bool)  # True if login successful
-    
+    """Email/password login worker."""
+    finished = Signal(bool, str)
+
+    def __init__(self, email: str, password: str) -> None:
+        super().__init__()
+        self._email = email
+        self._password = password
+
     def run(self) -> None:
         try:
-            user = start_oauth_flow(timeout=300)
-            self.finished.emit(user is not None and bool(user.get("uid")))
-        except Exception:
-            self.finished.emit(False)
+            user = login_with_email_password(self._email, self._password)
+            self.finished.emit(user is not None and bool(user.get("uid")), "")
+        except Exception as exc:
+            message = str(exc or "").strip() or "로그인에 실패했습니다. 다시 시도해주세요."
+            self.finished.emit(False, message)
 
 
 class FilenameWorker(QThread):
@@ -313,8 +328,10 @@ Preserve semantics and layout, but normalize rendering to clean exam-print style
 - Correct camera tilt, page rotation, and perspective skew into a frontal upright view.
 - Output must be upright: horizontal lines are horizontal, vertical lines are vertical.
 - Use a clean white background with print-like grayscale contrast and remove shadows, blur, scan noise, and handwriting traces.
-- If repeated dots or particles appear inside a bounded shape, place them with uniform deterministic spacing instead of random jitter.
-- Preserve approximate count and density differences while keeping spacing visually regular.
+- If repeated dots, particles, or markers appear, preserve the exact count and each item's relative placement. Do not rearrange them into cleaner spacing.
+- For science diagrams, preserve exact shell count, orbit/ring count, bracket placement, charge labels, nucleus count, and electron count.
+- For atomic or ionic diagrams, keep every electron on the same shell as in the source and preserve each electron's relative angular position. Do not redistribute electrons for symmetry.
+- If cleanup would risk changing technical meaning, choose semantic fidelity over visual prettiness.
 """.strip()
         return f"{base_prompt}\n\n{normalization_block}".strip()
 
@@ -606,8 +623,8 @@ Preserve semantics and layout, but normalize rendering to clean exam-print style
             pass
 
         model_name = _normalize_model_name((
-            os.getenv("GEMINI_MODEL")
-            or os.getenv("GEMINI_IMAGE_MODEL")
+            os.getenv("GEMINI_IMAGE_MODEL")
+            or os.getenv("GEMINI_MODEL")
             or DEFAULT_GEMINI_MODEL
         ).strip())
         if "image" not in model_name:
@@ -1365,10 +1382,203 @@ class LogoutDialog(QDialog):
         painter.end()
 
 
+class CredentialsLoginDialog(QDialog):
+    """Native email/password login popup."""
+
+    def __init__(self, parent=None, *, email: str = ""):
+        super().__init__(parent)
+        self.setWindowTitle("Nova AI 로그인")
+        self.setFixedSize(420, 300)
+        self.setWindowFlags(
+            Qt.WindowType.Dialog
+            | Qt.WindowType.FramelessWindowHint
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+
+        card = QFrame(self)
+        card.setGeometry(0, 0, 420, 300)
+        card.setStyleSheet(
+            "QFrame { background-color: #ffffff; border: 1px solid #d1d5db; border-radius: 18px; }"
+        )
+
+        lay = QVBoxLayout(card)
+        lay.setContentsMargins(28, 26, 28, 24)
+        lay.setSpacing(0)
+
+        title = QLabel("로그인")
+        title.setStyleSheet(
+            "font-size: 24px; font-weight: 700; color: #111827; background: transparent; border: none;"
+        )
+        lay.addWidget(title)
+
+        lay.addSpacing(18)
+
+        email_label = QLabel("이메일")
+        email_label.setStyleSheet(
+            "font-size: 12px; font-weight: 600; color: #374151; background: transparent; border: none;"
+        )
+        lay.addWidget(email_label)
+
+        lay.addSpacing(8)
+
+        self._email_input = QLineEdit()
+        self._email_input.setPlaceholderText("you@example.com")
+        self._email_input.setText(email or "")
+        self._email_input.setFixedHeight(44)
+        self._email_input.setStyleSheet(
+            "QLineEdit { border: 1px solid #d1d5db; border-radius: 12px; padding: 0 14px;"
+            "  font-size: 13px; color: #111827; background: #ffffff; }"
+            "QLineEdit:focus { border: 1px solid #6366f1; }"
+        )
+        lay.addWidget(self._email_input)
+
+        lay.addSpacing(14)
+
+        password_label = QLabel("비밀번호")
+        password_label.setStyleSheet(
+            "font-size: 12px; font-weight: 600; color: #374151; background: transparent; border: none;"
+        )
+        lay.addWidget(password_label)
+
+        lay.addSpacing(8)
+
+        pw_row = QHBoxLayout()
+        pw_row.setSpacing(8)
+
+        self._password_input = QLineEdit()
+        self._password_input.setPlaceholderText("비밀번호를 입력해주세요")
+        self._password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self._password_input.setFixedHeight(44)
+        self._password_input.setStyleSheet(
+            "QLineEdit { border: 1px solid #d1d5db; border-radius: 12px; padding: 0 14px;"
+            "  font-size: 13px; color: #111827; background: #ffffff; }"
+            "QLineEdit:focus { border: 1px solid #6366f1; }"
+        )
+        self._password_input.returnPressed.connect(self._submit)
+        pw_row.addWidget(self._password_input, 1)
+
+        self._toggle_btn = QPushButton("보기")
+        self._toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._toggle_btn.setFixedSize(62, 44)
+        self._toggle_btn.setStyleSheet(
+            "QPushButton { background-color: #f3f4f6; color: #374151; border: none;"
+            "  border-radius: 12px; font-size: 12px; font-weight: 600; }"
+            "QPushButton:hover { background-color: #e5e7eb; }"
+            "QPushButton:pressed { background-color: #d1d5db; }"
+        )
+        self._toggle_btn.clicked.connect(self._toggle_password_visibility)
+        pw_row.addWidget(self._toggle_btn)
+        lay.addLayout(pw_row)
+
+        lay.addSpacing(12)
+
+        self._error_label = QLabel("")
+        self._error_label.setWordWrap(True)
+        self._error_label.setVisible(False)
+        self._error_label.setStyleSheet(
+            "font-size: 12px; color: #dc2626; background: #fef2f2;"
+            "border: 1px solid #fecaca; border-radius: 10px; padding: 10px 12px;"
+        )
+        lay.addWidget(self._error_label)
+
+        lay.addSpacing(18)
+
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(10)
+
+        cancel_btn = QPushButton("취소")
+        cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        cancel_btn.setFixedHeight(42)
+        cancel_btn.setStyleSheet(
+            "QPushButton { background-color: #f3f4f6; color: #374151; border: none;"
+            "  border-radius: 12px; font-size: 13px; font-weight: 600; padding: 0 18px; }"
+            "QPushButton:hover { background-color: #e5e7eb; }"
+            "QPushButton:pressed { background-color: #d1d5db; }"
+        )
+        cancel_btn.clicked.connect(self.reject)
+        btn_row.addWidget(cancel_btn)
+
+        signup_btn = QPushButton("회원가입")
+        signup_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        signup_btn.setFixedHeight(42)
+        signup_btn.setStyleSheet(
+            "QPushButton { background-color: #f9fafb; color: #4f46e5; border: 1px solid #dbeafe;"
+            "  border-radius: 12px; font-size: 13px; font-weight: 700; padding: 0 18px; }"
+            "QPushButton:hover { background-color: #eef2ff; border: 1px solid #c7d2fe; }"
+            "QPushButton:pressed { background-color: #e0e7ff; border: 1px solid #a5b4fc; }"
+        )
+        signup_btn.clicked.connect(self._open_signup_page)
+        btn_row.addWidget(signup_btn)
+
+        login_btn = QPushButton("로그인")
+        login_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        login_btn.setFixedHeight(42)
+        login_btn.setStyleSheet(
+            "QPushButton { background-color: #DBEAFE; color: #1d4ed8; border: 1px solid #bfdbfe;"
+            "  border-radius: 12px; font-size: 13px; font-weight: 700; padding: 0 18px; }"
+            "QPushButton:hover { background-color: #bfdbfe; border: 1px solid #93c5fd; }"
+            "QPushButton:pressed { background-color: #93c5fd; border: 1px solid #60a5fa; }"
+        )
+        login_btn.clicked.connect(self._submit)
+        btn_row.addWidget(login_btn)
+        lay.addLayout(btn_row)
+
+        if self._email_input.text().strip():
+            self._password_input.setFocus()
+        else:
+            self._email_input.setFocus()
+
+    def _toggle_password_visibility(self) -> None:
+        is_hidden = self._password_input.echoMode() == QLineEdit.EchoMode.Password
+        self._password_input.setEchoMode(
+            QLineEdit.EchoMode.Normal if is_hidden else QLineEdit.EchoMode.Password
+        )
+        self._toggle_btn.setText("숨김" if is_hidden else "보기")
+
+    def _submit(self) -> None:
+        email = self._email_input.text().strip()
+        password = self._password_input.text()
+        if not email or not password:
+            self.set_error("이메일과 비밀번호를 모두 입력해주세요.")
+            return
+        self.accept()
+
+    def _open_signup_page(self) -> None:
+        webbrowser.open("https://www.nova-ai.work/login?mode=signup")
+
+    def set_error(self, message: str) -> None:
+        text = str(message or "").strip()
+        self._error_label.setText(text)
+        self._error_label.setVisible(bool(text))
+
+    def credentials(self) -> tuple[str, str]:
+        return self._email_input.text().strip(), self._password_input.text()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if hasattr(self, "_drag_pos") and event.buttons() & Qt.MouseButton.LeftButton:
+            self.move(event.globalPosition().toPoint() - self._drag_pos)
+            event.accept()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(Qt.PenStyle.NoPen)
+        for i in range(4):
+            c = QColor(0, 0, 0, 8 - i * 2)
+            painter.setBrush(c)
+            painter.drawRoundedRect(self.rect().adjusted(i, i, -i, -i), 18, 18)
+        painter.end()
+
+
 class LoginResultDialog(QDialog):
     """Modern styled login result notification dialog."""
 
-    def __init__(self, parent=None, *, success: bool = True, user_name: str = ""):
+    def __init__(self, parent=None, *, success: bool = True, user_name: str = "", message: str = ""):
         super().__init__(parent)
         self.setWindowTitle("\uB85C\uADF8\uC778 \uC644\uB8CC" if success else "\uB85C\uADF8\uC778 \uC2E4\uD328")
         self.setFixedSize(360, 240)
@@ -1431,7 +1641,7 @@ class LoginResultDialog(QDialog):
         if success:
             sub_text = f"\uD658\uC601\uD569\uB2C8\uB2E4, {user_name}\uB2D8!"
         else:
-            sub_text = "\uB85C\uADF8\uC778\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4. \uB2E4\uC2DC \uC2DC\uB3C4\uD574 \uC8FC\uC138\uC694."
+            sub_text = message or "\uB85C\uADF8\uC778\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4. \uB2E4\uC2DC \uC2DC\uB3C4\uD574 \uC8FC\uC138\uC694."
         sub = QLabel(sub_text)
         sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
         sub.setWordWrap(True)
@@ -3308,18 +3518,26 @@ class NovaAILiteWindow(QWidget):
         self._update_send_button_state()
 
     def _on_login_clicked(self) -> None:
-        """Handle login button click and start OAuth flow."""
+        """Open native login popup and start email/password authentication."""
         self._close_sidebar()
         self._sidebar._login_btn.setEnabled(False)
         self._sidebar._login_btn.setText("\uB85C\uADF8\uC778 \uC911..")
-        
-        # ??????????OAuth ????????
-        self._login_worker = LoginWorker()
+
+        user = get_stored_user() or {}
+        dlg = CredentialsLoginDialog(self, email=str(user.get("email") or ""))
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            self._sidebar._login_btn.setEnabled(True)
+            self._sidebar._login_btn.setText("\uB85C\uADF8\uC778")
+            return
+
+        email, password = dlg.credentials()
+        self._login_worker = LoginWorker(email, password)
         self._login_worker.finished.connect(self._on_login_finished)
         self._login_worker.start()
 
-    def _on_login_finished(self, success: bool) -> None:
+    def _on_login_finished(self, success: bool, error_message: str = "") -> None:
         """OAuth ???????"""
+        self._login_worker = None
         self._sidebar._login_btn.setEnabled(True)
         self._sidebar._login_btn.setText("\uB85C\uADF8\uC778")
         
@@ -3332,7 +3550,7 @@ class NovaAILiteWindow(QWidget):
             # Retry profile sync a few times after login to absorb web-state propagation delay.
             self._start_post_login_profile_sync()
         else:
-            dlg = LoginResultDialog(self, success=False)
+            dlg = LoginResultDialog(self, success=False, message=error_message)
             dlg.exec()
 
     def _start_post_login_profile_sync(self) -> None:
@@ -6003,9 +6221,158 @@ def _clear_comtypes_cache() -> None:
         pass
 
 
+def _load_runtime_env_files() -> None:
+    """Load .env/.env.local files for packaged runtime settings."""
+    root_dir = Path(__file__).resolve().parent
+    runtime_root = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else root_dir
+    candidates: list[tuple[Path, bool]] = [
+        (runtime_root / ".env", False),
+        (root_dir / ".env", False),
+        (Path.cwd() / ".env", False),
+        (runtime_root / ".env.local", True),
+        (root_dir / ".env.local", True),
+        (Path.cwd() / ".env.local", True),
+        (runtime_root / ".env.example", False),
+        (root_dir / ".env.example", False),
+    ]
+
+    def _current_value(key: str) -> str:
+        return str(os.environ.get(key) or "").strip()
+
+    for path, override in candidates:
+        if not path.exists():
+            continue
+        try:
+            for line in path.read_text(encoding="utf-8").splitlines():
+                stripped = line.strip()
+                if not stripped or stripped.startswith("#") or "=" not in stripped:
+                    continue
+                key, value = stripped.split("=", 1)
+                key = key.strip().lstrip("\ufeff")
+                value = value.strip().strip('"').strip("'")
+                if not key:
+                    continue
+                if override or not _current_value(key):
+                    os.environ[key] = value
+        except Exception:
+            continue
+
+
+def _version_to_tuple(version_text: str) -> tuple[int, ...]:
+    numbers = re.findall(r"\d+", str(version_text or ""))
+    if not numbers:
+        return (0,)
+    return tuple(int(item) for item in numbers[:4])
+
+
+def _is_newer_version(latest_version: str, current_version: str) -> bool:
+    latest = _version_to_tuple(latest_version)
+    current = _version_to_tuple(current_version)
+    max_len = max(len(latest), len(current))
+    latest = latest + (0,) * (max_len - len(latest))
+    current = current + (0,) * (max_len - len(current))
+    return latest > current
+
+
+def _fetch_update_manifest(manifest_url: str, timeout_sec: int = 3) -> dict[str, str]:
+    req = urllib_request.Request(
+        manifest_url,
+        headers={"User-Agent": "NovaAI-Desktop/1.0"},
+        method="GET",
+    )
+    with urllib_request.urlopen(req, timeout=timeout_sec) as response:
+        payload = response.read().decode("utf-8", errors="replace")
+    data = json.loads(payload)
+    if not isinstance(data, dict):
+        return {}
+    return {
+        "latest_version": str(data.get("latest_version") or "").strip(),
+        "min_supported_version": str(data.get("min_supported_version") or "").strip(),
+        "download_url": str(data.get("download_url") or "").strip(),
+        "release_notes": str(data.get("release_notes") or "").strip(),
+    }
+
+
+def _maybe_show_update_notice(parent: QWidget) -> None:
+    enabled = str(os.getenv("NOVA_UPDATE_CHECK_ENABLED", "1")).strip().lower()
+    if enabled in {"0", "false", "off", "no"}:
+        return
+
+    current_version = str(os.getenv("NOVA_APP_VERSION") or "1.0.0").strip() or "1.0.0"
+    manifest_url = str(os.getenv("NOVA_UPDATE_MANIFEST_URL") or "").strip()
+    latest_version = ""
+    min_supported_version = ""
+    download_url = str(os.getenv("NOVA_UPDATE_DOWNLOAD_URL") or "").strip()
+    release_notes = str(os.getenv("NOVA_UPDATE_MESSAGE") or "").strip()
+
+    if manifest_url:
+        try:
+            remote = _fetch_update_manifest(manifest_url)
+            latest_version = remote.get("latest_version", "")
+            min_supported_version = remote.get("min_supported_version", "")
+            download_url = remote.get("download_url") or download_url
+            release_notes = remote.get("release_notes") or release_notes
+        except (urllib_error.URLError, TimeoutError, OSError, ValueError):
+            return
+        except Exception:
+            return
+    else:
+        latest_version = str(os.getenv("NOVA_LATEST_VERSION") or "").strip()
+
+    if not latest_version or not _is_newer_version(latest_version, current_version):
+        return
+
+    is_mandatory = bool(
+        min_supported_version and _is_newer_version(min_supported_version, current_version)
+    )
+    title = "필수 업데이트 안내" if is_mandatory else "업데이트 안내"
+    lines = [
+        f"새 버전(v{latest_version})이 배포되었습니다.",
+        f"현재 버전: v{current_version}",
+        "",
+        "지금 업데이트하시겠어요?",
+    ]
+    if release_notes:
+        lines.insert(2, f"변경 내용: {release_notes}")
+    message = "\n".join(lines)
+
+    msg = QMessageBox(parent)
+    msg.setIcon(QMessageBox.Icon.Information)
+    msg.setWindowTitle(title)
+    msg.setText(message)
+    update_btn = msg.addButton("업데이트", QMessageBox.ButtonRole.AcceptRole)
+    later_btn = None
+    if not is_mandatory:
+        later_btn = msg.addButton("나중에", QMessageBox.ButtonRole.RejectRole)
+    msg.setDefaultButton(update_btn)  # type: ignore[arg-type]
+    msg.exec()
+
+    if msg.clickedButton() == update_btn:
+        target_url = download_url or manifest_url
+        if target_url:
+            try:
+                webbrowser.open(target_url)
+            except Exception:
+                QMessageBox.information(
+                    parent,
+                    "업데이트 링크",
+                    f"아래 주소로 접속해 업데이트를 진행해주세요.\n{target_url}",
+                )
+        else:
+            QMessageBox.information(
+                parent,
+                "업데이트 안내",
+                "다운로드 링크가 설정되지 않았습니다. 운영자에게 문의해주세요.",
+            )
+    elif is_mandatory and (msg.clickedButton() == later_btn or msg.clickedButton() is None):
+        QMessageBox.information(parent, "업데이트 필요", "최신 버전 업데이트 후 사용해주세요.")
+        QApplication.instance().quit()
+
+
 def main() -> None:
     _clear_win32com_cache()
     _clear_comtypes_cache()
+    _load_runtime_env_files()
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 
@@ -6050,6 +6417,7 @@ def main() -> None:
     window.setMinimumSize(360, 480)
     window.resize(460, 640)
     window.show()
+    QTimer.singleShot(800, lambda: _maybe_show_update_notice(window))
     sys.exit(app.exec())
 
 

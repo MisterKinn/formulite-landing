@@ -351,6 +351,10 @@ function LoginContent() {
                 setError(
                     "너무 많은 시도가 있었습니다. 잠시 후 다시 시도해주세요."
                 );
+            } else if (
+                String(code).toLowerCase().includes("weak-password")
+            ) {
+                setError("비밀번호는 6자 이상이어야 합니다.");
             } else {
                 setError(`${code} — ${message}`);
             }

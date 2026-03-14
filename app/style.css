@@ -744,6 +744,16 @@ nextjs-portal {
     }
 }
 
+@media (max-width: 768px) {
+    .hero {
+        padding-top: calc(
+            var(--navbar-height) + var(--home-event-strip-height) +
+                min(var(--home-event-strip-height), 18px) + 36px
+        );
+        background: #000;
+    }
+}
+
 .hero-gradient-bg {
     display: none;
 }
@@ -830,23 +840,34 @@ nextjs-portal {
 }
 
 @media (max-width: 768px) {
+    .navbar {
+        top: var(--home-event-strip-height);
+    }
+
+    .event-strip {
+        top: 0;
+        z-index: 10030;
+    }
+
     .event-strip__inner {
-        padding: 0.75rem 2.25rem 0.75rem 0;
+        min-height: 38px;
+        padding: 0.5rem 2rem 0.5rem 0;
     }
 
     .event-strip__content {
-        gap: 0.35rem 0.5rem;
+        gap: 0.25rem 0.4rem;
     }
 
     .event-strip__text,
     .event-strip__link {
-        font-size: 0.875rem;
+        font-size: 0.75rem;
+        line-height: 1.35;
     }
 
     .event-strip__close {
-        width: 1.85rem;
-        height: 1.85rem;
-        font-size: 1.1rem;
+        width: 1.6rem;
+        height: 1.6rem;
+        font-size: 0.95rem;
     }
 }
 
@@ -1643,6 +1664,16 @@ nextjs-portal {
     margin: 0 auto;
 }
 
+@media (max-width: 768px) {
+    .pricing-header {
+        text-align: left;
+    }
+
+    .pricing-subtitle {
+        margin: 0;
+    }
+}
+
 .pricing-billing-toggle {
     margin: 2rem auto 0;
     display: flex;
@@ -1995,11 +2026,13 @@ nextjs-portal {
 /* Mobile: narrower cards */
 @media (max-width: 767px) {
     .pricing-cards-wrapper {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.9rem;
         justify-content: center;
     }
 
     .pricing-card-v2 {
-        max-width: 340px;
+        max-width: 100%;
         min-height: auto;
     }
 
@@ -2207,6 +2240,10 @@ nextjs-portal {
     letter-spacing: -0.01em;
 }
 
+.footer-info--mobile {
+    display: none;
+}
+
 .footer-line {
     margin: 0;
     line-height: 1.75;
@@ -2215,10 +2252,20 @@ nextjs-portal {
 .footer-copyright {
     margin-top: 2rem;
     font-size: 0.8rem;
-    color: #9f9f9f;
+    color: #ffffff;
     font-weight: 500;
     letter-spacing: 0;
     line-height: 1.2;
+}
+
+@media (max-width: 768px) {
+    .footer-info--desktop {
+        display: none;
+    }
+
+    .footer-info--mobile {
+        display: flex;
+    }
 }
 
 /* ========================================
@@ -2545,13 +2592,13 @@ nextjs-portal {
     }
 
     .process-showcase-carousel {
-        --process-slide-width: calc(100vw - (var(--padding-x-tablet) * 2));
+        --process-slide-width: min(1280px, calc(100vw - (var(--padding-x-tablet) * 2)));
     }
 }
 
 @media (max-width: 768px) {
     .process-showcase {
-        padding: 3.5rem var(--padding-x-mobile);
+        padding: 3.5rem var(--padding-x-mobile) 1rem;
     }
 }
 
@@ -2566,7 +2613,7 @@ nextjs-portal {
     font-size: 2.3rem;
     font-weight: 800;
     color: #fff;
-    margin-bottom: 3rem;
+    margin-bottom: 1rem;
     letter-spacing: -0.02em;
     line-height: 1.2;
 }
@@ -2582,11 +2629,11 @@ nextjs-portal {
     line-height: 1.7;
     color: #9e9e9e;
     max-width: 40rem;
-    margin: 0 0 3.4rem;
+    margin: 0 0 2.4rem;
 }
 
 .process-showcase-carousel {
-    --process-slide-width: calc(100vw - (var(--padding-x) * 2));
+    --process-slide-width: min(1600px, calc(100vw - (var(--padding-x) * 2)));
     display: flex;
     gap: 1.5rem;
     width: 100vw;
@@ -2609,8 +2656,8 @@ nextjs-portal {
 .process-showcase-item {
     flex: 0 0 var(--process-slide-width);
     min-width: 0;
-    opacity: 0;
-    transform: translateX(-28px) translateY(12px);
+    opacity: 1;
+    transform: none;
     scroll-snap-align: center;
     transition:
         transform 0.45s ease,
@@ -2620,7 +2667,7 @@ nextjs-portal {
 }
 
 .process-showcase-item--visible {
-    animation: processReveal 0.65s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    animation: none;
 }
 
 .process-showcase-item--active {
@@ -2654,7 +2701,7 @@ nextjs-portal {
     text-align: left;
     padding: clamp(1.2rem, 2vw, 2rem);
     z-index: 2;
-    background: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.14) 24%, rgba(0, 0, 0, 0.78) 100%);
+    background: none;
 }
 
 .process-showcase-head {
@@ -2683,13 +2730,12 @@ nextjs-portal {
     width: 100%;
     aspect-ratio: 16 / 8.1;
     height: auto;
-    object-fit: cover;
+    object-fit: contain;
     object-position: center top;
     border-radius: 32px;
     border: 1px solid rgba(255, 255, 255, 0.05);
-    box-shadow:
-        0 20px 60px rgba(0, 0, 0, 0.3),
-        inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    image-rendering: auto;
+    box-shadow: none;
 }
 
 .process-showcase-label {
@@ -2922,7 +2968,7 @@ nextjs-portal {
     .exam-section { padding: 3rem var(--padding-x-tablet) 5rem; }
 }
 @media (max-width: 768px) {
-    .exam-section { padding: 2.5rem var(--padding-x-mobile) 4rem; }
+    .exam-section { padding: 1rem var(--padding-x-mobile) 4rem; }
 }
 
 .exam-inner {
@@ -3052,8 +3098,8 @@ nextjs-portal {
 
 .exam-scene-button--active {
     background: #1e1e20;
-    min-width: min(26rem, 46vw);
-    padding: 1rem 1.15rem;
+    min-width: min(20rem, 34vw);
+    padding: 0.95rem 1.05rem;
     border-radius: 1.25rem;
     align-items: flex-start;
 }
@@ -3092,7 +3138,7 @@ nextjs-portal {
 }
 
 .exam-scene-button--active .exam-scene-button-detail {
-    max-width: 20rem;
+    max-width: 14rem;
     opacity: 1;
 }
 
@@ -3187,21 +3233,36 @@ nextjs-portal {
         flex-direction: row;
         justify-content: flex-start;
         padding-bottom: 0.1rem;
+        gap: 0.45rem;
     }
     .exam-scene-button {
         width: auto;
         white-space: nowrap;
-        min-height: 2.5rem;
-        padding: 0.6rem 0.9rem;
-        font-size: 0.85rem;
+        min-height: 2.2rem;
+        padding: 0.5rem 0.85rem;
+        font-size: 0.8rem;
+        border-radius: 999px;
+    }
+    .exam-scene-button::before {
+        width: 1.1rem;
+        height: 1.1rem;
+        margin-right: 0.45rem;
+        font-size: 0.8rem;
     }
     .exam-scene-button--active {
-        min-width: min(18rem, 70vw);
-        padding: 0.9rem 1rem;
-        white-space: normal;
+        min-width: 0;
+        padding: 0.5rem 0.85rem;
+        white-space: nowrap;
+        border-radius: 999px;
+        background: #2a2a2d;
+    }
+    .exam-scene-button--active .exam-scene-button-text {
+        opacity: 1;
+        max-width: none;
+        margin: 0;
     }
     .exam-scene-button--active .exam-scene-button-detail {
-        max-width: 14rem;
+        display: none;
     }
 
     .exam-stage-visual {
@@ -3316,8 +3377,8 @@ nextjs-portal {
 }
 
 .gemini-chart-image {
-    width: 100%;
-    max-width: 100%;
+    width: 94%;
+    max-width: 94%;
     height: auto;
     display: block;
     border-radius: 1.5rem;
@@ -3836,7 +3897,7 @@ nextjs-portal {
 
 @media (max-width: 640px) {
     .cc-highlight-grid {
-        grid-template-columns: minmax(0, 320px);
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 0.95rem;
     }
 
@@ -3885,6 +3946,11 @@ nextjs-portal {
     }
 
     .cc-vs-price { font-size: 1.5rem; }
+
+    .cc-bottom-text {
+        font-size: 0.98rem;
+        line-height: 1.6;
+    }
 }
 
 /* ========================================
@@ -3900,6 +3966,8 @@ nextjs-portal {
     padding-left: clamp(96px, 12vw, 220px);
     background: transparent;
     animation: popupFadeIn 0.25s ease-out;
+    opacity: 1;
+    transition: opacity 0.3s ease;
 }
 
 @keyframes popupFadeIn {
@@ -3921,6 +3989,22 @@ nextjs-portal {
     background: #fff;
     box-shadow: 0 24px 64px rgba(0, 0, 0, 0.4);
     animation: popupSlideUp 0.3s ease-out;
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    transition:
+        opacity 0.3s ease,
+        transform 0.3s ease;
+    will-change: opacity, transform;
+}
+
+.event-popup-overlay--hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.event-popup-overlay--hidden .event-popup-container {
+    opacity: 0;
+    transform: translateY(18px) scale(0.98);
 }
 
 .event-popup-image {

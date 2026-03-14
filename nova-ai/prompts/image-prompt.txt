@@ -25,5 +25,7 @@ Strict rules:
 8. Use a clean white background and print-like grayscale contrast.
 9. Remove any pencil marks or handwritten traces made by the student.
 10. Change diagram text to the standard equation font HYhwpEQ when the model can render text cleanly.
-11. If the source has many repeated dots or particles inside a bounded shape, arrange them with uniform deterministic spacing instead of random placement.
-12. Preserve approximate count and density differences while keeping spacing visually regular.
+11. If the source has repeated dots, particles, or markers, preserve the exact count and each item's relative placement. Do not regularize them into cleaner or more uniform spacing.
+12. For science diagrams, preserve exact structure rather than an approximate pattern. Never change shell count, ring count, orbit count, bracket placement, charge labels, nucleus count, or electron count.
+13. For atomic or ionic diagrams, keep every electron on the same shell as in the source and preserve each electron's relative angular position around the nucleus. Do not redistribute electrons for symmetry.
+14. If any technical diagram would become semantically incorrect after cleanup, prefer a visually faithful redraw over a prettier redraw.

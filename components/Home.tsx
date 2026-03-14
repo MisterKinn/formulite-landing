@@ -1,9 +1,9 @@
 "use client";
 import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import processImage1 from "../001.png";
-import processImage2 from "../002.png";
-import processImage3 from "../003.png";
+import processImage1 from "../int1 (2).png";
+import processImage2 from "../int2.png";
+import processImage3 from "../int3.png";
 
 function getOS(): "Windows" | "macOS" | "Linux" | "Android" | "iOS" | "Other" {
     if (typeof window === "undefined") return "Other";
@@ -103,6 +103,7 @@ export default function Home() {
     const processShowcaseRef = useRef<HTMLDivElement | null>(null);
     const processCarouselRef = useRef<HTMLDivElement | null>(null);
     const eventStripRef = useRef<HTMLDivElement | null>(null);
+    const hasInitializedProcessShowcaseRef = useRef(false);
     const fullText = "Nova AI";
     const processSteps = [
         {
@@ -259,6 +260,27 @@ export default function Home() {
         return () => observer.disconnect();
     }, []);
 
+    useEffect(() => {
+        if (!isProcessShowcaseVisible || hasInitializedProcessShowcaseRef.current) return;
+
+        const container = processCarouselRef.current;
+        if (!container) return;
+
+        const slides = container.querySelectorAll<HTMLElement>("[data-process-slide]");
+        const firstSlide = slides[0];
+        if (!firstSlide) return;
+
+        const initialLeft =
+            firstSlide.offsetLeft - (container.clientWidth - firstSlide.clientWidth) / 2;
+
+        container.scrollTo({
+            left: initialLeft,
+            behavior: "auto",
+        });
+        setActiveProcessIndex(0);
+        hasInitializedProcessShowcaseRef.current = true;
+    }, [isProcessShowcaseVisible]);
+
     const handleProcessScroll = () => {
         const container = processCarouselRef.current;
         if (!container) return;
@@ -316,7 +338,7 @@ export default function Home() {
         const intervalId = window.setInterval(() => {
             const nextIndex = (activeProcessIndex + 1) % processSteps.length;
             scrollToProcess(nextIndex);
-        }, 4000);
+        }, 8000);
 
         return () => window.clearInterval(intervalId);
     }, [activeProcessIndex, isProcessAutoplaying, isProcessShowcaseVisible, processSteps.length]);
@@ -446,7 +468,10 @@ export default function Home() {
             {/* Process showcase - 4 step images */}
             <div ref={processShowcaseRef} className="process-showcase">
                 <div className="process-showcase-shell">
-                    <h2 className="process-showcase-title">이렇게 타이핑이 진행됩니다</h2>
+                    <h2 className="process-showcase-title">노바AI 기능 소개</h2>
+                    <p className="process-showcase-subtitle">
+                        독보적인 OCR 인식 성능과 이미지 크롭·삽입 자동화, 그리고 자연어로 바로 수정할 수 있는 채팅 편집 기능까지 한 번에 경험해보세요.
+                    </p>
                     <div
                         ref={processCarouselRef}
                         className="process-showcase-carousel"
@@ -482,20 +507,6 @@ export default function Home() {
                                         aria-label={`${item.label} 이미지 확대 보기`}
                                     >
                                         <img src={item.image} alt={item.alt} className="process-showcase-img" />
-                                        <div className="process-showcase-copy">
-                                            <div className="process-showcase-head">
-                                                <p className="process-showcase-label">{item.label}</p>
-                                            </div>
-                                            <p
-                                                className={`process-showcase-desc ${
-                                                    item.isHighlightedDescription
-                                                        ? "process-showcase-desc--highlight"
-                                                        : ""
-                                                }`}
-                                            >
-                                                {item.description}
-                                            </p>
-                                        </div>
                                     </button>
                                 </div>
                             </article>

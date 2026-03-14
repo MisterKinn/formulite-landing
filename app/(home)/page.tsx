@@ -14,7 +14,6 @@ import FAQ from "../../components/FAQ";
 import CTA from "../../components/CTA";
 import { Navbar } from "../../components/Navbar";
 import Footer from "../../components/Footer";
-import EventPopup from "../../components/EventPopup";
 
 function FormuLiteContent() {
     const router = useRouter();
@@ -118,7 +117,6 @@ function FormuLiteContent() {
     return (
         <div>
             <Navbar />
-            <EventPopup />
 
             <Home />
             <ExamTyping />

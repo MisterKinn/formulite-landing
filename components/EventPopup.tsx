@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 
 export default function EventPopup() {
     const [visible, setVisible] = useState(false);
+    const [isScrollHidden, setIsScrollHidden] = useState(false);
     const router = useRouter();
 
     useEffect(() => {
@@ -17,6 +18,27 @@ export default function EventPopup() {
             setVisible(true);
         }
     }, []);
+
+    useEffect(() => {
+        if (!visible || typeof window === "undefined") return;
+
+        const topRevealOffset = 80;
+
+        const handleScroll = () => {
+            const currentScrollY = window.scrollY;
+
+            if (currentScrollY <= topRevealOffset) {
+                setIsScrollHidden(false);
+            } else {
+                setIsScrollHidden(true);
+            }
+        };
+
+        handleScroll();
+        window.addEventListener("scroll", handleScroll, { passive: true });
+
+        return () => window.removeEventListener("scroll", handleScroll);
+    }, [visible]);
 
     const handleClose = (e: MouseEvent) => {
         e.stopPropagation();
@@ -47,7 +69,9 @@ export default function EventPopup() {
     if (!visible) return null;
 
     return (
-        <div className="event-popup-overlay">
+        <div
+            className={`event-popup-overlay ${isScrollHidden ? "event-popup-overlay--hidden" : ""}`}
+        >
             <div className="event-popup-container" onClick={(e) => e.stopPropagation()}>
                 <img
                     src="/event.png"

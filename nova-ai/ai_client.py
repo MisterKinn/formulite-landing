@@ -75,6 +75,15 @@ instead of inserting the table as an image. You may use structured cell objects 
 Covered cells may be omitted or written as None.
 If explicit merge metadata is easier, you may also pass:
 - merged_cells=[{"row": 0, "col": 0, "rowspan": 1, "colspan": 4}]
+Before writing `insert_table(...)`, follow this strict table workflow:
+1) Expand merged cells mentally and count the full base grid first (`rows`, `cols`).
+2) Include every visible header/body text exactly once in the correct logical cell
+   (do not drop rightmost headers such as "X 염색체 수").
+3) Type the table content first using `cell_data`, then express merge structure with
+   `rowspan` / `colspan` or `merged_cells`.
+4) When a row includes cells already covered by vertical merges from above, keep
+   column alignment consistent and avoid shifting later cells to the right.
+5) Re-scan row by row and column by column after drafting to verify text placement and merges.
 When a whole header row has the same fill, repeat that `fill_color` on each visible cell in that row.
 When only one highlighted cell is colored, apply style ONLY to that cell object.
 If border thickness/style is visually distinct, include `border_type` and `border_width`.

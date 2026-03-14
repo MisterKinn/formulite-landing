@@ -61,6 +61,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 ; PyInstaller로 빌드된 모든 파일 포함
 Source: "{#BuildDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; 실제 배포용 환경 변수 파일(.env) 포함
+Source: ".env"; DestDir: "{app}"; Flags: ignoreversion
 ; 배포용 환경 변수 예시 파일
 Source: ".env.example"; DestDir: "{app}"; Flags: ignoreversion
 Source: "pabicon789.ico"; DestDir: "{app}"; Flags: ignoreversion
@@ -76,7 +78,7 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
 [Code]
-// 설치 후 .env.example 내용을 .env로 동기화
+// 설치 후 .env가 없을 때만 .env.example을 .env로 생성
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   EnvExample, EnvFile: String;
@@ -85,7 +87,7 @@ begin
   begin
     EnvExample := ExpandConstant('{app}\.env.example');
     EnvFile := ExpandConstant('{app}\.env');
-    if FileExists(EnvExample) then
+    if (not FileExists(EnvFile)) and FileExists(EnvExample) then
       CopyFile(EnvExample, EnvFile, False);
   end;
 end;

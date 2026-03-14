@@ -350,6 +350,8 @@ COMMON MATH PATTERNS:
 - If the image contains a real table, use `insert_table()`.
 - If a table cell contains math, prefix it with `EQ:`.
 - Probability/statistics tables should use `align_center=True`.
+- For multi-level headers, count full base rows/columns first, then place text, then merge.
+- Do not omit edge headers (for example, rightmost columns such as `X 염색체 수`).
 - Borderless answer layouts in math/physics are not real tables.
 - If choices are arranged under small headers such as `크기`, `방향`, `값`, `단위` but there are no visible grid lines, do NOT use `insert_table()`.
 - For that kind of layout, keep the headers and choices as normal typed content with spaces/line breaks, preserving the approximate visual alignment.

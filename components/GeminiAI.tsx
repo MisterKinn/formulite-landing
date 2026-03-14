@@ -1,6 +1,5 @@
 "use client";
 import React from "react";
-import gdpKnowledgeWorkImage from "../GDPval_지식 업무.png";
 import nanobananaIllustrationImage from "../251126미.png";
 
 export default function GeminiAI() {
@@ -14,20 +13,20 @@ export default function GeminiAI() {
                     <div className="gemini-header">
                         <div className="gemini-badge">노바AI 성능</div>
                         <h2 className="gemini-title">
-                            <span className="gemini-title-gradient">GPT-5.4를 사용합니다</span>
+                            <span className="gemini-title-gradient">Gemini 3.1 Pro를 사용합니다</span>
                             <br />
                             <span>전문 작업을 위해 설계된 모델</span>
                         </h2>
                         <p className="gemini-subtitle">
-                            OpenAI의 최신 멀티모달 AI 모델 GPT 5.4가
+                            Google의 최신 멀티모달 AI 모델 Gemini 3.1 Pro가
                             <br />
                             사진 속 수식을 정확히 인식하고 논리적으로 추론합니다.
                         </p>
                     </div>
                     <div className="gemini-chart-wrap">
                     <img
-                        src={gdpKnowledgeWorkImage.src}
-                        alt="GDPval 지식 업무 성능 비교 차트"
+                        src="/gemini3.1pro.jpg"
+                        alt="Gemini 3.1 Pro 벤치마크 차트"
                         className="gemini-chart-image"
                     />
                     </div>

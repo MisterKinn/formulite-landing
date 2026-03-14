@@ -1,0 +1,6 @@
+{
+  "latest_version": "1.0.1",
+  "min_supported_version": "1.0.0",
+  "download_url": "https://your-domain.com/NovaAI_Setup_1.0.1.exe",
+  "release_notes": "로그인 안정성 개선 및 성능 최적화"
+}

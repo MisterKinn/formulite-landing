@@ -1,8 +1,10 @@
 "use client";
 import React, { useMemo, useState } from "react";
-import examScene1 from "../003.png";
-import examScene2 from "../002.png";
-import examScene3 from "../001.png";
+import examScene1 from "../un1.png";
+import examScene2 from "../un2.png";
+import examScene3 from "../un3.png";
+import examScene4 from "../int4.png";
+import examScene5 from "../int5.png";
 
 interface ExamItem {
     image: string;
@@ -22,24 +24,38 @@ interface HighlightStat {
 const items: ExamItem[] = [
     {
         image: examScene1.src,
-        alt: "완성된 시험지 결과물 예시",
-        buttonLabel: "완성 문서",
-        title: "완성된 시험지 결과물",
-        caption: "완성된 문서를 실제 시험지 결과물처럼 깔끔하게 확인할 수 있습니다.",
+        alt: "완벽한 수식 타이핑 결과 예시",
+        buttonLabel: "완벽한 수식 타이핑",
+        title: "완벽한 수식 타이핑",
+        caption: "볼드체, 선적분, 삼중적분, 행렬 등 다양한 수식 기능을 제공합니다.",
     },
     {
         image: examScene2.src,
-        alt: "문항 리스트와 코드 생성 예시",
-        buttonLabel: "문항 정리",
-        title: "문항별 정리와 생성",
-        caption: "문항 리스트를 정리하고 생성 과정을 확인하면서 원하는 흐름으로 편집할 수 있습니다.",
+        alt: "보기 호출 및 이미지 삽입 예시",
+        buttonLabel: "<보기> 호출",
+        title: "<보기> 호출 및 삽입",
+        caption: "보기 박스와 이미지를 정확한 위치에 삽입합니다.",
     },
     {
         image: examScene3.src,
-        alt: "원본 이미지 업로드 예시",
-        buttonLabel: "원본 업로드",
-        title: "원본 이미지 업로드",
-        caption: "문항 이미지를 업로드하면 Nova AI가 결과물 제작을 위한 흐름을 바로 시작합니다.",
+        alt: "AI 해설 작성 예시",
+        buttonLabel: "AI 해설 작성",
+        title: "AI 해설 작성",
+        caption: "풀이 과정을 자연스럽게 정리해 해설을 작성합니다.",
+    },
+    {
+        image: examScene4.src,
+        alt: "표 생성 기능 예시",
+        buttonLabel: "표 생성 기능",
+        title: "표 생성 기능",
+        caption: "수정 없이 결과물을 만들고 표 합치기까지 자동으로 진행합니다.",
+    },
+    {
+        image: examScene5.src,
+        alt: "진하게와 밑줄 효과 예시",
+        buttonLabel: "진하게+밑줄",
+        title: "진하게+밑줄 효과",
+        caption: "강조가 필요한 문장에 진하게와 밑줄 효과를 자연스럽게 적용합니다.",
     },
 ];
 
@@ -60,7 +76,7 @@ const highlightStats: HighlightStat[] = [
         eyebrow: "월 운영 비용",
         value: "29,900",
         unit: "원",
-        caption: "하루 4시간 기준 요금제",
+        caption: "월 330문제 기준 요금제",
     },
     {
         eyebrow: "작업 가능 시간",

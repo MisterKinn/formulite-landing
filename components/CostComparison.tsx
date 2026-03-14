@@ -59,7 +59,7 @@ const rows: Row[] = [
     {
         label: "수식 정확도",
         assistant: "숙련도에 따라 편차",
-        nova: "GPT 5.4 추론 기반",
+        nova: "Gemini 3.1 Pro 추론 기반",
         novaWin: true,
     },
     {
