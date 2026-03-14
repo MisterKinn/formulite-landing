@@ -762,3 +762,303 @@ body {
         margin: 0;
     }
 }
+
+/* ========================================
+   MAIN PAGE MOBILE FONT TUNING
+   ======================================== */
+@media (max-width: 768px) {
+    /* Navbar + event strip */
+    .nav-login-btn,
+    .nav-download-btn {
+        font-size: 0.72rem;
+    }
+
+    .event-strip__text,
+    .event-strip__link {
+        font-size: 0.68rem;
+    }
+
+    .event-strip__link {
+        display: none;
+    }
+
+    .kakao-inquiry-button__label {
+        font-size: 0.78rem;
+    }
+
+    /* Hero + process */
+    .hero {
+        padding-top: calc(var(--navbar-height) + var(--home-event-strip-height) + 56px);
+    }
+
+    .title.hero {
+        font-size: 1.45rem;
+    }
+
+    .subtitle {
+        font-size: 0.8rem;
+    }
+
+    .primary-button {
+        font-size: 0.8rem;
+    }
+
+    .process-showcase-title {
+        font-size: 1.6rem;
+    }
+
+    .process-showcase-subtitle {
+        font-size: 0.8rem;
+    }
+
+    /* Benefits + features + testimonials */
+    .benefits-title,
+    .features-title,
+    .benefits-main-title {
+        font-size: 1.35rem;
+    }
+
+    .benefits-subtitle,
+    .features-description,
+    .benefits-main-desc {
+        font-size: 0.8rem;
+    }
+
+    .benefit-card-title-new,
+    .feature-item-title {
+        font-size: 0.9rem;
+    }
+
+    .benefit-card-desc-new,
+    .feature-item-desc,
+    .testimonial-quote,
+    .testimonial-author {
+        font-size: 0.74rem;
+    }
+
+    .testimonial-role {
+        font-size: 0.66rem;
+    }
+
+    /* Exam typing section */
+    .exam-title {
+        font-size: 1.5rem;
+    }
+
+    .exam-subtitle {
+        font-size: 0.8rem;
+    }
+
+    .exam-stage {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .exam-scene-overlay {
+        position: static;
+        left: auto;
+        right: auto;
+        top: auto;
+        bottom: auto;
+        width: 100%;
+        transform: none;
+        margin-top: 0.8rem;
+        padding: 0 0.15rem;
+    }
+
+    .exam-scene-controls,
+    .exam-scene-stack {
+        width: 100%;
+    }
+
+    .exam-scene-switcher {
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.25rem;
+        overflow: visible;
+        padding: 0;
+    }
+
+    .exam-scene-button {
+        max-width: 100%;
+        min-height: auto;
+        padding: 0;
+        border: none;
+        border-radius: 0;
+        background: none;
+        color: #a1a1aa;
+        font-size: 0.78rem;
+        font-weight: 600;
+        line-height: 1.45;
+        text-align: left;
+    }
+
+    .exam-scene-button::before {
+        display: none;
+    }
+
+    .exam-scene-button-text {
+        max-width: none;
+        white-space: normal;
+        opacity: 1;
+    }
+
+    .exam-scene-button--active {
+        min-width: 0;
+        padding: 0;
+        border-radius: 0;
+        background: none;
+        color: #ffffff;
+    }
+
+    .exam-scene-button--active .exam-scene-button-text {
+        opacity: 1;
+        max-width: none;
+        margin: 0;
+    }
+
+    .exam-scene-button-detail {
+        display: none;
+    }
+
+    .exam-scene-button:hover {
+        transform: none;
+    }
+
+    .cc-highlight-eyebrow {
+        font-size: 0.7rem;
+    }
+
+    .cc-highlight-value strong {
+        font-size: 0.88rem;
+    }
+
+    .cc-highlight-caption {
+        font-size: 0.7rem;
+    }
+
+    /* Gemini section */
+    .gemini-badge,
+    .gemini-illustration-badge {
+        font-size: 0.92rem;
+    }
+
+    .gemini-title,
+    .gemini-illustration-title {
+        font-size: 1.55rem;
+    }
+
+    .gemini-subtitle,
+    .gemini-illustration-subtitle {
+        font-size: 0.82rem;
+    }
+
+    /* Cost comparison section */
+    .cc-badge {
+        font-size: 0.92rem;
+    }
+
+    .cc-title {
+        font-size: 1.55rem;
+    }
+
+    .cc-subtitle {
+        font-size: 0.82rem;
+    }
+
+    .cc-col,
+    .cc-table-row .cc-col--label {
+        font-size: 0.72rem;
+    }
+
+    .cc-col-title {
+        font-size: 0.8rem;
+    }
+
+    .cc-bottom-text {
+        font-size: 0.86rem;
+    }
+
+    /* Pricing section */
+    .pricing-label {
+        font-size: 0.64rem;
+    }
+
+    .pricing-header {
+        text-align: center;
+    }
+
+    .pricing-title {
+        font-size: 1.45rem;
+    }
+
+    .pricing-subtitle {
+        font-size: 0.8rem;
+        margin: 0 auto;
+    }
+
+    .pricing-cards-wrapper {
+        grid-template-columns: 1fr;
+    }
+
+    .pricing-billing-toggle__btn {
+        font-size: 0.74rem;
+    }
+
+    .pricing-card-v2__name {
+        font-size: 0.94rem;
+    }
+
+    .pricing-card-v2__desc {
+        font-size: 0.7rem;
+    }
+
+    .pricing-card-v2__price {
+        font-size: 1.75rem;
+    }
+
+    .pricing-card-v2__currency,
+    .pricing-card-v2__unit {
+        font-size: 0.8rem;
+    }
+
+    .pricing-card-v2__feature {
+        font-size: 0.7rem;
+    }
+
+    .pricing-cta-v2 {
+        font-size: 0.82rem;
+    }
+
+    .pricing-badge-v2 {
+        font-size: 0.58rem;
+    }
+
+    /* FAQ */
+    .faq-title {
+        font-size: 1.45rem;
+    }
+
+    .faq-tab {
+        font-size: 0.8rem;
+    }
+
+    .faq-question {
+        font-size: 0.82rem;
+    }
+
+    .faq-answer {
+        font-size: 0.76rem;
+    }
+
+    /* Footer */
+    .footer-info {
+        font-size: 0.68rem;
+    }
+
+    .footer-copyright {
+        font-size: 0.7rem;
+    }
+}

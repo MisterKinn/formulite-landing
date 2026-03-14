@@ -148,6 +148,10 @@ export default function AdminPage() {
     const [deletingPaymentKey, setDeletingPaymentKey] = useState<string | null>(
         null,
     );
+    const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
+    const [cancellingBillingUserId, setCancellingBillingUserId] = useState<
+        string | null
+    >(null);
     const [usageEditValues, setUsageEditValues] = useState<Record<string, string>>(
         {},
     );
@@ -219,6 +223,108 @@ export default function AdminPage() {
             );
         } finally {
             setDeletingPaymentKey(null);
+        }
+    };
+
+    // Handle user deletion
+    const handleDeleteUser = async (userId: string, userEmail: string) => {
+        if (
+            !confirm(
+                `정말로 이 사용자를 삭제하시겠습니까?\n\n이메일: ${userEmail}\nUID: ${userId}\n\n삭제 시 결제 내역과 구독 정보도 함께 삭제됩니다.`,
+            )
+        ) {
+            return;
+        }
+
+        setDeletingUserId(userId);
+        try {
+            const authorization = await getAdminAuthHeader();
+            if (!authorization) throw new Error("관리자 인증이 필요합니다.");
+
+            const response = await fetch(`/api/admin/users/${userId}`, {
+                method: "DELETE",
+                headers: { Authorization: authorization },
+            });
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || "사용자 삭제 실패");
+            }
+
+            setUsers((prev) => prev.filter((user) => user.uid !== userId));
+            setUsersTotal((prev) => Math.max(0, prev - 1));
+            alert("사용자가 삭제되었습니다.");
+        } catch (error) {
+            console.error("Delete user error:", error);
+            alert(
+                error instanceof Error
+                    ? error.message
+                    : "사용자 삭제에 실패했습니다.",
+            );
+        } finally {
+            setDeletingUserId(null);
+        }
+    };
+
+    // Handle next recurring billing cancellation by admin
+    const handleCancelNextBilling = async (user: UserData) => {
+        const nextBillingDateLabel = user.subscription.nextBillingDate
+            ? new Date(user.subscription.nextBillingDate).toLocaleDateString(
+                  "ko-KR",
+              )
+            : "미정";
+
+        if (
+            !confirm(
+                `이 사용자의 다음 정기결제를 해지하시겠습니까?\n\n이메일: ${user.email}\n다음 결제 예정일: ${nextBillingDateLabel}\n\n해지 후에도 다음 결제 예정일까지는 이용 가능합니다.`,
+            )
+        ) {
+            return;
+        }
+
+        setCancellingBillingUserId(user.uid);
+        try {
+            const authorization = await getAdminAuthHeader();
+            if (!authorization) throw new Error("관리자 인증이 필요합니다.");
+
+            const response = await fetch(`/api/admin/users/${user.uid}`, {
+                method: "PATCH",
+                headers: {
+                    Authorization: authorization,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ cancelNextBilling: true }),
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || "정기결제 해지 실패");
+            }
+
+            setUsers((prev) =>
+                prev.map((item) =>
+                    item.uid === user.uid
+                        ? {
+                              ...item,
+                              subscription: {
+                                  ...item.subscription,
+                                  ...data.subscription,
+                              },
+                          }
+                        : item,
+                ),
+            );
+            alert(
+                "다음 정기결제가 해지되었습니다. 만료일까지는 서비스를 이용할 수 있습니다.",
+            );
+        } catch (error) {
+            console.error("Cancel next billing error:", error);
+            alert(
+                error instanceof Error
+                    ? error.message
+                    : "정기결제 해지에 실패했습니다.",
+            );
+        } finally {
+            setCancellingBillingUserId(null);
         }
     };
 
@@ -1323,6 +1429,56 @@ export default function AdminPage() {
                                                                     저장 중...
                                                                 </span>
                                                             )}
+                                                            <button
+                                                                type="button"
+                                                                onClick={() =>
+                                                                    handleCancelNextBilling(
+                                                                        user,
+                                                                    )
+                                                                }
+                                                                disabled={
+                                                                    cancellingBillingUserId ===
+                                                                        user.uid ||
+                                                                    user.subscription
+                                                                        .plan ===
+                                                                        "free" ||
+                                                                    user.subscription
+                                                                        .status !==
+                                                                        "active" ||
+                                                                    !user
+                                                                        .subscription
+                                                                        .nextBillingDate
+                                                                }
+                                                                className="admin-delete-btn"
+                                                            >
+                                                                {cancellingBillingUserId ===
+                                                                user.uid
+                                                                    ? "해지 중..."
+                                                                    : "다음 결제 해지"}
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() =>
+                                                                    handleDeleteUser(
+                                                                        user.uid,
+                                                                        user.email,
+                                                                    )
+                                                                }
+                                                                disabled={
+                                                                    deletingUserId ===
+                                                                        user.uid ||
+                                                                    (authUser
+                                                                        ? authUser.uid ===
+                                                                          user.uid
+                                                                        : false)
+                                                                }
+                                                                className="admin-delete-btn"
+                                                            >
+                                                                {deletingUserId ===
+                                                                user.uid
+                                                                    ? "삭제 중..."
+                                                                    : "사용자 삭제"}
+                                                            </button>
                                                         </div>
                                                     </td>
                                                 </tr>

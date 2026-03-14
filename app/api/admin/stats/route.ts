@@ -5,6 +5,67 @@ import { verifyAdmin, admin } from "@/lib/adminAuth";
 
 const db = admin.firestore();
 
+const PRODUCT_KEYWORDS = ["요금제", "구독", "plan", "pricing"] as const;
+const KNOWN_PRODUCT_AMOUNTS = new Set([
+    60,
+    100,
+    120,
+    720,
+    840,
+    11900,
+    29900,
+    59400,
+    99000,
+    99960,
+    251160,
+    712800,
+    831600,
+]);
+
+function inferBillingCycleFromPayment(payment: {
+    orderName?: unknown;
+    amount?: unknown;
+}): "monthly" | "yearly" | "test" | null {
+    const orderName = String(payment.orderName || "").toLowerCase();
+    if (
+        orderName.includes("연간") ||
+        orderName.includes("yearly") ||
+        orderName.includes("annual")
+    ) {
+        return "yearly";
+    }
+    if (orderName.includes("월간") || orderName.includes("monthly")) {
+        return "monthly";
+    }
+    if (orderName.includes("test") || orderName.includes("테스트")) {
+        return "test";
+    }
+
+    const amount = Number(payment.amount || 0);
+    if ([99960, 251160, 831600, 712800].includes(amount)) return "yearly";
+    if ([11900, 29900, 99000, 120, 100, 60].includes(amount)) return "monthly";
+    return null;
+}
+
+function isProductPayment(payment: { orderName?: unknown; amount?: unknown }) {
+    const orderName = String(payment.orderName || "").toLowerCase();
+    if (PRODUCT_KEYWORDS.some((keyword) => orderName.includes(keyword))) {
+        return true;
+    }
+
+    const amount = Number(payment.amount || 0);
+    return KNOWN_PRODUCT_AMOUNTS.has(amount);
+}
+
+function isRefundStatus(status: unknown) {
+    return (
+        status === "REFUNDED" ||
+        status === "CANCELED" ||
+        status === "PARTIAL_REFUNDED" ||
+        status === "PARTIAL_CANCELED"
+    );
+}
+
 function getDateKey(date = new Date()) {
     const formatter = new Intl.DateTimeFormat("en-CA", {
         timeZone: "Asia/Seoul",
@@ -125,14 +186,6 @@ export async function GET(request: NextRequest) {
 
                 if (subscription.status === "active") {
                     activeSubscriptions++;
-
-                    // Calculate revenue
-                    const amount = subscription.amount || 0;
-                    if (subscription.billingCycle === "yearly") {
-                        yearlyRevenue += amount;
-                    } else {
-                        monthlyRevenue += amount;
-                    }
                 } else if (subscription.status === "cancelled") {
                     cancelledSubscriptions++;
                 } else if (subscription.status === "suspended") {
@@ -177,9 +230,22 @@ export async function GET(request: NextRequest) {
 
             paymentsSnapshot.forEach((paymentDoc) => {
                 const payment = paymentDoc.data();
+                if (!isProductPayment(payment)) {
+                    return;
+                }
+
+                const amount = Number(payment.amount || 0);
+                const billingCycle = inferBillingCycleFromPayment(payment);
                 if (payment.status === "DONE") {
                     recentPaymentsCount++;
-                    recentPaymentsTotal += payment.amount || 0;
+                    recentPaymentsTotal += amount;
+
+                    if (billingCycle === "yearly") {
+                        yearlyRevenue += amount;
+                    } else {
+                        monthlyRevenue += amount;
+                    }
+
                     const approvedAt = payment.approvedAt
                         ? new Date(payment.approvedAt)
                         : null;
@@ -192,7 +258,6 @@ export async function GET(request: NextRequest) {
                             totalSales: 0,
                             paymentCount: 0,
                         };
-                        const amount = payment.amount || 0;
                         dailyRevenueMap[dateKey] = {
                             totalSales: prev.totalSales + amount,
                             paymentCount: prev.paymentCount + 1,
@@ -201,9 +266,9 @@ export async function GET(request: NextRequest) {
                             todaySales += amount;
                         }
                     }
-                } else if (payment.status === "REFUNDED") {
+                } else if (isRefundStatus(payment.status)) {
                     recentRefundsCount++;
-                    recentRefundsTotal += payment.amount || 0;
+                    recentRefundsTotal += amount;
                 }
             });
         }

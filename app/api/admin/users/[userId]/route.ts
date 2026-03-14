@@ -19,7 +19,11 @@ function isEditablePlan(value: unknown): value is EditablePlan {
 /**
  * PATCH /api/admin/users/[userId]
  * Updates user's plan and/or remaining AI usage for current billing cycle.
- * Body: { remainingUsage?: number, plan?: "free" | "go" | "plus" | "pro" }
+ * Body: {
+ *   remainingUsage?: number,
+ *   plan?: "free" | "go" | "plus" | "pro",
+ *   cancelNextBilling?: boolean
+ * }
  */
 export async function PATCH(
     request: NextRequest,
@@ -46,12 +50,16 @@ export async function PATCH(
         const body = (await request.json()) as {
             remainingUsage?: unknown;
             plan?: unknown;
+            cancelNextBilling?: unknown;
         };
         const hasRemainingUsage = body.remainingUsage !== undefined;
         const hasPlan = body.plan !== undefined;
-        if (!hasRemainingUsage && !hasPlan) {
+        const hasCancelNextBilling = body.cancelNextBilling === true;
+        if (!hasRemainingUsage && !hasPlan && !hasCancelNextBilling) {
             return NextResponse.json(
-                { error: "At least one of remainingUsage or plan is required" },
+                {
+                    error: "At least one of remainingUsage, plan, or cancelNextBilling is required",
+                },
                 { status: 400 },
             );
         }
@@ -69,6 +77,13 @@ export async function PATCH(
 
         const userRef = db.collection("users").doc(userId);
         const userDoc = await userRef.get();
+        if (!userDoc.exists) {
+            return NextResponse.json(
+                { error: "User not found" },
+                { status: 404 },
+            );
+        }
+
         const userData = (userDoc.data() || {}) as Record<string, any>;
         const currentUsage = Math.max(0, Number(userData.aiCallUsage || 0));
         const effectivePlan = resolveEffectiveUsagePlan(userData);
@@ -100,13 +115,93 @@ export async function PATCH(
             aiCallUsage: nextUsage,
             updatedAt: nowIso,
         };
+
+        const currentSubscription = {
+            ...((userData.subscription || {}) as Record<string, any>),
+        };
+        let nextSubscription: Record<string, any> | null = null;
+
         if (requestedPlan) {
             updatePayload.plan = requestedPlan;
             updatePayload.tier = requestedPlan;
-            updatePayload.subscription = {
-                ...(userData.subscription || {}),
+            nextSubscription = {
+                ...currentSubscription,
                 plan: requestedPlan,
             };
+        }
+
+        let deletedBillingKeyFromToss = false;
+        if (hasCancelNextBilling) {
+            const subscriptionForCancel = nextSubscription || currentSubscription;
+            const billingKey = String(subscriptionForCancel.billingKey || "");
+            const customerKey = String(subscriptionForCancel.customerKey || "");
+            const isRecurring =
+                subscriptionForCancel.isRecurring === true || !!billingKey;
+
+            if (!isRecurring) {
+                return NextResponse.json(
+                    {
+                        error: "이미 정기결제가 해지되었거나 등록된 빌링키가 없습니다.",
+                    },
+                    { status: 400 },
+                );
+            }
+
+            if (billingKey && customerKey) {
+                const secretKey =
+                    process.env.TOSS_BILLING_SECRET_KEY ||
+                    process.env.TOSS_SECRET_KEY;
+
+                if (secretKey) {
+                    try {
+                        const encodedKey = Buffer.from(secretKey + ":").toString(
+                            "base64",
+                        );
+                        const tossResponse = await fetch(
+                            `https://api.tosspayments.com/v1/billing/authorizations/${billingKey}`,
+                            {
+                                method: "DELETE",
+                                headers: {
+                                    Authorization: `Basic ${encodedKey}`,
+                                    "Content-Type": "application/json",
+                                },
+                                body: JSON.stringify({
+                                    customerKey,
+                                }),
+                            },
+                        );
+                        if (tossResponse.ok || tossResponse.status === 404) {
+                            deletedBillingKeyFromToss = true;
+                        } else {
+                            const tossError = await tossResponse
+                                .json()
+                                .catch(() => ({}));
+                            console.error(
+                                "Failed to delete billing key from TossPayments:",
+                                tossError,
+                            );
+                        }
+                    } catch (tossError) {
+                        console.error(
+                            "Failed to delete billing key from TossPayments:",
+                            tossError,
+                        );
+                    }
+                }
+            }
+
+            nextSubscription = {
+                ...subscriptionForCancel,
+                status: "cancelled",
+                isRecurring: false,
+                cancelledAt: nowIso,
+                billingKey: null,
+                customerKey: null,
+            };
+        }
+
+        if (nextSubscription) {
+            updatePayload.subscription = nextSubscription;
         }
 
         await userRef.set(
@@ -117,14 +212,18 @@ export async function PATCH(
         return NextResponse.json({
             success: true,
             subscription: {
-                ...((userData.subscription || {}) as Record<string, any>),
-                plan: requestedPlan || userData.subscription?.plan || effectivePlan,
+                ...(nextSubscription || currentSubscription),
+                plan:
+                    requestedPlan ||
+                    (nextSubscription || currentSubscription).plan ||
+                    effectivePlan,
             },
             usage: {
                 cycleUsed: nextUsage,
                 limit: usageLimit,
                 cycleRemaining: Math.max(0, usageLimit - nextUsage),
             },
+            deletedBillingKeyFromToss,
         });
     } catch (error) {
         console.error("Update user usage error:", error);
