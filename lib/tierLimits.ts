@@ -1,7 +1,7 @@
 // Tier limits configuration
 export const TIER_LIMITS = {
     free: 5,
-    go: 132,
+    go: 110,
     plus: 330,
     pro: 2200,
 } as const;

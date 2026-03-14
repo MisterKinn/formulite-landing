@@ -38,8 +38,8 @@ type BillingCycle = "monthly" | "yearly";
 
 const plans: PricingPlan[] = [
     {
-        name: "Free",
-        subDescription: "기본 워크플로를 가볍게 검토할 수 있는 시작 플랜입니다.",
+        name: "Free 요금제",
+        subDescription: "기본 요금제로 다양한 서비스를 먼저 경험해보세요.",
         prices: {
             monthly: "0",
             yearly: "0",
@@ -47,9 +47,6 @@ const plans: PricingPlan[] = [
         features: [
             "총 5회 AI 타이핑 생성",
             "기본 수식 자동화",
-            "광고 없는 경험",
-            "커뮤니티 지원",
-            "AI 코드 생성",
             "복수 계정 작업 불가능",
         ],
         cta: "무료로 시작하기",
@@ -63,12 +60,9 @@ const plans: PricingPlan[] = [
             yearly: "8,330",
         },
         features: [
-            "월 132회 AI 타이핑 생성",
+            "월 100회+10회 AI 타이핑 생성",
             "고급 AI 모델",
-            "기본 협업 기능",
-            "이메일 지원",
             "복수 계정 작업 불가능",
-            "월 1회 1:1 컨설팅 미제공",
         ],
         cta: "Go 시작하기",
         tier: "go",
@@ -83,9 +77,6 @@ const plans: PricingPlan[] = [
         features: [
             "월 300회+30회 AI 타이핑 생성",
             "고급 AI 모델",
-            "팀 공유 기능",
-            "우선 지원 서비스",
-            "월 1회 1:1 컨설팅",
             "복수 계정 작업 불가능",
         ],
         cta: "Plus 시작하기",
@@ -102,9 +93,6 @@ const plans: PricingPlan[] = [
         features: [
             "월 2000+200회 AI 타이핑 생성",
             "팀 협업 기능",
-            "API 액세스",
-            "전담 지원 서비스",
-            "최우선 업데이트",
             "복수 계정 작업 가능",
         ],
         cta: "Ultra 시작하기",

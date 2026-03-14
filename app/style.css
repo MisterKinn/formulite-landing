@@ -1783,12 +1783,12 @@ nextjs-portal {
     background: #212121;
     border: 1px solid #2b2d33;
     border-radius: 0.95rem;
-    padding: 1.05rem 1.35rem 0.9rem;
+    padding: 0.9rem 1.2rem 0.8rem;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
     position: relative;
-    min-height: 520px;
+    min-height: 475px;
     max-width: 360px;
     margin: 0 auto;
     width: 100%;
@@ -1837,7 +1837,7 @@ nextjs-portal {
 }
 
 .pricing-card-v2__header {
-    margin-bottom: 0.35rem;
+    margin-bottom: 0.2rem;
 }
 
 .pricing-card-v2__title-row {
@@ -1845,7 +1845,7 @@ nextjs-portal {
     align-items: center;
     justify-content: space-between;
     gap: 0.6rem;
-    margin-bottom: 0.45rem;
+    margin-bottom: 0.3rem;
 }
 
 .pricing-card-v2__name {
@@ -1860,13 +1860,13 @@ nextjs-portal {
     font-size: 0.92rem;
     line-height: 1.6;
     color: #d6d6d9;
-    margin: 0.95rem 0 1.2rem;
+    margin: 0.65rem 0 0.85rem;
     min-height: 0;
 }
 
 /* Price block */
 .pricing-card-v2__price-block {
-    margin-bottom: 1.35rem;
+    margin-bottom: 0.95rem;
 }
 
 .pricing-card-v2__price-row {
@@ -1923,12 +1923,12 @@ nextjs-portal {
     margin: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.9rem;
+    gap: 0.6rem;
 }
 
 .pricing-card-v2__cta-wrap {
     margin-top: 0.2rem;
-    margin-bottom: 1rem;
+    margin-bottom: 0.7rem;
 }
 
 .pricing-card-v2__feature {

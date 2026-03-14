@@ -316,7 +316,7 @@ function ProfileContent() {
             const getLimitByPlan = (rawPlan: unknown) => {
                 const plan = String(rawPlan || "free").toLowerCase();
                 if (plan === "pro" || plan === "ultra") return 2200;
-                if (plan === "go") return 132;
+                if (plan === "go") return 110;
                 if (plan === "plus" || plan === "test") return 330;
                 return 5;
             };
@@ -621,7 +621,7 @@ function ProfileContent() {
     const fallbackLimitByPlan = (planId: string) => {
         const normalized = planId.toLowerCase();
         if (normalized === "pro" || normalized === "ultra") return 2200;
-        if (normalized === "go") return 132;
+        if (normalized === "go") return 110;
         if (normalized === "plus" || normalized === "test") return 330;
         return 5;
     };
