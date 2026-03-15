@@ -1498,6 +1498,18 @@ class CredentialsLoginDialog(QDialog):
         cancel_btn.clicked.connect(self.reject)
         btn_row.addWidget(cancel_btn)
 
+        signup_btn = QPushButton("회원가입")
+        signup_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        signup_btn.setFixedHeight(42)
+        signup_btn.setStyleSheet(
+            "QPushButton { background-color: #eef2ff; color: #4f46e5; border: 1px solid #c7d2fe;"
+            "  border-radius: 12px; font-size: 13px; font-weight: 700; padding: 0 18px; }"
+            "QPushButton:hover { background-color: #e0e7ff; border: 1px solid #a5b4fc; }"
+            "QPushButton:pressed { background-color: #c7d2fe; border: 1px solid #818cf8; }"
+        )
+        signup_btn.clicked.connect(self._open_signup_page)
+        btn_row.addWidget(signup_btn)
+
         login_btn = QPushButton("로그인")
         login_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         login_btn.setFixedHeight(42)
@@ -1522,6 +1534,14 @@ class CredentialsLoginDialog(QDialog):
             QLineEdit.EchoMode.Normal if is_hidden else QLineEdit.EchoMode.Password
         )
         self._toggle_btn.setText("숨김" if is_hidden else "보기")
+
+    def _open_signup_page(self) -> None:
+        base_url = str(os.getenv("NOVA_WEB_BASE_URL") or "https://www.nova-ai.work").rstrip("/")
+        signup_url = f"{base_url}/login?mode=signup&source=desktop"
+        try:
+            webbrowser.open(signup_url)
+        except Exception:
+            pass
 
     def _submit(self) -> None:
         email = self._email_input.text().strip()
@@ -2468,7 +2488,7 @@ class NovaAILiteWindow(QWidget):
             "QComboBox#typingFontCombo::drop-down { subcontrol-origin: padding; subcontrol-position: top right;"
             "  width: 18px; border: none; }"
             f"QComboBox#typingFontCombo::down-arrow {{ image: url('{_typing_dropdown_icon}');"
-            "  width: 12px; height: 12px; margin-right: 3px; }}"
+            "  width: 12px; height: 12px; margin-right: 3px; }"
             "QComboBox#typingSizeCombo::drop-down { width: 0px; border: none; }"
             "QComboBox#typingSizeCombo::down-arrow { image: none; width: 0px; height: 0px; }"
             "QComboBox QAbstractItemView { background: #ffffff; border: 1px solid #d1d5db;"
@@ -2633,7 +2653,7 @@ class NovaAILiteWindow(QWidget):
             "QComboBox#typingFontCombo::drop-down { subcontrol-origin: padding; subcontrol-position: top right;"
             "  width: 18px; border: none; }"
             f"QComboBox#typingFontCombo::down-arrow {{ image: url('{_typing_dropdown_icon}');"
-            "  width: 12px; height: 12px; margin-right: 3px; }}"
+            "  width: 12px; height: 12px; margin-right: 3px; }"
             "QComboBox#typingSizeCombo::drop-down { width: 0px; border: none; }"
             "QComboBox#typingSizeCombo::down-arrow { image: none; width: 0px; height: 0px; }"
             "QComboBox QAbstractItemView { background: #ffffff; border: 1px solid #d1d5db;"
@@ -6350,8 +6370,13 @@ def _maybe_show_update_notice(parent: QWidget) -> None:
                 "다운로드 링크가 설정되지 않았습니다. 운영자에게 문의해주세요.",
             )
     elif is_mandatory and (msg.clickedButton() == later_btn or msg.clickedButton() is None):
-        QMessageBox.information(parent, "업데이트 필요", "최신 버전 업데이트 후 사용해주세요.")
-        QApplication.instance().quit()
+        # Never terminate the app from update notice flow.
+        # Some users may close the dialog unintentionally and perceive this as a crash.
+        QMessageBox.information(
+            parent,
+            "업데이트 권장",
+            "최신 버전으로 업데이트하면 더 안정적으로 사용할 수 있습니다.",
+        )
 
 
 def main() -> None:

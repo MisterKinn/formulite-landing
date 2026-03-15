@@ -1,9 +1,9 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { getAuth, deleteUser } from "firebase/auth";
+import { getAuth } from "firebase/auth";
 import { getFirebaseAppOrNull } from "../../firebaseConfig";
-import { getFirestore, doc, deleteDoc, getDoc } from "firebase/firestore";
+import { getFirestore, doc, getDoc } from "firebase/firestore";
 import { loadTossPayments } from "@tosspayments/tosspayments-sdk";
 import { useAuth } from "../../context/AuthContext";
 import "./profile.css";
@@ -906,31 +906,38 @@ function ProfileContent() {
 
         setDeleting(true);
         try {
-            // 사용자 Firestore 데이터 삭제
-            const db = getFirestore(firebaseApp);
-            await deleteDoc(doc(db, "users", currentUser.uid));
-
-            // Firebase Authentication에서 사용자 삭제
-            await deleteUser(currentUser);
-
-            setStatus("계정이 삭제되었습니다.");
-            // 안전하게 홈으로 이동
-            router.push("/");
-        } catch (err: any) {
-            console.error("Account deletion failed", err);
-            if (err?.code === "auth/requires-recent-login") {
-                setError("보안을 위해 최근 로그인 후 다시 시도해주세요.");
-                // 세션을 종료하고 로그인 페이지로 이동
-                try {
-                    await logout();
-                } catch {}
-                sessionStorage.setItem("profileTab", "profile");
-                router.push("/login");
-            } else {
-                setError(
-                    "계정 삭제 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+            const idToken = await currentUser.getIdToken(true);
+            const response = await fetch("/api/auth/delete-account", {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${idToken}`,
+                    "Content-Type": "application/json",
+                },
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || !payload?.success) {
+                throw new Error(
+                    payload?.message ||
+                        payload?.error ||
+                        "계정 삭제 요청에 실패했습니다.",
                 );
             }
+
+            setStatus("계정이 삭제되었습니다.");
+            setError(null);
+
+            // Local auth state cleanup
+            try {
+                await logout();
+            } catch {
+                router.push("/");
+            }
+        } catch (err: any) {
+            console.error("Account deletion failed", err);
+            setError(
+                err?.message ||
+                    "계정 삭제 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+            );
         } finally {
             setDeleting(false);
         }

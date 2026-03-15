@@ -1,8 +1,6 @@
 "use client";
 import React, { useEffect, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
-import { Sparkles, Lock, Mail, ArrowLeft } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import { useAuth } from "../../context/AuthContext";
 import { Navbar } from "../../components/Navbar";
 import Sidebar from "../(home)/SidebarDynamic";
@@ -65,7 +63,6 @@ const EyeOffIcon = () => (
 );
 
 function LoginContent() {
-    const router = useRouter();
     const searchParams = useSearchParams();
     const forceAccountSwitch =
         searchParams?.get("force_account_switch") === "1";
@@ -74,7 +71,6 @@ function LoginContent() {
     const {
         loginWithEmail,
         signupWithEmail,
-        loginWithGoogle,
         requestPasswordReset,
         isAuthenticated,
         loading,
@@ -203,7 +199,7 @@ function LoginContent() {
         if (redirectUri) {
             try {
                 // Validate that redirect_uri is a valid URL
-                const url = new URL(redirectUri);
+                new URL(redirectUri);
 
                 // Fetch user plan from Firestore and expose it in both plan/tier keys
                 const plan = await getUserPlan(user.uid);
@@ -363,27 +359,6 @@ function LoginContent() {
         }
     };
 
-    const handleGoogle = async () => {
-        setError(null);
-        setInfo(null);
-        setSubmitting(true);
-        try {
-            const user = await loginWithGoogle();
-            await handlePostLoginRedirect(user);
-        } catch (err: unknown) {
-            console.error("[Login] Google login failed", err);
-            const code =
-                err && typeof err === "object" ? (err as any).code || "" : "";
-            const message =
-                err && typeof err === "object"
-                    ? (err as any).message || String(err)
-                    : String(err);
-            setError(`${code} — ${message}` || "Google 로그인에 실패했습니다.");
-        } finally {
-            setSubmitting(false);
-        }
-    };
-
     const handleReset = async () => {
         setError(null);
         setInfo(null);
@@ -487,60 +462,6 @@ function LoginContent() {
                             </div>
                         </div>
                     </header>
-
-                    {/* 소셜 로그인 버튼 */}
-                    <div className="social-login-container">
-                        <button
-                            type="button"
-                            className="social-btn google-btn"
-                            onClick={handleGoogle}
-                            disabled={submitting}
-                        >
-                            <svg
-                                className="social-icon google-icon"
-                                width="28"
-                                height="28"
-                                viewBox="0 0 20 20"
-                                fill="none"
-                                xmlns="http://www.w3.org/2000/svg"
-                            >
-                                <g clipPath="url(#clip0_993_771)">
-                                    <path
-                                        d="M19.805 10.2305C19.805 9.55078 19.7483 8.86719 19.6267 8.19922H10.2V12.0508H15.6408C15.4158 13.2812 14.6725 14.3359 13.6242 15.0352V17.2852H16.7283C18.5275 15.6172 19.805 13.1953 19.805 10.2305Z"
-                                        fill="#4285F4"
-                                    />
-                                    <path
-                                        d="M10.2 20C12.6992 20 14.7892 19.1797 16.3283 17.2852L13.6242 15.0352C12.7892 15.6016 11.6425 15.9609 10.2 15.9609C7.78917 15.9609 5.74917 14.2734 5.035 12.0508H1.82831V14.375C3.41748 17.6016 6.59917 20 10.2 20Z"
-                                        fill="#34A853"
-                                    />
-                                    <path
-                                        d="M5.035 12.0508C4.85165 11.4844 4.74831 10.8828 4.74831 10.25C4.74831 9.61719 4.85165 9.01562 5.035 8.44922V6.125H1.82831C1.20165 7.36719 0.845001 8.75781 0.845001 10.25C0.845001 11.7422 1.20165 13.1328 1.82831 14.375L5.035 12.0508Z"
-                                        fill="#FBBC05"
-                                    />
-                                    <path
-                                        d="M10.2 4.53906C11.4842 4.53906 12.6408 4.98438 13.5408 5.83594L16.3933 3.04688C14.7858 1.52344 12.6958 0.5 10.2 0.5C6.59917 0.5 3.41748 2.89844 1.82831 6.125L5.035 8.44922C5.74917 6.22656 7.78917 4.53906 10.2 4.53906Z"
-                                        fill="#EA4335"
-                                    />
-                                </g>
-                                <defs>
-                                    <clipPath id="clip0_993_771">
-                                        <rect
-                                            width="20"
-                                            height="20"
-                                            fill="white"
-                                        />
-                                    </clipPath>
-                                </defs>
-                            </svg>
-                            <span>Google로 계속하기</span>
-                        </button>
-
-                    </div>
-
-                    {/* 구분선 */}
-                    <div className="login-divider">
-                        <span>또는</span>
-                    </div>
 
                     <form className="login-form" onSubmit={handleSubmit}>
                         <label>

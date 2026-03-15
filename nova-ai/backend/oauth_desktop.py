@@ -193,6 +193,42 @@ def _map_email_password_auth_error(raw_code: str) -> str:
     return "로그인에 실패했습니다. 다시 시도해주세요."
 
 
+def _resolve_sign_in_methods(
+    api_key: str,
+    email: str,
+    timeout: int = 20,
+) -> list[str]:
+    """Best-effort lookup of enabled sign-in methods for an email."""
+    try:
+        import requests
+    except Exception:
+        return []
+
+    try:
+        lookup_url = (
+            "https://identitytoolkit.googleapis.com/v1/accounts:createAuthUri"
+            f"?key={api_key}"
+        )
+        response = requests.post(
+            lookup_url,
+            json={
+                "identifier": str(email or "").strip().lower(),
+                "continueUri": "http://localhost",
+            },
+            timeout=timeout,
+            headers={"Content-Type": "application/json"},
+        )
+        if response.status_code != 200:
+            return []
+        payload = response.json()
+        methods = payload.get("signinMethods") or payload.get("allProviders") or []
+        if isinstance(methods, list):
+            return [str(item or "").strip().lower() for item in methods if item]
+    except Exception:
+        return []
+    return []
+
+
 def login_with_email_password(
     email: str,
     password: str,
@@ -238,6 +274,23 @@ def login_with_email_password(
             if isinstance(payload, dict)
             else ""
         )
+        upper_error_code = str(error_code or "").strip().upper()
+        if upper_error_code in {
+            "INVALID_LOGIN_CREDENTIALS",
+            "INVALID_PASSWORD",
+            "EMAIL_NOT_FOUND",
+            "USER_NOT_FOUND",
+        }:
+            sign_in_methods = _resolve_sign_in_methods(
+                api_key,
+                normalized_email,
+                timeout=timeout,
+            )
+            if "google.com" in sign_in_methods and "password" not in sign_in_methods:
+                raise RuntimeError(
+                    "이 이메일은 Google 로그인 전용 계정입니다. "
+                    "웹 로그인 페이지에서 비밀번호 재설정 후 이메일 로그인해주세요."
+                )
         raise RuntimeError(_map_email_password_auth_error(str(error_code or "")))
 
     id_token = str(payload.get("idToken") or "")

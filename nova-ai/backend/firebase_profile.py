@@ -174,6 +174,8 @@ _firebase_cache: Dict[str, Any] = {
     "last_refresh": 0,
 }
 _CACHE_TTL = 60  # seconds
+_FIRESTORE_FORBIDDEN_COOLDOWN_SEC = 300
+_firestore_forbidden_until = 0.0
 
 
 def _is_admin_unlimited_user(uid: Optional[str] = None) -> bool:
@@ -578,6 +580,22 @@ def refresh_user_profile_from_firebase() -> Optional[Dict[str, Any]]:
         _normalize_plan_tier(user.get("plan") or user.get("tier"), "free"),
     )
     usage_count = int((usage_status or {}).get("currentUsage") or 0)
+
+    # When Firestore returns repeated 403s in packaged environments,
+    # skip aggressive retries for a short cooldown window.
+    global _firestore_forbidden_until
+    now = time.time()
+    if _firestore_forbidden_until > now:
+        return {
+            "uid": uid,
+            "tier": usage_plan,
+            "plan": usage_plan,
+            "display_name": user.get("name", ""),
+            "email": user.get("email", ""),
+            "photo_url": user.get("photo_url", ""),
+            "aiCallUsage": usage_count,
+        }
+
     auth_token, auth_mode = _resolve_firestore_auth_token()
     if not auth_token:
         return {
@@ -664,6 +682,17 @@ def refresh_user_profile_from_firebase() -> Optional[Dict[str, Any]]:
                 "aiCallUsage": usage_count,
             }
         
+        elif status_code == 403:
+            _firestore_forbidden_until = time.time() + _FIRESTORE_FORBIDDEN_COOLDOWN_SEC
+            return {
+                "uid": uid,
+                "tier": usage_plan,
+                "plan": usage_plan,
+                "display_name": user.get("name", ""),
+                "email": user.get("email", ""),
+                "photo_url": user.get("photo_url", ""),
+                "aiCallUsage": usage_count,
+            }
         else:
             print(f"Firebase profile fetch failed: {status_code}")
             return {
