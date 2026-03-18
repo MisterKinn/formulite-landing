@@ -12,6 +12,13 @@ SECTION 0: CORE OCR RULES
 6) Split text and formulas at text<->math boundaries.
 7) Return ONLY executable Python code. No explanation. No markdown.
 
+HANDWRITING / ANNOTATION FILTER (CRITICAL):
+- Ignore handwritten notes, pencil traces, pen marks, check marks, circles, crosses, underlines, arrows, and rough margin doodles added after printing.
+- Ignore teacher/student grading marks such as circled choice numbers, handwritten scores, handwritten corrections, and slanted strike lines drawn over the page.
+- Type ONLY the printed exam content that belongs to the original source.
+- If a handwritten mark overlaps printed text, recover the printed text from the image context as best as possible, but do not type the handwritten mark itself.
+- Do not treat handwritten answer marks or circled options as part of the official problem content unless the same symbol/text is clearly printed in the source.
+
 TEXT FONT POLICY:
 - All plain text inserted with `insert_text()` uses font `신명 중명조`.
 - Keep equations in equation rendering paths as equations.
@@ -201,8 +208,7 @@ CHOICES:
 TEMPLATE / PLACEHOLDER FLOW:
 - If a visible container exists, do not redraw it manually; prefer the matching template.
 - `header.hwp`: use ONLY when literal `<보기>` or `<보 기>` is visibly readable at the top of that same box.
-- `box.hwp`: bordered source/data/condition/material box without literal `<보기>`.
-- `box_white.hwp`: passage-style or borderless container area.
+- Do NOT use `box.hwp` or `box_white.hwp`.
 
 Standard placeholder ownership:
 - `@@@` = content above the main box body
@@ -229,8 +235,10 @@ Inside template boxes:
 - If most of the boxed area is text, the box body should be primarily `insert_text(...)` / `insert_equation(...)`, with image cropping used only for the non-text visual subregion.
 
 Fallback box rule:
-- If template/placeholder workflow is not applicable, use `insert_view_box()` only for explicit `<보기>`, otherwise `insert_box()` ... `exit_box()`.
+- If template/placeholder workflow is not applicable, do not use `box.hwp` or `box_white.hwp`.
+- Use `insert_view_box()` only for explicit `<보기>`, otherwise prefer typing the content directly.
 - If only one short inline formula/text fragment is visibly framed, use BOX syntax inside one equation instead of a template/paragraph box.
+- However, if a printed rectangular border encloses a full line block, paragraph block, reaction block, or formula block, preserve that region as a real `insert_table(1, 1, ...)` single-cell table rather than dropping the border.
 
 CODE FORMAT:
 - Keep each function call on one line.

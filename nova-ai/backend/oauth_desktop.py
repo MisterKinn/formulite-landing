@@ -13,6 +13,9 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs, urlencode
 from typing import Optional, Dict, Any
+from runtime_env import load_runtime_env
+
+load_runtime_env(__file__)
 
 # Login page URL
 # Override with NOVA_WEB_BASE_URL when needed (e.g. staging/preview).
@@ -193,6 +196,25 @@ def _map_email_password_auth_error(raw_code: str) -> str:
     return "로그인에 실패했습니다. 다시 시도해주세요."
 
 
+def _map_login_request_exception(exc: Exception) -> str:
+    message = str(exc or "").strip()
+    lower = message.lower()
+    if "ssl" in lower or "certificate verify failed" in lower:
+        return "로그인 서버 보안 연결(SSL)에 실패했습니다. 네트워크 또는 보안 프로그램 설정을 확인해 주세요."
+    if "timed out" in lower or "timeout" in lower:
+        return "로그인 서버 응답 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요."
+    if (
+        "identitytoolkit.googleapis.com" in lower
+        or "failed to establish a new connection" in lower
+        or "max retries exceeded" in lower
+        or "name or service not known" in lower
+        or "connection aborted" in lower
+        or "connection reset" in lower
+    ):
+        return "로그인 서버에 연결하지 못했습니다. 현재 네트워크에서 Google 로그인 API 접속이 차단되었을 수 있습니다."
+    return "로그인 서버 연결에 실패했습니다. 네트워크 상태를 확인한 뒤 다시 시도해 주세요."
+
+
 def _resolve_sign_in_methods(
     api_key: str,
     email: str,
@@ -252,16 +274,19 @@ def login_with_email_password(
         "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword"
         f"?key={api_key}"
     )
-    response = requests.post(
-        auth_url,
-        json={
-            "email": normalized_email,
-            "password": password,
-            "returnSecureToken": True,
-        },
-        timeout=timeout,
-        headers={"Content-Type": "application/json"},
-    )
+    try:
+        response = requests.post(
+            auth_url,
+            json={
+                "email": normalized_email,
+                "password": password,
+                "returnSecureToken": True,
+            },
+            timeout=timeout,
+            headers={"Content-Type": "application/json"},
+        )
+    except requests.RequestException as exc:
+        raise RuntimeError(_map_login_request_exception(exc)) from exc
 
     try:
         payload = response.json()

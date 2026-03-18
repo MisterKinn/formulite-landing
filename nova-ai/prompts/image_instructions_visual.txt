@@ -26,10 +26,16 @@ Mixed text + figure boxes:
 - Do not crop the whole box just because a figure exists somewhere inside it.
 - The presence of one car/graph/diagram inside a box does NOT justify turning the whole boxed content into a single image.
 
+HANDWRITTEN VISUAL NOISE:
+- Ignore handwritten circles around answer choices or question numbers.
+- Ignore handwritten check marks, X marks, freehand lines, scribbles, arrows, and side notes that are not part of the printed exam.
+- Do not reproduce handwritten emphasis marks as underline/highlight/style.
+- Only preserve marks that are clearly printed in the original source, such as printed diagonal table lines, printed bullets, or printed symbols.
+
 HIGHLIGHT / COLOR / STYLE:
-- If a span has only highlight, use `insert_highlighted_text(...)`.
-- If a span has only text color, use `insert_colored_text(...)`.
-- If a span has two or more visible styles together (bold/underline/italic/strike/color/highlight), use one `insert_styled_text(...)`.
+- Ignore visible highlight / highlighter effects and type the text normally.
+- Ignore visible text color differences and type the text normally.
+- If a span has two or more visible styles together (bold/underline/italic/strike), use one `insert_styled_text(...)`.
 - Otherwise use normal `insert_text(...)`.
 - If the visible style is underline, preserve it in code instead of dropping it.
 - For underlined text, prefer `set_underline(True/False)` around only the underlined span.
@@ -39,26 +45,47 @@ HIGHLIGHT / COLOR / STYLE:
 TABLE RECONSTRUCTION (CRITICAL):
 - Prefer `insert_table(...)` over turning a table into an image.
 - Use structured cell objects for merge/style when needed.
+- A visibly bordered single-cell block is still a real table. If the source shows one rectangular cell containing text/equations, preserve it with `insert_table(1, 1, ...)` instead of flattening the content into normal paragraphs.
 - Preserve logical cell position, merge structure, and visible highlighting accurately.
 - Before generating code, count the base grid first after mentally splitting merged cells.
 - Determine exact `rows` and `cols` before writing `insert_table(rows, cols, ...)`.
 - Fill all visible texts (including far-right headers and top-level headers) before final merge decisions.
 - Then apply merge metadata (`rowspan`/`colspan` or `merged_cells`) so merged structure matches the source.
 - Re-check by scanning each row and each column once more; no header/body label may disappear.
+- Finish both the table structure and any visible cell styling in this first response.
+- Do NOT assume a later refinement pass will add `fill_color` or `diagonal`.
 - If a row has cells covered by vertical merges from previous rows, do not shift subsequent cells.
 - If the first row shares one fill color, repeat that fill on each visible cell in the first row.
 - If only one cell is colored, apply style only to that cell.
-- If outside borders differ from inside borders, use side-specific border keys.
-- Use visible border style names such as:
-  `solid`, `dash`, `dot`, `dashdot`, `dashdotdot`, `double`, `thinthick`, `thickthin`, `thinthickthin`
-- Use visible width strings such as `0.2mm`, `0.3mm`, `0.5mm`.
-- If a table cell contains math, use `EQ:` inside that cell value.
-- Do not invent invisible colors or borders.
+- If a cell has a visible diagonal slash, backslash, or X mark, add `diagonal: "/"`, `diagonal: "\\"`, or `diagonal: "x"` to that cell object.
+- Do NOT add border-related keys such as `border_color`, `border_type`, `border_width`, or side-specific border overrides.
+- If a table cell contains only math, prefer `{"equation": "..."}`.
+- If a table cell mixes text and math on one line or across multiple lines, use `{"content": [...]}` or `{"lines": [...]}` so text/equation boundaries stay explicit.
+- `{"text": "EQ:..."}` is allowed only for simple one-equation cells.
+- Do not invent invisible colors or fills.
 - Use `insert_table(...)` ONLY for real tables with actual cell/grid structure.
 - Do NOT use `insert_table(...)` for borderless alignment layouts, multi-column choices, or header-like labels that are merely positioned on the page.
 - If the source looks like "two columns of choices under text headers" but has no real table borders, reproduce it with plain typing and spacing, not a table.
+- If a boxed reaction, formula summary, result note, or short paragraph is enclosed by an actual printed border, treat that bordered region as a 1x1 table unless it is clearly the special `<보기>` template box.
 
 Compact table examples:
+insert_table(1, 1, cell_data=[
+    [{"text": "EQ:포도당 -> 글루콘산 + H_2 O_2", "align": "center"}],
+], align_center=True)
+
+insert_table(1, 1, cell_data=[
+    [{"content": [{"type": "equation", "value": "H_2 O_2 + 색소 -> 색 변화"}], "align": "center"}],
+], align_center=True)
+
+insert_table(2, 2, cell_data=[
+    ["구분", {"equation": "x ^{2} + x + 1", "align": "center"}],
+    [{"content": ["조건 ", {"type": "equation", "value": "f LEFT ( x RIGHT )"}, " 만족"], "align": "left"}, "값"],
+], align_center=True)
+
+insert_table(1, 1, cell_data=[
+    [{"text": "소변(요) 검사지는 ... 권고함.", "align": "left"}],
+], align_center=True)
+
 insert_table(2, 4, cell_data=[
     [{"text": "주제", "colspan": 4, "align": "center"}],
     ["가", "나", "다", "라"],
@@ -89,13 +116,18 @@ insert_table(6, 6, cell_data=[
 
 insert_table(2, 2, cell_data=[
     [
-        {"text": "구분", "border_type": "dotted", "border_width": "0.2mm", "align": "center"},
-        {"text": "내용", "border_type": "dotted", "border_width": "0.2mm", "align": "center"},
+        {"text": "구분", "fill_color": "#f2f4f6", "align": "center"},
+        {"text": "내용", "fill_color": "#f2f4f6", "align": "center"},
     ],
     [
-        {"text": "A", "border_type": "dotted", "border_width": "0.2mm", "align": "center"},
-        {"text": "B", "border_type": "dotted", "border_width": "0.2mm", "align": "center"},
+        {"text": "A", "align": "center"},
+        {"text": "B", "align": "center"},
     ],
+], align_center=True)
+
+insert_table(2, 2, cell_data=[
+    ["항목", "합계"],
+    ["대만", {"text": "", "diagonal": "x"}],
 ], align_center=True)
 
 Crop API:

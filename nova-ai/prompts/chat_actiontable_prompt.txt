@@ -20,7 +20,7 @@ Allowed command families:
   - insert_paragraph()
   - insert_small_paragraph()
   - insert_equation("hwp_eqn")
-  - insert_template("header.hwp|box.hwp|box_white.hwp")
+  - insert_template("header.hwp")
   - focus_placeholder("@@@|###|&&&")
   - insert_box()
   - exit_box()
@@ -248,6 +248,7 @@ Useful ActionTable actions by category:
 - StyleTemplate
 - StyleChangeToCurrentShape
 - StyleClearCharStyle
+- Low-level style setup may use `execute_hwp_action("StyleEx", "Style", {...})` when nested `CharShape` / `ParaShape` values are explicitly requested.
 
 [표]
 - TableCreate
@@ -535,7 +536,23 @@ Useful ParameterSetTable mappings:
 - Hyperlink insertion:
   - `execute_hwp_action("InsertHyperlink", "HHyperLink", {"Text": "...", "Command": "https://example.com;1;0;0", "DirectInsert": 1})`
 - Page setup:
-  - `execute_hwp_action("PageSetup", "HPageDef", {"Landscape": 1, "LeftMargin": 5669, "RightMargin": 5669})`
+  - `execute_hwp_action("PageSetup", "SecDef", {"ApplyTo": 3, "PageDef": {"Landscape": 1, "LeftMargin": 5669, "RightMargin": 5669, "GutterLen": 0}})`
+- Style setup:
+  - `_style_params = {"NameLocal": "tourism", "CharShape": {"FaceNameHangul": "굴림", "FaceNameLatin": "돋움", "Height": 1000, "RatioHangul": 95, "RatioLatin": 95, "SpacingHangul": 5, "SpacingLatin": 5}, "ParaShape": {"LeftMargin": 1500, "NextSpacing": 1000}}`
+  - `try: execute_hwp_action("StyleDirectEdit", "Style", _style_params) ... except: execute_hwp_action("StyleEx", "Style", _style_params)`
+  - Use nested `CharShape` and `ParaShape` item sets, not flattened keys.
+  - For pt values, convert with `1pt = 100 HWPUNIT`.
+- Style apply:
+  - `execute_hwp_action("Style", "Style", {"NameLocal": "tourism"})`
+  - If the user says `문서 전체`, prepend `run_hwp_action("SelectAll")` before the style action.
+  - `tourism` is only an example; always use the style name from the user's message.
+  - Style names may be quoted or contain spaces, for example `보고서 본문` or `Body Text`.
+- Style management:
+  - `print(get_current_style_name())`
+  - `print(get_style_list())`
+  - `print(get_style_list(True))` for used styles only
+  - `delete_style("style_name", "replacement_style")`
+  - `remove_unused_styles()`
 - Distributed/security document:
   - `execute_hwp_action("FileSetSecurity", "HFileSetSecurity", {"Password": "1234567", "NoPrint": 1, "NoCopy": 1})`
 - Date/time field formatting:
@@ -722,7 +739,60 @@ execute_hwp_action("InsertHyperlink", "HHyperLink", {"Text": "https://example.co
 
 사용자 요청: A4 가로로 바꾸고 왼쪽 20mm 오른쪽 20mm 로 설정해줘
 출력:
-execute_hwp_action("PageSetup", "HPageDef", {"PaperWidth": 59528, "PaperHeight": 84189, "Landscape": 1, "LeftMargin": 5669, "RightMargin": 5669})
+execute_hwp_action("PageSetup", "SecDef", {"ApplyTo": 3, "PageDef": {"PaperWidth": 59528, "PaperHeight": 84189, "Landscape": 1, "LeftMargin": 5669, "RightMargin": 5669}})
+
+사용자 요청: 스타일 이름 tourism, 왼쪽 여백 15pt, 문단 아래 10pt, 한글 굴림/영문 돋움, 크기 10pt, 장평 95%, 자간 5%
+출력:
+_style_params = {"NameLocal": "tourism", "CharShape": {"FaceNameHangul": "굴림", "FaceNameLatin": "돋움", "Height": 1000, "RatioHangul": 95, "RatioLatin": 95, "SpacingHangul": 5, "SpacingLatin": 5}, "ParaShape": {"LeftMargin": 1500, "NextSpacing": 1000}}
+try:
+    execute_hwp_action("StyleDirectEdit", "Style", _style_params)
+except Exception:
+    execute_hwp_action("StyleEx", "Style", _style_params)
+
+사용자 요청: tourism 스타일을 현재 문단에 적용해줘
+출력:
+execute_hwp_action("Style", "Style", {"NameLocal": "tourism"})
+
+사용자 요청: tourism 스타일을 문서 전체에 적용해줘
+출력:
+run_hwp_action("SelectAll")
+execute_hwp_action("Style", "Style", {"NameLocal": "tourism"})
+
+사용자 요청: "보고서 본문" 스타일을 현재 문단에 적용해줘
+출력:
+execute_hwp_action("Style", "Style", {"NameLocal": "보고서 본문"})
+
+사용자 요청: 스타일 "캡션 소형", 왼쪽 여백 8pt, 문단 아래 6pt, 한글 "맑은 고딕"/영문 "Arial", 크기 9pt, 장평 100%, 자간 0%
+출력:
+_style_params = {"NameLocal": "캡션 소형", "CharShape": {"FaceNameHangul": "맑은 고딕", "FaceNameLatin": "Arial", "Height": 900, "RatioHangul": 100, "RatioLatin": 100, "SpacingHangul": 0, "SpacingLatin": 0}, "ParaShape": {"LeftMargin": 800, "NextSpacing": 600}}
+try:
+    execute_hwp_action("StyleDirectEdit", "Style", _style_params)
+except Exception:
+    execute_hwp_action("StyleEx", "Style", _style_params)
+
+사용자 요청: 현재 문단 스타일 이름 보여줘
+출력:
+print(get_current_style_name())
+
+사용자 요청: 스타일 목록 보여줘
+출력:
+print(get_style_list())
+
+사용자 요청: 사용 중인 스타일 목록만 보여줘
+출력:
+print(get_style_list(True))
+
+사용자 요청: "캡션 소형" 스타일 삭제해줘
+출력:
+delete_style("캡션 소형", "바탕글")
+
+사용자 요청: "xl67" 스타일을 "표내용" 스타일로 대체하고 삭제해줘
+출력:
+delete_style("xl67", "표내용")
+
+사용자 요청: 사용 안 하는 스타일 정리해줘
+출력:
+remove_unused_styles()
 
 사용자 요청: 만든 날짜 필드를 넣어줘
 출력:

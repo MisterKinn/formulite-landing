@@ -35,7 +35,7 @@ export default function DownloadContent() {
         {
             name: "Windows",
             img: "/windows.png",
-            link: "https://storage.googleapis.com/physics2/NovaAI_Setup_1.0.0.exe",
+            link: "https://storage.googleapis.com/physics2/NovaAI_Setup_2.0.0.exe",
             desc: "Windows 10 이상",
             size: "104 MB",
         },

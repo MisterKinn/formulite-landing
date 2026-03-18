@@ -24,7 +24,7 @@ Allowed helper functions:
 - insert_paragraph()
 - insert_small_paragraph()
 - insert_equation("hwp_eqn")
-- insert_template("header.hwp|box.hwp|box_white.hwp")
+- insert_template("header.hwp")
 - focus_placeholder("@@@|###|&&&")
 - insert_box()
 - exit_box()
@@ -253,7 +253,12 @@ Useful ParameterSet patterns from the PDFs:
 - execute_hwp_action("CharShape", "HCharShape", {"Bold": 1, "TextColor": 255})
 - execute_hwp_action("ParaShape", "HParaShape", {"AlignType": 3})
 - execute_hwp_action("TableCreate", "HTableCreation", {"Rows": 2, "Cols": 3})
-- execute_hwp_action("PageSetup", "HPageDef", {"Landscape": 1, "LeftMargin": 1000, "RightMargin": 1000})
+- _style_params = {"NameLocal": "tourism", "CharShape": {"FaceNameHangul": "굴림", "FaceNameLatin": "돋움", "Height": 1000, "RatioHangul": 95, "RatioLatin": 95, "SpacingHangul": 5, "SpacingLatin": 5}, "ParaShape": {"LeftMargin": 1500, "NextSpacing": 1000}}
+- try:
+    execute_hwp_action("StyleDirectEdit", "Style", _style_params)
+  except Exception:
+    execute_hwp_action("StyleEx", "Style", _style_params)
+- execute_hwp_action("PageSetup", "SecDef", {"ApplyTo": 3, "PageDef": {"Landscape": 1, "LeftMargin": 1000, "RightMargin": 1000, "GutterLen": 0}})
 - execute_hwp_action("HeaderFooter", "HHeaderFooter", {"Type": 0})
 - execute_hwp_action("RepeatFind", "HFindReplace", {"FindString": "홍길동", "IgnoreMessage": 1})
 
@@ -267,8 +272,15 @@ ParameterSetTable-driven keys to prefer:
   - `Text`, `Command`, `DirectInsert`
   - Web URL command example: `"http://example.com;1;0;0"`
   - Email command example: `"mailto:user@example.com;2;0;0"`
-- `HPageDef`
-  - `Landscape`, `PaperWidth`, `PaperHeight`, `LeftMargin`, `RightMargin`, `TopMargin`, `BottomMargin`, `HeaderLen`, `FooterLen`
+- `Style`
+  - `NameLocal`
+  - nested `CharShape` keys: `FaceNameHangul`, `FaceNameLatin`, `Height`, `RatioHangul`, `RatioLatin`, `SpacingHangul`, `SpacingLatin`
+  - nested `ParaShape` keys: `LeftMargin`, `NextSpacing`
+  - style size and spacing values using pt should be converted with `1pt = 100 HWPUNIT`
+  - when applying an existing style, a minimal payload like `{"NameLocal": "tourism"}` may be used with the `Style` action
+- `SecDef`
+  - `ApplyTo`
+  - nested `PageDef` keys: `Landscape`, `PaperWidth`, `PaperHeight`, `LeftMargin`, `RightMargin`, `TopMargin`, `BottomMargin`, `HeaderLen`, `FooterLen`, `GutterLen`
 - `HFileSetSecurity`
   - `Password`, `NoPrint`, `NoCopy`
 - `HInsertFieldTemplate`
@@ -318,7 +330,18 @@ ParameterSet usage rules:
 - If the user asks to search text with options like regex, case-sensitive, or document-wide, prefer `execute_hwp_action("RepeatFind", "HFindReplace", {...})`.
 - If the user asks for odd/even header or footer selection, prefer `execute_hwp_action("HeaderFooter", "HHeaderFooter", {...})`.
 - If the user provides a concrete URL or email address for hyperlink insertion, prefer `execute_hwp_action("InsertHyperlink", "HHyperLink", {...})`.
-- If the user asks for page orientation or margins with concrete numbers, prefer `execute_hwp_action("PageSetup", "HPageDef", {...})`.
+- If the user asks to create or modify a named style with font, size, paragraph margin, paragraph spacing, ratio, or letter spacing, prefer trying `StyleDirectEdit` first and then falling back to `StyleEx`.
+- For style setup, use the nested `Style > CharShape` and `Style > ParaShape` structure rather than flattening keys into one dictionary.
+- If the user asks to apply an existing named style to the current paragraph, selection, or whole document, prefer `execute_hwp_action("Style", "Style", {"NameLocal": "..."})`.
+- If the user explicitly says `문서 전체`, select the whole document first with `run_hwp_action("SelectAll")` and then apply the style.
+- `tourism` is only an example style name. Never hardcode it. Always copy the actual style name from the user's message.
+- Style names may be Korean, English, quoted, or contain spaces, such as `보고서 본문`, `캡션 소형`, or `Body Text`.
+- If the user asks for the current paragraph's style name, prefer `print(get_current_style_name())`.
+- If the user asks for the style list, prefer `print(get_style_list())`. If the user explicitly asks for used styles only, prefer `print(get_style_list(True))`.
+- If the user asks to delete a style, prefer `delete_style("style_name", "replacement_style")`. If no replacement style is given, use `바탕글`.
+- If the user asks to remove unused styles, prefer `remove_unused_styles()`.
+- If the user asks for page orientation or margins with concrete numbers, prefer `execute_hwp_action("PageSetup", "SecDef", {"ApplyTo": 3, "PageDef": {...}})`.
+- For page setup, use the nested `SecDef > PageDef` structure and include `GutterLen` when the user mentions 제본.
 - If the user asks to create a distributed document or disable print/copy, prefer `execute_hwp_action("FileSetSecurity", "HFileSetSecurity", {...})` or `FileSetSecurity` without the `H` prefix if needed.
 - If the user asks for repeat header rows, treat-as-char, cell spacing, or uniform cell margins, prefer `execute_hwp_action("TablePropertyDialog", "HTable", {...})`.
 - If the user asks for a table style/template or gray-scale table styling, prefer `execute_hwp_action("TableTemplate", "HTableTemplate", {...})`.
@@ -438,7 +461,60 @@ execute_hwp_action("InsertHyperlink", "HHyperLink", {"Text": "https://example.co
 
 사용자 요청: A4 가로로 바꾸고 왼쪽 20mm 오른쪽 20mm 로 설정해줘
 출력:
-execute_hwp_action("PageSetup", "HPageDef", {"PaperWidth": 59528, "PaperHeight": 84189, "Landscape": 1, "LeftMargin": 5669, "RightMargin": 5669})
+execute_hwp_action("PageSetup", "SecDef", {"ApplyTo": 3, "PageDef": {"PaperWidth": 59528, "PaperHeight": 84189, "Landscape": 1, "LeftMargin": 5669, "RightMargin": 5669}})
+
+사용자 요청: 스타일 이름 tourism, 왼쪽 여백 15pt, 문단 아래 10pt, 한글 굴림/영문 돋움, 크기 10pt, 장평 95%, 자간 5%
+출력:
+_style_params = {"NameLocal": "tourism", "CharShape": {"FaceNameHangul": "굴림", "FaceNameLatin": "돋움", "Height": 1000, "RatioHangul": 95, "RatioLatin": 95, "SpacingHangul": 5, "SpacingLatin": 5}, "ParaShape": {"LeftMargin": 1500, "NextSpacing": 1000}}
+try:
+    execute_hwp_action("StyleDirectEdit", "Style", _style_params)
+except Exception:
+    execute_hwp_action("StyleEx", "Style", _style_params)
+
+사용자 요청: tourism 스타일을 현재 문단에 적용해줘
+출력:
+execute_hwp_action("Style", "Style", {"NameLocal": "tourism"})
+
+사용자 요청: tourism 스타일을 문서 전체에 적용해줘
+출력:
+run_hwp_action("SelectAll")
+execute_hwp_action("Style", "Style", {"NameLocal": "tourism"})
+
+사용자 요청: "보고서 본문" 스타일을 현재 문단에 적용해줘
+출력:
+execute_hwp_action("Style", "Style", {"NameLocal": "보고서 본문"})
+
+사용자 요청: 스타일 "캡션 소형", 왼쪽 여백 8pt, 문단 아래 6pt, 한글 "맑은 고딕"/영문 "Arial", 크기 9pt, 장평 100%, 자간 0%
+출력:
+_style_params = {"NameLocal": "캡션 소형", "CharShape": {"FaceNameHangul": "맑은 고딕", "FaceNameLatin": "Arial", "Height": 900, "RatioHangul": 100, "RatioLatin": 100, "SpacingHangul": 0, "SpacingLatin": 0}, "ParaShape": {"LeftMargin": 800, "NextSpacing": 600}}
+try:
+    execute_hwp_action("StyleDirectEdit", "Style", _style_params)
+except Exception:
+    execute_hwp_action("StyleEx", "Style", _style_params)
+
+사용자 요청: 현재 문단 스타일 이름 보여줘
+출력:
+print(get_current_style_name())
+
+사용자 요청: 스타일 목록 보여줘
+출력:
+print(get_style_list())
+
+사용자 요청: 사용 중인 스타일 목록만 보여줘
+출력:
+print(get_style_list(True))
+
+사용자 요청: "캡션 소형" 스타일 삭제해줘
+출력:
+delete_style("캡션 소형", "바탕글")
+
+사용자 요청: "xl67" 스타일을 "표내용" 스타일로 대체하고 삭제해줘
+출력:
+delete_style("xl67", "표내용")
+
+사용자 요청: 사용 안 하는 스타일 정리해줘
+출력:
+remove_unused_styles()
 
 사용자 요청: 배포용 문서로 만들고 인쇄 금지 복사 금지로 설정해줘
 출력:

@@ -12,17 +12,13 @@ from pathlib import Path
 from typing import Optional, Dict, Any, Tuple
 from datetime import datetime
 from urllib.parse import quote
+from runtime_env import load_runtime_env
 
 try:
     import requests
     REQUESTS_AVAILABLE = True
 except ImportError:
     REQUESTS_AVAILABLE = False
-
-try:
-    from dotenv import load_dotenv
-except ImportError:
-    load_dotenv = None
 
 try:
     from google.oauth2 import service_account
@@ -40,40 +36,8 @@ from backend.oauth_desktop import (
 
 
 def _load_env_vars() -> None:
-    """Load env vars from .env and .env.local files if present."""
-    root_dir = Path(__file__).resolve().parent.parent
-    runtime_root = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else root_dir
-    env_candidates = [
-        (runtime_root / ".env", False),
-        (root_dir / ".env", False),
-        (runtime_root / ".env.local", True),
-        (root_dir / ".env.local", True),
-    ]
-
-    # Load .env first, then .env.local so local values override.
-    for path, override in env_candidates:
-        if not path.exists():
-            continue
-
-        if load_dotenv is not None:
-            load_dotenv(dotenv_path=path, override=override)
-            continue
-
-        # Fallback parser when python-dotenv is unavailable.
-        try:
-            for line in path.read_text(encoding="utf-8").splitlines():
-                stripped = line.strip()
-                if not stripped or stripped.startswith("#") or "=" not in stripped:
-                    continue
-                key, value = stripped.split("=", 1)
-                key = key.strip()
-                value = value.strip().strip('"').strip("'")
-                if not key:
-                    continue
-                if override or key not in os.environ:
-                    os.environ[key] = value
-        except Exception:
-            pass
+    """Load env vars from runtime config files if present."""
+    load_runtime_env(__file__)
 
 
 def _resolve_firebase_config() -> Dict[str, str]:

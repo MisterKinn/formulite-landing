@@ -709,7 +709,7 @@ class ScriptRunner:
         fp_re = re.compile(r"^\s*focus_placeholder\(\s*(['\"])(.*?)\1\s*\)\s*$")
         box_item_re = re.compile(r"^\s*insert_text\(\s*['\"]\s*[ㄱㄴㄷ]\.")
         content_re = re.compile(
-            r"^\s*(insert_text|insert_equation|set_bold|set_underline|insert_underline|set_align_justify_next_line|set_align_right_next_line)\("
+            r"^\s*(insert_text|insert_equation|set_bold|set_underline|insert_underline|set_align_center_next_line|set_align_justify_next_line|set_align_right_next_line)\("
         )
         box_start_re = re.compile(
             r"^\s*insert_text\(\s*['\"]\s*(○|◎|●|•|ㄱ\.|ㄴ\.|ㄷ\.|가\.|나\.|다\.)"
@@ -726,14 +726,8 @@ class ScriptRunner:
             is_header_template = (
                 stripped.startswith("insert_template(") and "header.hwp" in stripped_lower
             )
-            is_placeholder_template = (
-                stripped.startswith("insert_template(")
-                and ("box.hwp" in stripped_lower or "box_white.hwp" in stripped_lower)
-                and "header.hwp" not in stripped_lower
-            )
-            if stripped.startswith("insert_template(") and any(
-                name in stripped_lower for name in ("header.hwp", "box.hwp", "box_white.hwp")
-            ):
+            is_placeholder_template = False
+            if stripped.startswith("insert_template(") and "header.hwp" in stripped_lower:
                 if is_header_template:
                     saw_template = False
                     has_choices_placeholder = False
@@ -764,7 +758,10 @@ class ScriptRunner:
                     and saw_outside
                     and not saw_after_box
                     and (
-                        stripped == "set_align_justify_next_line()"
+                        stripped in (
+                            "set_align_center_next_line()",
+                            "set_align_justify_next_line()",
+                        )
                         or box_item_re.match(stripped)
                         or box_start_re.match(stripped)
                     )
@@ -778,7 +775,10 @@ class ScriptRunner:
                     and saw_outside
                     and box_item_re.match(stripped)
                 ):
-                    if out and out[-1].strip() == "set_align_justify_next_line()":
+                    if out and out[-1].strip() in (
+                        "set_align_center_next_line()",
+                        "set_align_justify_next_line()",
+                    ):
                         out.pop()
                         out.append("focus_placeholder('###')")
                         out.append("set_align_justify_next_line()")
@@ -900,7 +900,7 @@ class ScriptRunner:
 
         # Relocate only when substantial content exists before the first ㄱ/ㄴ/ㄷ.
         content_re = re.compile(
-            r"^\s*(insert_text|insert_equation|insert_enter|insert_cropped_image|insert_generated_image|set_bold|set_underline|insert_underline|set_align_right_next_line)\("
+            r"^\s*(insert_text|insert_equation|insert_enter|insert_cropped_image|insert_generated_image|set_bold|set_underline|insert_underline|set_align_center_next_line|set_align_right_next_line)\("
         )
         content_count = 0
         for i in range(block_end, first_box_idx):
@@ -922,7 +922,10 @@ class ScriptRunner:
             return lines
 
         insert_at = first_box_idx2
-        if insert_at > 0 and out[insert_at - 1].strip() == "set_align_justify_next_line()":
+        if insert_at > 0 and out[insert_at - 1].strip() in (
+            "set_align_center_next_line()",
+            "set_align_justify_next_line()",
+        ):
             insert_at -= 1
 
         header_block = [
@@ -1010,6 +1013,7 @@ class ScriptRunner:
                 continue
             # Skip formatting-only lines
             if stripped in (
+                "set_align_center_next_line()",
                 "set_align_justify_next_line()",
                 "set_bold(True)",
                 "set_bold(False)",
@@ -1072,10 +1076,11 @@ class ScriptRunner:
         # 2) Condition box (insert_box replaces the original focus_placeholder('###'))
         out.append("insert_box()")
         content_start = hash_idx + 1
-        # Carry over set_align_justify_next_line if present right after ###
+        # Carry over next-line alignment marker if present right after ###
         if (
             content_start < condition_end
-            and lines[content_start].strip() == "set_align_justify_next_line()"
+            and lines[content_start].strip()
+            in ("set_align_center_next_line()", "set_align_justify_next_line()")
         ):
             out.append(lines[content_start])
             content_start += 1
@@ -1088,7 +1093,10 @@ class ScriptRunner:
         has_question_content = False
         for j in range(question_start, first_bogi_idx):
             stripped = lines[j].strip()
-            if stripped == "set_align_justify_next_line()":
+            if stripped in (
+                "set_align_center_next_line()",
+                "set_align_justify_next_line()",
+            ):
                 continue  # Don't carry box alignment into outside text
             out.append(lines[j])
             if stripped.startswith("insert_text(") or stripped.startswith(
@@ -1225,42 +1233,9 @@ class ScriptRunner:
 
     def _normalize_box_template_order(self, lines: List[str]) -> List[str]:
         """
-        When box.hwp is used, ensure focus_placeholder('@@@') appears
-        immediately after insert_template('box.hwp').
+        Box templates are disabled, so keep the line order unchanged.
         """
-        out: List[str] = []
-        i = 0
-        while i < len(lines):
-            line = lines[i]
-            stripped = line.strip()
-            if stripped.startswith("insert_template(") and "box.hwp" in stripped.lower():
-                out.append(line)
-                # Skip any existing @@@ right after; reinsert if missing.
-                j = i + 1
-                while j < len(lines) and not lines[j].strip():
-                    out.append(lines[j])
-                    j += 1
-                if j < len(lines) and lines[j].strip() in (
-                    "focus_placeholder('@@@')",
-                    'focus_placeholder("@@@")',
-                ):
-                    out.append(lines[j])
-                    i = j + 1
-                    continue
-                out.append("focus_placeholder('@@@')")
-                i = j
-                continue
-            if stripped in ("focus_placeholder('@@@')", 'focus_placeholder("@@@")'):
-                # If @@@ appears before box.hwp, drop it (will be reinserted after template).
-                if any(
-                    l.strip().startswith("insert_template(") and "box.hwp" in l.strip().lower()
-                    for l in lines[i + 1 :]
-                ):
-                    i += 1
-                    continue
-            out.append(line)
-            i += 1
-        return out
+        return lines
 
     def _fix_header_view_box_order(self, lines: List[str]) -> List[str]:
         """
@@ -1311,7 +1286,10 @@ class ScriptRunner:
         first_box_idx, first_choice_idx, hash_idx, amp_idx = _analyze(out)
         if hash_idx < 0 or hash_idx > first_box_idx:
             insert_at = first_box_idx
-            if insert_at > 0 and out[insert_at - 1].strip() == "set_align_justify_next_line()":
+            if insert_at > 0 and out[insert_at - 1].strip() in (
+                "set_align_center_next_line()",
+                "set_align_justify_next_line()",
+            ):
                 insert_at -= 1
             out.insert(insert_at, "focus_placeholder('###')")
             first_box_idx, first_choice_idx, hash_idx, amp_idx = _analyze(out)
@@ -1466,12 +1444,7 @@ class ScriptRunner:
         - If choices exist, drop any &&& that appear after the last choice.
         """
         choice_re = re.compile(r"^\s*insert_(?:text|equation)\(\s*['\"].*①")
-        has_choices_placeholder = any(
-            l.strip().startswith("insert_template(")
-            and any(name in l.strip().lower() for name in ("box.hwp", "box_white.hwp"))
-            and "header.hwp" not in l.strip().lower()
-            for l in lines
-        )
+        has_choices_placeholder = False
         last_choice_idx = -1
         for i, line in enumerate(lines):
             if choice_re.match(line.strip()):
@@ -1500,6 +1473,35 @@ class ScriptRunner:
                 and i > last_choice_idx
             ):
                 continue
+            out.append(line)
+        return out
+
+    def _drop_disabled_box_templates(self, lines: List[str]) -> List[str]:
+        """
+        Drop disabled box template insertions so legacy generated scripts do not
+        load `box.hwp` or `box_white.hwp` even if they still appear.
+        """
+        out: List[str] = []
+        suppress_following_placeholders = False
+        disabled_names = ("box.hwp", "box_white.hwp")
+        placeholder_lines = {
+            "focus_placeholder('@@@')",
+            'focus_placeholder("@@@")',
+            "focus_placeholder('###')",
+            'focus_placeholder("###")',
+            "focus_placeholder('&&&')",
+            'focus_placeholder("&&&")',
+        }
+        for line in lines:
+            stripped = line.strip()
+            lowered = stripped.lower()
+            if stripped.startswith("insert_template(") and any(name in lowered for name in disabled_names):
+                suppress_following_placeholders = True
+                continue
+            if suppress_following_placeholders:
+                if not stripped or stripped in placeholder_lines:
+                    continue
+                suppress_following_placeholders = False
             out.append(line)
         return out
 
@@ -1579,9 +1581,12 @@ class ScriptRunner:
             "exit_box": self._controller.exit_box,
             "insert_view_box": self._controller.insert_view_box,
             "insert_small_paragraph": self._controller.insert_small_paragraph,
+            "set_align_center_next_line": self._controller.set_align_center_next_line,
             "set_align_right_next_line": self._controller.set_align_right_next_line,
             "set_align_justify_next_line": self._controller.set_align_justify_next_line,
             "set_table_border_white": self._controller.set_table_border_white,
+            "get_current_style_name": self._controller.get_current_style_name,
+            "remove_unused_styles": self._controller.remove_unused_styles,
         }
         funcs_one_str = {
             "insert_text": self._controller.insert_text,
@@ -1602,8 +1607,11 @@ class ScriptRunner:
             "call_hwp_method": self._controller.call_hwp_method,
             "insert_highlighted_text": self._controller.insert_highlighted_text,
             "insert_colored_text": self._controller.insert_colored_text,
+            "set_colored_text": self._controller.insert_colored_text,
             "insert_styled_text": self._controller.insert_styled_text,
             "insert_local_figure": self._unresolved_local_figure,
+            "get_style_list": self._controller.get_style_list,
+            "delete_style": self._controller.delete_style,
         }
         funcs_action = {
             "run_hwp_action": self._controller.run_hwp_action,
@@ -1827,6 +1835,7 @@ class ScriptRunner:
         expanded_lines = self._normalize_declared_vector_tokens_in_equations(
             "\n".join(expanded_lines)
         ).split("\n")
+        expanded_lines = self._drop_disabled_box_templates(expanded_lines)
         expanded_lines = self._rewrite_header_template_flow(expanded_lines)
         expanded_lines = self._normalize_placeholders(expanded_lines)
         expanded_lines = self._normalize_box_paragraphs(expanded_lines)
@@ -1926,6 +1935,7 @@ class ScriptRunner:
             "insert_python_figure": _wrap1(self._insert_python_figure),
             "insert_highlighted_text": _wrap_varargs(self._controller.insert_highlighted_text),
             "insert_colored_text": _wrap_varargs(self._controller.insert_colored_text),
+            "set_colored_text": _wrap_varargs(self._controller.insert_colored_text),
             "insert_styled_text": _wrap_varargs(self._controller.insert_styled_text),
             "insert_local_figure": _wrap_varargs(self._unresolved_local_figure),
             "set_bold": _wrap_bold(self._controller.set_bold),
@@ -1935,11 +1945,16 @@ class ScriptRunner:
             "insert_underline": _wrap_underline(self._controller.set_underline),
             "set_char_width_ratio": self._controller.set_char_width_ratio,
             "set_table_border_white": _wrap0(self._controller.set_table_border_white),
+            "set_align_center_next_line": _wrap0(self._controller.set_align_center_next_line),
             "set_align_right_next_line": _wrap0(self._controller.set_align_right_next_line),
             "set_align_justify_next_line": _wrap0(self._controller.set_align_justify_next_line),
             "run_hwp_action": _wrap1(self._controller.run_hwp_action),
             "execute_hwp_action": _wrap_varargs(self._controller.execute_hwp_action),
             "call_hwp_method": _wrap_varargs(self._controller.call_hwp_method),
+            "get_current_style_name": _wrap0(self._controller.get_current_style_name),
+            "get_style_list": _wrap_varargs(self._controller.get_style_list),
+            "delete_style": _wrap_varargs(self._controller.delete_style),
+            "remove_unused_styles": _wrap0(self._controller.remove_unused_styles),
         }
 
         log_fn("스크립트 실행 시작")

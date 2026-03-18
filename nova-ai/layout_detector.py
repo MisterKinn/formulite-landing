@@ -16,7 +16,7 @@ def _debug(msg: str) -> None:
             pass
 
 
-ContainerTemplate = Literal["header.hwp", "box.hwp", "box_white.hwp"]
+ContainerTemplate = Literal["header.hwp"]
 
 
 @dataclass(frozen=True)
@@ -39,7 +39,7 @@ class ContainerDetection:
 
 def detect_container(image_path: str) -> ContainerDetection:
     """
-    Detect a <보기>/box-like container and choose the correct template.
+    Detect a <보기>-like container and choose the correct template.
 
     Heuristics:
     - Detect the best rectangle candidate (container border) using edge + contour geometry.
@@ -47,9 +47,7 @@ def detect_container(image_path: str) -> ContainerDetection:
     - Detect '<보기>' text using pytesseract word boxes; tolerate spaced '< 보 기 >'.
     - Decision:
         - If explicit '<보기>' text is found AND it belongs to the detected box: header.hwp
-        - Else if rectangle exists and border strong: box.hwp
-        - Else if rectangle exists and border weak: box_white.hwp
-        - Else: template=None (no container)
+        - Else: template=None
     """
     _debug(f"Detecting container for: {image_path}")
 
@@ -63,8 +61,6 @@ def detect_container(image_path: str) -> ContainerDetection:
     explicit_view_box = bool(has_view_text and rect is not None and _view_text_matches_rect(view_bbox, rect))
     if explicit_view_box:
         template = "header.hwp"
-    elif rect is not None:
-        template = "box.hwp" if border_score >= 0.35 else "box_white.hwp"
 
     _debug(
         "Template decision: "

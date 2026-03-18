@@ -20,7 +20,7 @@ General:
   - `insert_text('a')`
 
 Reading / literature:
-- Long reading passages usually go in `box_white.hwp`.
+- Long reading passages should be typed directly without using `box_white.hwp`.
 - Poetry: every line break matters; preserve each poetic line with `insert_enter()`.
 - Stanza gaps use an empty line if visible.
 - `(가)`, `(나)` labels should be bold.
@@ -348,10 +348,13 @@ COMMON MATH PATTERNS:
 
 4-3. MATH TABLES
 - If the image contains a real table, use `insert_table()`.
-- If a table cell contains math, prefix it with `EQ:`.
+- If a table cell contains only math, prefer `{"equation": "..."}`.
+- If a table cell mixes text and math, use `{"content": ["text", {"type": "equation", "value": "..."}, "text"]}` or `{"lines": [...]}`.
+- `{"text": "EQ:..."}` is allowed only for a simple equation-only cell.
 - Probability/statistics tables should use `align_center=True`.
 - For multi-level headers, count full base rows/columns first, then place text, then merge.
 - Do not omit edge headers (for example, rightmost columns such as `X 염색체 수`).
+- If a table includes a visible diagonal line or X mark inside a cell, preserve it with the cell key `diagonal`.
 - Borderless answer layouts in math/physics are not real tables.
 - If choices are arranged under small headers such as `크기`, `방향`, `값`, `단위` but there are no visible grid lines, do NOT use `insert_table()`.
 - For that kind of layout, keep the headers and choices as normal typed content with spaces/line breaks, preserving the approximate visual alignment.
@@ -359,7 +362,7 @@ COMMON MATH PATTERNS:
 SECTION 5: ENGLISH
 
 - English passage text is plain text, not equations.
-- Most English passages use `box_white.hwp`.
+- Most English passages should be typed directly without using `box_white.hwp`.
 - Korean question line and choices stay outside the passage box.
 - Preserve underlined English spans with underline toggles.
 - Preserve long blanks with visible underscore text.
@@ -369,7 +372,7 @@ SECTION 5: ENGLISH
 SECTION 6: KOREAN HISTORY
 
 - Dialogue, source quotes, and historical materials are common.
-- Historical source text often goes in `box.hwp`.
+- Historical source text should be typed directly without using `box.hwp`.
 - Keep `(가)`, `(나)`, era names, year labels, and Chinese characters exactly.
 - Underlined historical terms should preserve underline only on the emphasized span.
 - Arrows/timelines should stay visible as text if they are text-level elements.
@@ -377,7 +380,7 @@ SECTION 6: KOREAN HISTORY
 SECTION 7: SOCIAL STUDIES
 
 - Tables, charts, maps, and position-comparison formats are common.
-- Source/data blocks usually go in `box.hwp` or `header.hwp` if literal `<보기>` is visible.
+- Source/data blocks should use `header.hwp` only when literal `<보기>` is visible; otherwise type the content directly.
 - Use `insert_table()` for real tables and statistical grids.
 - Keep 갑/을/병/정 speaker-position text exactly.
 - In economics, a simple displayed formula may use `insert_equation()` when the source shows a genuine formula.
@@ -387,7 +390,7 @@ SECTION 8: SCIENCE
 Common:
 - Units and scientific symbols in equations should usually use roman unit text.
 - Experimental data tables use `insert_table()`.
-- If experimental conditions are in a box, use `box.hwp` or `header.hwp` as visible.
+- If experimental conditions are in a box, use `header.hwp` only when literal `<보기>` is visible; otherwise type the content directly.
 
 UNITS / QUANTITIES:
 - Examples: `1550\`rm nm`, `52\`rm kHz`, `9.8\`rm m/s ^{2}`

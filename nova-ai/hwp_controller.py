@@ -84,6 +84,7 @@ class HwpController:
         self._box_line_start = False
         self._line_start = True
         self._first_line_written = False
+        self._align_center_next_line = False
         self._align_right_next_line = False
         self._line_right_aligned = False
         self._align_justify_next_line = False
@@ -768,6 +769,7 @@ class HwpController:
                     self._box_line_start = False
                     self._line_start = True
                     self._first_line_written = False
+                    self._align_center_next_line = False
                     self._align_right_next_line = False
                     self._line_right_aligned = False
                     self._align_justify_next_line = False
@@ -828,6 +830,10 @@ class HwpController:
         """Right-align only the next line."""
         self._align_right_next_line = True
 
+    def set_align_center_next_line(self) -> None:
+        """Center-align only the next line."""
+        self._align_center_next_line = True
+
     def set_align_justify_next_line(self) -> None:
         """Justify-align only the next line."""
         self._align_justify_next_line = True
@@ -859,6 +865,10 @@ class HwpController:
             self.insert_enter()
         # Apply one-line alignment BEFORE indentation logic.
         skip_auto_indent_right = False
+        if self._line_start and self._align_center_next_line:
+            self._set_paragraph_align("center")
+            self._align_center_next_line = False
+            self._line_center_aligned = True
         if self._line_start and self._align_right_next_line:
             self._set_paragraph_align("right")
             self._align_right_next_line = False
@@ -986,77 +996,12 @@ class HwpController:
             raise HwpControllerError(f"문자 취소선 설정 실패: {exc}") from exc
 
     def set_text_highlight(self, color: Any | None = "yellow") -> None:
-        hwp = self._ensure_connected()
-        normalized = self._normalize_hwp_color(color)
-        try:
-            action = hwp.HAction
-            param = hwp.HParameterSet.HCharShape
-            action.GetDefault("CharShape", param.HSet)
-
-            # Best-effort across HWP versions: some expose shade/background attrs
-            # directly, some only through HSet keys.
-            color_value = normalized if normalized is not None else 0xFFFFFF
-            enabled = normalized is not None
-            applied = False
-
-            bool_fields = (
-                "Shade",
-                "UseShadeColor",
-                "UseBackgroundColor",
-                "UseTextBackgroundColor",
-            )
-            color_fields = (
-                "ShadeColor",
-                "BackColor",
-                "BackgroundColor",
-                "TextBackgroundColor",
-            )
-
-            for attr in bool_fields:
-                if hasattr(param, attr):
-                    try:
-                        setattr(param, attr, 1 if enabled else 0)
-                        applied = True
-                    except Exception:
-                        pass
-            for attr in color_fields:
-                if hasattr(param, attr):
-                    try:
-                        setattr(param, attr, color_value)
-                        applied = True
-                    except Exception:
-                        pass
-
-            hset = getattr(param, "HSet", None)
-            if hset is not None:
-                for key in bool_fields:
-                    try:
-                        hset.SetItem(key, 1 if enabled else 0)
-                        applied = True
-                    except Exception:
-                        pass
-                for key in color_fields:
-                    try:
-                        hset.SetItem(key, color_value)
-                        applied = True
-                    except Exception:
-                        pass
-
-            if not applied:
-                raise HwpControllerError("문자 형광/배경색 속성을 찾지 못했습니다.")
-            action.Execute("CharShape", param.HSet)
-        except Exception as exc:
-            raise HwpControllerError(f"문자 형광/배경색 설정 실패: {exc}") from exc
+        del color
+        return
 
     def insert_highlighted_text(self, text: str, color: Any | None = "yellow") -> None:
-        self.set_text_highlight(color)
-        try:
-            self.insert_text(text)
-        finally:
-            try:
-                self.set_text_highlight(None)
-            except Exception:
-                pass
+        del color
+        self.insert_text(text)
 
     def set_text_color(self, color: Any | None = "black") -> None:
         hwp = self._ensure_connected()
@@ -1092,14 +1037,8 @@ class HwpController:
             raise HwpControllerError(f"문자 색상 설정 실패: {exc}") from exc
 
     def insert_colored_text(self, text: str, color: Any = "black") -> None:
-        self.set_text_color(color)
-        try:
-            self.insert_text(text)
-        finally:
-            try:
-                self.set_text_color("black")
-            except Exception:
-                pass
+        del color
+        self.insert_text(text)
 
     def insert_styled_text(
         self,
@@ -1119,23 +1058,11 @@ class HwpController:
             self.set_italic(bool(italic))
         if strike is not None:
             self.set_strike(bool(strike))
-        if color is not None:
-            self.set_text_color(color)
-        if highlight is not None:
-            self.set_text_highlight(highlight)
+        del color
+        del highlight
         try:
             self.insert_text(text)
         finally:
-            try:
-                if highlight is not None:
-                    self.set_text_highlight(None)
-            except Exception:
-                pass
-            try:
-                if color is not None:
-                    self.set_text_color("black")
-            except Exception:
-                pass
             try:
                 if underline is not None:
                     self.set_underline(False)
@@ -1687,6 +1614,10 @@ class HwpController:
 
         # Apply one-line alignment BEFORE indentation logic.
         skip_auto_indent_right = False
+        if self._line_start and self._align_center_next_line:
+            self._set_paragraph_align("center")
+            self._align_center_next_line = False
+            self._line_center_aligned = True
         if self._line_start and self._align_right_next_line:
             self._set_paragraph_align("right")
             self._align_right_next_line = False
@@ -1984,15 +1915,13 @@ class HwpController:
         """
         if not name:
             raise HwpControllerError("?쒗뵆由??대쫫??鍮꾩뼱?덉뒿?덈떎.")
+        base = name.lower().replace("\\", "/").rsplit("/", 1)[-1]
+        if base in ("box.hwp", "box_white.hwp"):
+            return
         ok = self._try_insert_template(name)
         if not ok:
             template_path = self._template_dir / name
             raise HwpControllerError(f"?쒗뵆由우쓣 李얠? 紐삵뻽?듬땲?? {template_path}")
-        # After inserting box templates, remove &&& placeholder if present
-        # to prevent cursor-jump issues when focus_placeholder('&&&') runs later.
-        base = name.lower().replace("\\", "/").rsplit("/", 1)[-1]
-        if base in ("box.hwp", "box_white.hwp"):
-            self._cleanup_template_placeholder("&&&")
 
     def _run_action_best_effort(self, action_name: str) -> bool:
         hwp = self._ensure_connected()
@@ -2014,6 +1943,40 @@ class HwpController:
         if not self._run_action_best_effort(name):
             raise HwpControllerError(f"HWP Action 실행 실패: {name}")
 
+    def _get_or_create_hwp_item_set(self, target: Any, item_name: str) -> Any | None:
+        name = str(item_name or "").strip()
+        if target is None or not name:
+            return None
+
+        for owner in (target, getattr(target, "HSet", None)):
+            if owner is None:
+                continue
+
+            existing = getattr(owner, name, None)
+            if existing is not None:
+                return existing
+
+            for method_name in ("CreateItemSet", "createItemSet"):
+                method = getattr(owner, method_name, None)
+                if not callable(method):
+                    continue
+                arg_candidates = [
+                    (name, name),
+                    (name,),
+                ]
+                if not name.startswith("H"):
+                    arg_candidates.append((name, f"H{name}"))
+                for args in arg_candidates:
+                    try:
+                        child = method(*args)
+                    except TypeError:
+                        continue
+                    except Exception:
+                        child = None
+                    if child is not None:
+                        return child
+        return None
+
     def _apply_hwp_parameter_values(self, target: Any, values: dict[str, Any] | None) -> None:
         if target is None or not isinstance(values, dict):
             return
@@ -2025,11 +1988,15 @@ class HwpController:
             if "." in key:
                 head, rest = key.split(".", 1)
                 child = getattr(target, head, None)
+                if child is None:
+                    child = self._get_or_create_hwp_item_set(target, head)
                 if child is not None:
                     self._apply_hwp_parameter_values(child, {rest: value})
                     continue
             if isinstance(value, dict):
                 child = getattr(target, key, None)
+                if child is None:
+                    child = self._get_or_create_hwp_item_set(target, key)
                 if child is not None:
                     self._apply_hwp_parameter_values(child, value)
                     continue
@@ -2089,7 +2056,9 @@ class HwpController:
         resolved_param_name = param_name
         param_obj = None
         param_hset = None
-        if param_sets is not None:
+        force_create_set_actions = {"StyleDirectEdit"}
+        should_force_create_set = name in force_create_set_actions
+        if param_sets is not None and not should_force_create_set:
             for candidate in self._parameter_set_name_candidates(param_name):
                 candidate_obj = getattr(param_sets, candidate, None)
                 candidate_hset = getattr(candidate_obj, "HSet", None) if candidate_obj is not None else None
@@ -2185,6 +2154,146 @@ class HwpController:
             return method(*args)
         except Exception as exc:
             raise HwpControllerError(f"HWP 메서드 호출 실패: {name}: {exc}") from exc
+
+    @staticmethod
+    def _read_named_hwp_value(target: Any, candidate_names: tuple[str, ...]) -> Any:
+        if target is None:
+            return None
+        for key in candidate_names:
+            try:
+                value = getattr(target, key, None)
+            except Exception:
+                value = None
+            if value not in (None, ""):
+                return value
+
+            for accessor_name in ("Item", "GetItem", "item"):
+                accessor = getattr(target, accessor_name, None)
+                if not callable(accessor):
+                    continue
+                try:
+                    value = accessor(key)
+                except Exception:
+                    continue
+                if value not in (None, ""):
+                    return value
+        return None
+
+    def get_current_style_name(self) -> str:
+        hwp = self._ensure_connected()
+
+        pyhwpx_get_style = getattr(hwp, "get_style", None)
+        if callable(pyhwpx_get_style):
+            try:
+                result = pyhwpx_get_style()
+                if isinstance(result, dict):
+                    for key in ("name", "NameLocal", "style_name", "local_name"):
+                        value = result.get(key)
+                        if value:
+                            return str(value)
+                if result not in (None, ""):
+                    return str(result)
+            except Exception:
+                pass
+
+        action = getattr(hwp, "HAction", None)
+        param_sets = getattr(hwp, "HParameterSet", None)
+        if action is not None and param_sets is not None and hasattr(param_sets, "HParaShape"):
+            try:
+                param = param_sets.HParaShape
+                action.GetDefault("ParaShape", param.HSet)
+                value = self._read_named_hwp_value(
+                    param,
+                    ("NameLocal", "StyleName", "StyleNameLocal", "ParaStyle", "Style"),
+                )
+                if value in (None, ""):
+                    value = self._read_named_hwp_value(
+                        getattr(param, "HSet", None),
+                        ("NameLocal", "StyleName", "StyleNameLocal", "ParaStyle", "Style"),
+                    )
+                if value not in (None, ""):
+                    return str(value)
+            except Exception:
+                pass
+
+        raise HwpControllerError("현재 문단 스타일 이름을 조회하지 못했습니다.")
+
+    def get_style_list(self, used_only: bool = False) -> Any:
+        hwp = self._ensure_connected()
+
+        method_candidates = [
+            "get_used_style_dict" if used_only else "get_style_dict",
+            "get_style_dict",
+            "get_used_style_dict",
+            "GetStyleDict",
+            "GetUsedStyleDict",
+            "get_style_list",
+            "GetStyleList",
+        ]
+        tried: list[str] = []
+        for name in method_candidates:
+            if not name or name in tried:
+                continue
+            tried.append(name)
+            method = getattr(hwp, name, None)
+            if not callable(method):
+                continue
+            try:
+                result = method()
+            except Exception:
+                continue
+            if isinstance(result, dict):
+                return result
+            if isinstance(result, (list, tuple, set)):
+                return list(result)
+            if result not in (None, ""):
+                return result
+
+        raise HwpControllerError("현재 연결된 한글 환경에서는 스타일 목록 조회를 지원하지 않습니다.")
+
+    def delete_style(self, style_name: str, replacement_style: str = "바탕글") -> Any:
+        source = str(style_name or "").strip()
+        replacement = str(replacement_style or "").strip() or "바탕글"
+        if not source:
+            raise HwpControllerError("삭제할 스타일 이름이 비어 있습니다.")
+        if source == replacement:
+            raise HwpControllerError("삭제 대상 스타일과 대체 스타일이 같습니다.")
+
+        hwp = self._ensure_connected()
+        pyhwpx_delete = getattr(hwp, "delete_style_by_name", None)
+        if callable(pyhwpx_delete):
+            try:
+                return pyhwpx_delete(source, replacement)
+            except Exception:
+                pass
+
+        attempts = [
+            {"NameLocal": source, "ReplaceNameLocal": replacement},
+            {"NameLocal": source, "ReplaceStyle": replacement},
+            {"StyleName": source, "ReplaceStyleName": replacement},
+            {"Name": source, "ReplaceName": replacement},
+        ]
+        last_exc: Exception | None = None
+        for params in attempts:
+            try:
+                return self.execute_hwp_action("StyleDelete", "StyleDelete", params)
+            except Exception as exc:
+                last_exc = exc
+                continue
+
+        raise HwpControllerError(
+            f"스타일 삭제에 실패했습니다: {source} -> {replacement}: {last_exc}"
+        )
+
+    def remove_unused_styles(self) -> Any:
+        hwp = self._ensure_connected()
+        remover = getattr(hwp, "remove_unused_styles", None)
+        if callable(remover):
+            try:
+                return remover()
+            except Exception as exc:
+                raise HwpControllerError(f"미사용 스타일 정리에 실패했습니다: {exc}") from exc
+        raise HwpControllerError("현재 연결된 한글 환경에서는 미사용 스타일 정리를 지원하지 않습니다.")
 
     def _repeat_find(self, needle: str, direction: int = 0) -> bool:
         """
@@ -2446,7 +2555,11 @@ class HwpController:
                 self._apply_box_text_style(8.0)
                 self._apply_compact_paragraph()
                 return
-            if not (self._align_justify_next_line or self._align_right_next_line):
+            if not (
+                self._align_center_next_line
+                or self._align_justify_next_line
+                or self._align_right_next_line
+            ):
                 self._maybe_insert_line_indent(1)
             self._insert_box_raw()
             self._move_to_table_cell()
@@ -2481,7 +2594,11 @@ class HwpController:
             self._set_paragraph_align("justify")
             return
 
-        if not (self._align_justify_next_line or self._align_right_next_line):
+        if not (
+            self._align_center_next_line
+            or self._align_justify_next_line
+            or self._align_right_next_line
+        ):
             self._maybe_insert_line_indent(1)
         self._insert_box_raw()
         self._move_to_table_cell()
@@ -2609,7 +2726,11 @@ class HwpController:
             raise HwpControllerError("?쒖쓽 ???댁? 1 ?댁긽?댁뼱???⑸땲??")
         hwp = self._ensure_connected()
         try:
-            if not (self._align_justify_next_line or self._align_right_next_line):
+            if not (
+                self._align_center_next_line
+                or self._align_justify_next_line
+                or self._align_right_next_line
+            ):
                 self._maybe_insert_line_indent(1)
             action = hwp.HAction
             if hasattr(hwp.HParameterSet, "HTableCreation"):
@@ -2693,6 +2814,9 @@ class HwpController:
                         text = value.get("value", "")
                     return {
                         "text": "" if text is None else str(text),
+                        "equation": value.get("equation", value.get("eq")),
+                        "content": value.get("content", value.get("segments")),
+                        "lines": value.get("lines"),
                         "rowspan": max(1, int(value.get("rowspan", 1) or 1)),
                         "colspan": max(1, int(value.get("colspan", 1) or 1)),
                         "align": str(value.get("align", "") or "").strip().lower(),
@@ -2794,6 +2918,13 @@ class HwpController:
                             "borderWidthBottom",
                             fallback=border_obj.get("bottom_width", border_obj.get("bottomWidth")),
                         ),
+                        "diagonal": _pick(
+                            "diagonal",
+                            "diag",
+                            "diagonal_mark",
+                            "diagonalMark",
+                            fallback=border_obj.get("diagonal"),
+                        ),
                     }
                 if value is None:
                     return {"text": "", "rowspan": 1, "colspan": 1, "align": ""}
@@ -2869,68 +3000,50 @@ class HwpController:
                 )
                 if fill_color is not None:
                     params["FillAttr"] = {"Type": 1, "WinBrushFaceColor": fill_color}
-
-                border_type = self._normalize_hwp_border_type(spec.get("border_type", spec.get("line_style")))
-                border_width = self._normalize_hwp_border_width(spec.get("border_width", spec.get("line_width")))
-                border_color = self._normalize_hwp_color(spec.get("border_color"))
-
-                side_color_overrides = {
-                    "Left": self._normalize_hwp_color(spec.get("border_color_left")),
-                    "Right": self._normalize_hwp_color(spec.get("border_color_right")),
-                    "Top": self._normalize_hwp_color(spec.get("border_color_top")),
-                    "Bottom": self._normalize_hwp_color(spec.get("border_color_bottom")),
-                }
-                vertical_color = self._normalize_hwp_color(
-                    spec.get("border_color_vertical", spec.get("color_vert"))
-                )
-                horizontal_color = self._normalize_hwp_color(
-                    spec.get("border_color_horizontal", spec.get("color_horz"))
-                )
-                side_type_overrides = {
-                    "Left": self._normalize_hwp_border_type(spec.get("border_type_left")),
-                    "Right": self._normalize_hwp_border_type(spec.get("border_type_right")),
-                    "Top": self._normalize_hwp_border_type(spec.get("border_type_top")),
-                    "Bottom": self._normalize_hwp_border_type(spec.get("border_type_bottom")),
-                }
-                side_width_overrides = {
-                    "Left": self._normalize_hwp_border_width(spec.get("border_width_left")),
-                    "Right": self._normalize_hwp_border_width(spec.get("border_width_right")),
-                    "Top": self._normalize_hwp_border_width(spec.get("border_width_top")),
-                    "Bottom": self._normalize_hwp_border_width(spec.get("border_width_bottom")),
-                }
-
-                if border_color is not None:
-                    params["BorderColor"] = border_color
-                    params["ColorVert"] = border_color
-                    params["ColorHorz"] = border_color
-                    for suffix in ("Left", "Right", "Top", "Bottom"):
-                        params[f"BorderColor{suffix}"] = border_color
-                if vertical_color is not None:
-                    params["ColorVert"] = vertical_color
-                if horizontal_color is not None:
-                    params["ColorHorz"] = horizontal_color
-                for suffix, value in side_color_overrides.items():
-                    if value is not None:
-                        params[f"BorderColor{suffix}"] = value
-                if border_type is not None:
-                    params["BorderType"] = border_type
-                    for suffix in ("Left", "Right", "Top", "Bottom"):
-                        params[f"BorderType{suffix}"] = border_type
-                for suffix, value in side_type_overrides.items():
-                    if value is not None:
-                        params[f"BorderType{suffix}"] = value
-                if border_width is not None:
-                    params["BorderWidth"] = border_width
-                    for suffix in ("Left", "Right", "Top", "Bottom"):
-                        params[f"BorderWidth{suffix}"] = border_width
-                for suffix, value in side_width_overrides.items():
-                    if value is not None:
-                        params[f"BorderWidth{suffix}"] = value
                 return params
+
+            def _extract_diagonal_params(spec: dict[str, Any]) -> dict[str, Any]:
+                if not isinstance(spec, dict):
+                    return {}
+                raw = str(spec.get("diagonal", "") or "").strip().lower()
+                if not raw:
+                    return {}
+
+                diag_params: dict[str, Any] = {"DiagonalType": 1}
+                if raw in {"\\", "＼", "backslash", "diag_down", "down", "left_top_to_right_bottom"}:
+                    diag_params["BackSlashFlag"] = 0x02
+                    return diag_params
+                if raw in {"/", "／", "slash", "diag_up", "up", "right_top_to_left_bottom"}:
+                    diag_params["SlashFlag"] = 0x02
+                    return diag_params
+                if raw in {"x", "cross", "diag_cross"}:
+                    diag_params["BackSlashFlag"] = 0x02
+                    diag_params["SlashFlag"] = 0x02
+                    return diag_params
+                return {}
+
+            def _apply_selected_cell_diagonal(diag_params: dict[str, Any]) -> None:
+                if not isinstance(diag_params, dict) or not diag_params:
+                    return
+                last_exc: Exception | None = None
+                attempts = [
+                    ("CellBorder", "BorderFill", diag_params),
+                    ("CellBorder", "HCellBorderFill", diag_params),
+                    ("CellBorderFill", "HCellBorderFill", diag_params),
+                ]
+                for action_name, param_name, payload in attempts:
+                    try:
+                        self.execute_hwp_action(action_name, param_name, payload)
+                        return
+                    except Exception as exc:
+                        last_exc = exc
+                        continue
+                raise HwpControllerError(f"셀 대각선 적용 실패: {last_exc}")
 
             def _apply_cell_style(row: int, col: int, spec: dict[str, Any]) -> None:
                 style_params = _extract_style_params(spec)
-                if not style_params:
+                diag_params = _extract_diagonal_params(spec)
+                if not style_params and not diag_params:
                     return
                 _move_to_table_cell(row, col)
                 self._run_action_best_effort("TableCellBlock")
@@ -2941,6 +3054,8 @@ class HwpController:
                         self._apply_selected_cell_fill(fill_attr)
                     if border_only:
                         self._apply_selected_cell_border_fill(border_only)
+                    if diag_params:
+                        _apply_selected_cell_diagonal(diag_params)
                 finally:
                     self._run_action_best_effort("Cancel")
 
@@ -3037,6 +3152,69 @@ class HwpController:
                         except Exception:
                             pass
 
+                def _normalize_table_cell_items(spec: dict[str, Any]) -> list[Any]:
+                    content = spec.get("content")
+                    if isinstance(content, list) and content:
+                        return content
+
+                    lines = spec.get("lines")
+                    if isinstance(lines, list) and lines:
+                        out: list[Any] = []
+                        for idx, line in enumerate(lines):
+                            if idx > 0:
+                                out.append({"type": "newline"})
+                            out.append(line)
+                        return out
+
+                    equation = spec.get("equation")
+                    if equation is not None and str(equation).strip():
+                        return [{"type": "equation", "value": str(equation).strip()}]
+
+                    text = str(spec.get("text", "") or "")
+                    normalized_text = text.replace("\r\n", "\n").replace("\r", "\n")
+                    if "\n" not in normalized_text:
+                        return [normalized_text]
+
+                    out: list[Any] = []
+                    for idx, line in enumerate(normalized_text.split("\n")):
+                        if idx > 0:
+                            out.append({"type": "newline"})
+                        out.append(line)
+                    return out
+
+                def _insert_table_cell_item(item: Any) -> None:
+                    if item is None:
+                        return
+                    if isinstance(item, dict):
+                        kind = str(item.get("type", "") or "").strip().lower()
+                        if not kind:
+                            if item.get("equation") is not None:
+                                kind = "equation"
+                            elif item.get("text") is not None or item.get("value") is not None:
+                                kind = "text"
+                        if kind in {"newline", "linebreak", "break", "enter"}:
+                            self.insert_enter()
+                            return
+                        if kind in {"equation", "eq", "math"}:
+                            eq = str(item.get("value", item.get("equation", "")) or "").strip()
+                            if eq:
+                                self.insert_equation(eq)
+                            return
+                        text_value = str(item.get("value", item.get("text", "")) or "")
+                    else:
+                        text_value = str(item)
+
+                    stripped = text_value.strip()
+                    if stripped == "EQ:":
+                        return
+                    if stripped.startswith("EQ:"):
+                        eq = stripped.replace("EQ:", "", 1).strip()
+                        if eq:
+                            self.insert_equation(eq)
+                        return
+                    if text_value:
+                        self.insert_text(text_value)
+
                 _move_to_table_origin()
                 for r in range(rows):
                     for c in range(cols):
@@ -3057,11 +3235,8 @@ class HwpController:
                         spec = table_specs.get((r, c))
                         if spec:
                             _apply_cell_alignment(str(spec.get("align", "")))
-                            value = str(spec.get("text", ""))
-                            if value.startswith("EQ:"):
-                                self.insert_equation(value.replace("EQ:", "", 1).strip())
-                            else:
-                                self.insert_text(value)
+                            for item in _normalize_table_cell_items(spec):
+                                _insert_table_cell_item(item)
                         if c < cols - 1:
                             _run("TableRightCell")
                     if r < rows - 1:

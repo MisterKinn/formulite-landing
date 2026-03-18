@@ -13,6 +13,7 @@
 #define MyAppExeName "Nova AI.exe"
 #define MyAppAssocName MyAppName
 #define BuildDir "dist\Nova AI"
+#define ReleaseDir "release"
 
 [Setup]
 ; 앱 고유 ID (GUID) - 변경하지 마세요
@@ -37,9 +38,15 @@ Compression=lzma2/ultra64
 SolidCompression=yes
 ; UI 설정
 WizardStyle=modern
+#ifexist "pabicon789.ico"
 SetupIconFile=pabicon789.ico
+#endif
+#ifexist "wizard_image.png"
 WizardImageFile=wizard_image.png
+#endif
+#ifexist "wizard_small.png"
 WizardSmallImageFile=wizard_small.png
+#endif
 ; 언어 설정
 ShowLanguageDialog=auto
 ; 설치 전 라이선스/정보 페이지 (선택사항 - 필요시 주석 해제)
@@ -61,12 +68,12 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 ; PyInstaller로 빌드된 모든 파일 포함
 Source: "{#BuildDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-; 실제 배포용 환경 변수 파일(.env) 포함
-Source: ".env"; DestDir: "{app}"; Flags: ignoreversion
-; 배포용 환경 변수 예시 파일
-Source: ".env.example"; DestDir: "{app}"; Flags: ignoreversion
-Source: "pabicon789.ico"; DestDir: "{app}"; Flags: ignoreversion
-Source: "pabicon789.png"; DestDir: "{app}"; Flags: ignoreversion
+; build_installer.bat가 생성한 배포용 런타임 설정 포함
+Source: "{#ReleaseDir}\.env.runtime"; DestDir: "{app}"; Flags: ignoreversion
+; 참고용 예시 파일(없으면 건너뜀)
+Source: ".env.example"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "pabicon789.ico"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "pabicon789.png"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\pabicon789.ico"
@@ -76,18 +83,3 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
-
-[Code]
-// 설치 후 .env가 없을 때만 .env.example을 .env로 생성
-procedure CurStepChanged(CurStep: TSetupStep);
-var
-  EnvExample, EnvFile: String;
-begin
-  if CurStep = ssPostInstall then
-  begin
-    EnvExample := ExpandConstant('{app}\.env.example');
-    EnvFile := ExpandConstant('{app}\.env');
-    if (not FileExists(EnvFile)) and FileExists(EnvExample) then
-      CopyFile(EnvExample, EnvFile, False);
-  end;
-end;

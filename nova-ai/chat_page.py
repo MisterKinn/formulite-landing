@@ -140,16 +140,16 @@ class ChatMessageWidget(QWidget):
                 "QFrame { background-color: #4b6bfb; border: none; border-radius: 24px; }"
             )
             label_style = (
-                "color: #ffffff; font-size: 15px; font-weight: 600; "
+                "color: #ffffff; font-size: 15px; font-weight: 500; "
                 "padding: 0; background: transparent;"
             )
         elif role == "assistant":
             self._bubble.setStyleSheet(
-                "QFrame { background-color: #ffffff; border: 1px solid #edf2f7; "
+                "QFrame { background-color: #ffffff; border: none; "
                 "border-radius: 24px; }"
             )
             label_style = (
-                "color: #191f28; font-size: 15px; font-weight: 500; "
+                "color: #191f28; font-size: 15px; font-weight: 400; "
                 "padding: 0; background: transparent;"
             )
         else:
@@ -228,11 +228,16 @@ class ChatWorker(QThread):
         "set_underline(",
         "set_char_width_ratio(",
         "set_table_border_white(",
+        "set_align_center_next_line(",
         "set_align_right_next_line(",
         "set_align_justify_next_line(",
         "run_hwp_action(",
         "execute_hwp_action(",
         "call_hwp_method(",
+        "get_current_style_name(",
+        "get_style_list(",
+        "delete_style(",
+        "remove_unused_styles(",
     )
 
     def __init__(
@@ -313,6 +318,14 @@ class ChatWorker(QThread):
         return "\n".join(lines).strip()
 
     @staticmethod
+    def _select_first_image_attachment(attachment_paths: list[str]) -> str:
+        for path in attachment_paths or []:
+            suffix = Path(path).suffix.lower()
+            if suffix in {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp"}:
+                return str(path)
+        return ""
+
+    @staticmethod
     def _strip_code_fence(text: str) -> str:
         cleaned = (text or "").strip()
         if not cleaned.startswith("```"):
@@ -378,12 +391,12 @@ class ChatWorker(QThread):
             "입력", "삽입", "적어", "써", "작성", "추가", "넣어", "붙여넣",
             "타이핑", "수식", "공식", "표", "테이블", "셀", "행", "열",
             "필드", "저장", "다른 이름", "pdf", "이동", "선택", "찾기", "바꿔",
-            "서식", "정렬", "머리말", "꼬리말", "페이지", "쪽번호", "그림", "이미지",
+            "서식", "스타일", "글꼴", "폰트", "장평", "자간", "정렬", "머리말", "꼬리말", "페이지", "쪽번호", "용지", "여백", "제본", "그림", "이미지",
             "배경", "도형", "박스", "보기", "템플릿", "하이퍼링크", "링크", "메모",
             "책갈피", "바탕쪽", "구역", "개체", "글상자", "캡션", "테두리", "음영",
             "대화상자", "속성", "수정", "검토", "변경 추적", "교정", "개인정보", "보안",
             "암호", "배포용", "워터마크", "흑백", "run", "action", "method",
-            "latex", "equation", "insert", "write", "type", "append", "add",
+            "latex", "equation", "insert", "write", "type", "append", "add", "style", "font",
             "save", "table", "field", "select", "find", "replace", "header", "footer",
             "hyperlink", "memo", "security", "password", "review", "masterpage",
             "section", "caption", "textbox", "dialog",
@@ -423,6 +436,14 @@ class ChatWorker(QThread):
             "다른 이름",
             "선택",
             "이동",
+            "스타일",
+            "글꼴",
+            "폰트",
+            "장평",
+            "자간",
+            "용지",
+            "여백",
+            "제본",
             "표",
             "테이블",
             "필드",
@@ -459,6 +480,8 @@ class ChatWorker(QThread):
             "그림",
             "박스",
             "템플릿",
+            "style",
+            "font",
         )
         has_typing_marker = any(marker in text for marker in typing_markers)
         has_command_marker = any(marker in text for marker in command_markers)
@@ -538,6 +561,352 @@ class ChatWorker(QThread):
         return max(0, int(round(float(mm) * 283.465)))
 
     @staticmethod
+    def _pt_to_hwpunit(pt: float) -> int:
+        return max(0, int(round(float(pt) * 100)))
+
+    @staticmethod
+    def _normalize_mm_text(text: str) -> str:
+        normalized = str(text or "")
+        normalized = normalized.replace("㎜", "mm").replace("ＭＭ", "mm").replace("ｍｍ", "mm")
+        normalized = re.sub(r"(?<=\d)\s*(?:밀리미터|밀리미타|밀리)\b", "mm", normalized, flags=re.IGNORECASE)
+        return normalized
+
+    @staticmethod
+    def _normalize_pt_text(text: str) -> str:
+        normalized = str(text or "")
+        normalized = normalized.replace("ＰＴ", "pt").replace("ｐｔ", "pt")
+        normalized = re.sub(r"(?<=\d)\s*(?:포인트|point|points)\b", "pt", normalized, flags=re.IGNORECASE)
+        return normalized
+
+    @staticmethod
+    def _sanitize_style_name(style_name: str) -> str:
+        cleaned = re.sub(r"\s+", " ", str(style_name or "")).strip().strip("\"'")
+        cleaned = re.sub(
+            r"\s*(?:으로|로|을|를|은|는|이|가|에|에서)?\s*(?:적용|사용|생성|등록|만들기?|수정|변경)?$",
+            "",
+            cleaned,
+        ).strip(" ,.:;")
+        return cleaned
+
+    @classmethod
+    def _extract_style_name(cls, raw_text: str) -> str:
+        text = str(raw_text or "")
+        invalid_names = {
+            "새", "기존", "현재", "문단", "문서", "전체", "선택", "적용", "사용",
+            "표", "테이블", "서식", "회색조", "글자", "문장", "표마당",
+        }
+
+        # Handle bullet/list style input such as:
+        # "(1) 스타일 이름 - tourism"
+        for raw_line in re.split(r"\r?\n", text):
+            line = re.sub(r"\s+", " ", raw_line).strip()
+            lowered_line = line.lower()
+            if not line:
+                continue
+            if ("스타일" in line and ("이름" in line or "명" in line)) or ("style name" in lowered_line):
+                candidate = re.sub(r"^.*?(?:스타일\s*(?:이름|명)?|style\s*name|name)\s*", "", line, flags=re.IGNORECASE)
+                candidate = re.sub(r"^[\s:：=\-–—]+", "", candidate).strip()
+                candidate = re.sub(r"\s*\(\d+\)\s*$", "", candidate).strip()
+                candidate = cls._sanitize_style_name(candidate)
+                if candidate and candidate not in invalid_names:
+                    return candidate
+
+        patterns = (
+            r"(?:스타일\s*(?:이름|명)?|style\s*name|name)\s*(?:은|는|:|\-|=)?\s*[\"']?([^,\"'\n]+?)[\"']?(?=,|$|\r?\n|\s*\(\d+\)|\s+(?:적용|사용|생성|등록|만들|수정|변경))",
+            r"스타일\s*[\"']([^\"']+)[\"']",
+            r"스타일\s*(?:은|는|:|\-|=)?\s*([A-Za-z0-9가-힣 _-]+?)(?=\s*(?:적용|사용|생성|등록|만들|수정|변경|으로|로|을|를|에|,|$|\(\d+\)))",
+            r"[\"']([^\"']+)[\"']\s*스타일",
+            r"\b([A-Za-z0-9가-힣 _-]+?)\s*스타일(?:로|을|를|이|가|\s|$)",
+        )
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if not match:
+                continue
+            name = cls._sanitize_style_name(match.group(1))
+            if name and name not in invalid_names:
+                return name
+        return ""
+
+    @classmethod
+    def _extract_style_delete_spec(cls, raw_text: str) -> tuple[str, str]:
+        text = str(raw_text or "")
+
+        paired_patterns = (
+            r"[\"']([^\"']+)[\"']\s*스타일(?:을|를)?\s*[\"']([^\"']+)[\"']\s*스타일(?:로|으로)\s*(?:대체|바꿔|변경)[^,\n]*삭제",
+            r"[\"']([^\"']+)[\"']\s*스타일(?:을|를)?\s*[\"']([^\"']+)[\"'](?:로|으로)\s*(?:대체|바꿔|변경)[^,\n]*삭제",
+            r"([A-Za-z0-9가-힣 _-]+?)\s*스타일(?:을|를)?\s*([A-Za-z0-9가-힣 _-]+?)\s*스타일(?:로|으로)\s*(?:대체|바꿔|변경)[^,\n]*삭제",
+        )
+        for pattern in paired_patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if not match:
+                continue
+            src = cls._sanitize_style_name(match.group(1))
+            dst = cls._sanitize_style_name(match.group(2))
+            if src and dst:
+                return (src, dst)
+
+        source_patterns = (
+            r"[\"']([^\"']+)[\"']\s*스타일(?:을|를)?[^,\n]*(?:삭제|제거|지워)",
+            r"([A-Za-z0-9가-힣 _-]+?)\s*스타일(?:을|를)?[^,\n]*(?:삭제|제거|지워)",
+        )
+        replacement_patterns = (
+            r"[\"']([^\"']+)[\"']\s*스타일(?:로|으로)\s*(?:대체|바꿔|변경)",
+            r"[\"']([^\"']+)[\"'](?:로|으로)\s*(?:대체|바꿔|변경)",
+            r"([A-Za-z0-9가-힣 _-]+?)\s*스타일(?:로|으로)\s*(?:대체|바꿔|변경)",
+        )
+
+        source_name = ""
+        for pattern in source_patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                source_name = cls._sanitize_style_name(match.group(1))
+                if source_name:
+                    break
+
+        replacement_name = ""
+        for pattern in replacement_patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                replacement_name = cls._sanitize_style_name(match.group(1))
+                if replacement_name:
+                    break
+
+        if source_name:
+            return (source_name, replacement_name or "바탕글")
+        return ("", "")
+
+    @classmethod
+    def _extract_page_def_params(cls, raw_text: str, lowered_text: str) -> dict[str, int]:
+        normalized_text = cls._normalize_mm_text(raw_text)
+        normalized_lower = normalized_text.lower()
+        page_def: dict[str, int] = {}
+
+        if "a4" in lowered_text:
+            page_def["PaperWidth"] = cls._mm_to_hwpunit(210.0)
+            page_def["PaperHeight"] = cls._mm_to_hwpunit(297.0)
+        if "가로" in lowered_text and "세로" not in lowered_text:
+            page_def["Landscape"] = 1
+        elif "세로" in lowered_text:
+            page_def["Landscape"] = 0
+
+        field_aliases: dict[str, tuple[str, ...]] = {
+            "LeftMargin": ("왼쪽", "좌측", "left"),
+            "RightMargin": ("오른쪽", "우측", "right"),
+            "TopMargin": ("위쪽", "위", "상단", "top"),
+            "BottomMargin": ("아래쪽", "아래", "하단", "bottom"),
+            "HeaderLen": ("머리말", "header"),
+            "FooterLen": ("꼬리말", "footer"),
+            "GutterLen": ("제본", "gutter"),
+        }
+        grouped_aliases: dict[tuple[str, ...], tuple[str, ...]] = {
+            ("LeftMargin", "RightMargin"): ("좌우", "왼쪽오른쪽", "왼쪽 오른쪽", "left right"),
+            ("TopMargin", "BottomMargin"): ("상하", "위아래", "위쪽아래쪽", "위쪽 아래쪽", "상단하단"),
+            ("HeaderLen", "FooterLen"): ("머리말꼬리말", "머리말 꼬리말", "header footer"),
+        }
+
+        for key, aliases in field_aliases.items():
+            for alias in aliases:
+                pattern = (
+                    rf"{re.escape(alias)}(?:\s*여백)?\s*(?:은|는|을|를|:)?\s*"
+                    rf"(\d+(?:\.\d+)?)\s*mm"
+                )
+                match = re.search(pattern, normalized_lower, re.IGNORECASE)
+                if match:
+                    page_def[key] = cls._mm_to_hwpunit(float(match.group(1)))
+                    break
+
+        chunks = [
+            chunk.strip()
+            for chunk in re.split(r"[,;\n]+", normalized_lower)
+            if chunk and chunk.strip()
+        ]
+        for chunk in chunks:
+            value_matches = re.findall(r"(\d+(?:\.\d+)?)\s*mm", chunk, re.IGNORECASE)
+            if len(value_matches) != 1:
+                continue
+            value = cls._mm_to_hwpunit(float(value_matches[0]))
+
+            for keys, aliases in grouped_aliases.items():
+                if any(alias in chunk for alias in aliases):
+                    for key in keys:
+                        page_def[key] = value
+
+            for key, aliases in field_aliases.items():
+                if key in page_def and re.search(
+                    rf"{'|'.join(re.escape(alias) for alias in aliases)}\s*(?:여백)?\s*(?:은|는|을|를|:)?\s*\d+(?:\.\d+)?\s*mm",
+                    chunk,
+                    re.IGNORECASE,
+                ):
+                    continue
+                if any(alias in chunk for alias in aliases):
+                    page_def[key] = value
+
+        return page_def
+
+    @classmethod
+    def _extract_style_params(cls, raw_text: str, lowered_text: str) -> dict[str, object]:
+        if not cls._contains_any(lowered_text, ("스타일", "style")):
+            return {}
+
+        normalized_text = cls._normalize_pt_text(raw_text)
+        normalized_lower = normalized_text.lower()
+
+        style_params: dict[str, object] = {}
+        char_shape: dict[str, object] = {}
+        para_shape: dict[str, object] = {}
+
+        style_name = cls._extract_style_name(normalized_text)
+        if style_name:
+            style_params["NameLocal"] = style_name
+
+        left_margin_match = re.search(
+            r"(?:왼쪽\s*여백|좌측\s*여백|left\s*margin)\s*(?:은|는|을|를|:)?\s*(-?\d+(?:\.\d+)?)\s*pt",
+            normalized_lower,
+            re.IGNORECASE,
+        )
+        if left_margin_match:
+            para_shape["LeftMargin"] = cls._pt_to_hwpunit(float(left_margin_match.group(1)))
+
+        next_spacing_match = re.search(
+            r"(?:문단\s*아래(?:\s*간격)?|아래(?:\s*간격)?|next\s*spacing|paragraph\s*spacing)\s*(?:은|는|을|를|:)?\s*(-?\d+(?:\.\d+)?)\s*pt",
+            normalized_lower,
+            re.IGNORECASE,
+        )
+        if next_spacing_match:
+            para_shape["NextSpacing"] = cls._pt_to_hwpunit(float(next_spacing_match.group(1)))
+
+        font_pair_match = re.search(
+            r"한글\s*(?:글꼴|폰트)?\s*(?:은|는|:)?\s*[\"']?([^,\n\/()]+?)[\"']?\s*\/\s*영문\s*(?:글꼴|폰트)?\s*(?:은|는|:)?\s*[\"']?([^,\n\/()]+?)[\"']?(?=,|$)",
+            normalized_text,
+            re.IGNORECASE,
+        )
+        if not font_pair_match:
+            font_pair_match = re.search(
+                r"한글\s*\(\s*([^)\n]+?)\s*\)\s*\/\s*영문\s*\(\s*([^)\n]+?)\s*\)",
+                normalized_text,
+                re.IGNORECASE,
+            )
+        if font_pair_match:
+            char_shape["FaceNameHangul"] = font_pair_match.group(1).strip()
+            char_shape["FaceNameLatin"] = font_pair_match.group(2).strip()
+        else:
+            font_pair_comma_match = re.search(
+                r"한글\s*(?:글꼴|폰트)?\s*(?:은|는|:)?\s*[\"']?([^,\n]+?)[\"']?\s*,\s*영문\s*(?:글꼴|폰트)?\s*(?:은|는|:)?\s*[\"']?([^,\n]+?)[\"']?(?=,|$)",
+                normalized_text,
+                re.IGNORECASE,
+            )
+            if font_pair_comma_match:
+                char_shape["FaceNameHangul"] = font_pair_comma_match.group(1).strip()
+                char_shape["FaceNameLatin"] = font_pair_comma_match.group(2).strip()
+            else:
+                font_pair_colon_match = re.search(
+                    r"글꼴\s*(?:은|는|:)?\s*한글\s*\(\s*([^)\n]+?)\s*\)\s*\/\s*영문\s*\(\s*([^)\n]+?)\s*\)",
+                    normalized_text,
+                    re.IGNORECASE,
+                )
+                if font_pair_colon_match:
+                    char_shape["FaceNameHangul"] = font_pair_colon_match.group(1).strip()
+                    char_shape["FaceNameLatin"] = font_pair_colon_match.group(2).strip()
+            hangul_font_match = re.search(
+                r"한글\s*(?:글꼴|폰트)?\s*(?:은|는|:|\-|=)?\s*[\"']?([^,\n\/()]+?)[\"']?(?=,|$|\s+영문)",
+                normalized_text,
+                re.IGNORECASE,
+            )
+            if not hangul_font_match:
+                hangul_font_match = re.search(
+                    r"한글\s*\(\s*([^)\n]+?)\s*\)",
+                    normalized_text,
+                    re.IGNORECASE,
+                )
+            latin_font_match = re.search(
+                r"영문\s*(?:글꼴|폰트)?\s*(?:은|는|:|\-|=)?\s*[\"']?([^,\n\/()]+?)[\"']?(?=,|$)",
+                normalized_text,
+                re.IGNORECASE,
+            )
+            if not latin_font_match:
+                latin_font_match = re.search(
+                    r"영문\s*\(\s*([^)\n]+?)\s*\)",
+                    normalized_text,
+                    re.IGNORECASE,
+                )
+            common_font_match = re.search(
+                r"(?:글꼴|폰트)\s*(?:은|는|:|\-|=)?\s*[\"']?([^,\n\/]+?)[\"']?(?=,|$)",
+                normalized_text,
+                re.IGNORECASE,
+            )
+            if "FaceNameHangul" not in char_shape and hangul_font_match:
+                char_shape["FaceNameHangul"] = hangul_font_match.group(1).strip()
+            if "FaceNameLatin" not in char_shape and latin_font_match:
+                char_shape["FaceNameLatin"] = latin_font_match.group(1).strip()
+            if common_font_match and "FaceNameHangul" not in char_shape and "FaceNameLatin" not in char_shape:
+                font_name = common_font_match.group(1).strip()
+                char_shape["FaceNameHangul"] = font_name
+                char_shape["FaceNameLatin"] = font_name
+
+        height_match = re.search(
+            r"(?:크기|글자\s*크기|폰트\s*크기|size)\s*(?:은|는|:)?\s*(\d+(?:\.\d+)?)\s*pt",
+            normalized_lower,
+            re.IGNORECASE,
+        )
+        if height_match:
+            char_shape["Height"] = cls._pt_to_hwpunit(float(height_match.group(1)))
+
+        ratio_hangul_match = re.search(
+            r"한글\s*(?:장평|비율)\s*(?:은|는|:)?\s*(-?\d+(?:\.\d+)?)\s*%",
+            normalized_lower,
+            re.IGNORECASE,
+        )
+        ratio_latin_match = re.search(
+            r"영문\s*(?:장평|비율)\s*(?:은|는|:)?\s*(-?\d+(?:\.\d+)?)\s*%",
+            normalized_lower,
+            re.IGNORECASE,
+        )
+        ratio_common_match = re.search(
+            r"(?:장평|비율)\s*(?:은|는|:)?\s*(-?\d+(?:\.\d+)?)\s*%",
+            normalized_lower,
+            re.IGNORECASE,
+        )
+        if ratio_hangul_match:
+            char_shape["RatioHangul"] = int(round(float(ratio_hangul_match.group(1))))
+        if ratio_latin_match:
+            char_shape["RatioLatin"] = int(round(float(ratio_latin_match.group(1))))
+        if ratio_common_match and "RatioHangul" not in char_shape and "RatioLatin" not in char_shape:
+            ratio_value = int(round(float(ratio_common_match.group(1))))
+            char_shape["RatioHangul"] = ratio_value
+            char_shape["RatioLatin"] = ratio_value
+
+        spacing_hangul_match = re.search(
+            r"한글\s*자간\s*(?:은|는|:)?\s*(-?\d+(?:\.\d+)?)\s*%",
+            normalized_lower,
+            re.IGNORECASE,
+        )
+        spacing_latin_match = re.search(
+            r"영문\s*자간\s*(?:은|는|:)?\s*(-?\d+(?:\.\d+)?)\s*%",
+            normalized_lower,
+            re.IGNORECASE,
+        )
+        spacing_common_match = re.search(
+            r"자간\s*(?:은|는|:)?\s*(-?\d+(?:\.\d+)?)\s*%",
+            normalized_lower,
+            re.IGNORECASE,
+        )
+        if spacing_hangul_match:
+            char_shape["SpacingHangul"] = int(round(float(spacing_hangul_match.group(1))))
+        if spacing_latin_match:
+            char_shape["SpacingLatin"] = int(round(float(spacing_latin_match.group(1))))
+        if spacing_common_match and "SpacingHangul" not in char_shape and "SpacingLatin" not in char_shape:
+            spacing_value = int(round(float(spacing_common_match.group(1))))
+            char_shape["SpacingHangul"] = spacing_value
+            char_shape["SpacingLatin"] = spacing_value
+
+        if para_shape:
+            style_params["ParaShape"] = para_shape
+        if char_shape:
+            style_params["CharShape"] = char_shape
+
+        return style_params
+
+    @staticmethod
     def _parse_color_value(text: str) -> int | None:
         lowered = (text or "").lower()
         color_map = {
@@ -605,31 +974,81 @@ class ChatWorker(QThread):
 
     @classmethod
     def _build_page_setup_script(cls, raw_text: str, lowered_text: str) -> str:
-        params: dict[str, int] = {}
-        if "a4" in lowered_text:
-            params["PaperWidth"] = cls._mm_to_hwpunit(210.0)
-            params["PaperHeight"] = cls._mm_to_hwpunit(297.0)
-        if "가로" in lowered_text and "세로" not in lowered_text:
-            params["Landscape"] = 1
-        elif "세로" in lowered_text:
-            params["Landscape"] = 0
-
-        margin_patterns = {
-            "LeftMargin": r"왼쪽\s*(\d+(?:\.\d+)?)\s*mm",
-            "RightMargin": r"오른쪽\s*(\d+(?:\.\d+)?)\s*mm",
-            "TopMargin": r"(?:위|상단)\s*(\d+(?:\.\d+)?)\s*mm",
-            "BottomMargin": r"(?:아래|하단)\s*(\d+(?:\.\d+)?)\s*mm",
-            "HeaderLen": r"머리말\s*(\d+(?:\.\d+)?)\s*mm",
-            "FooterLen": r"꼬리말\s*(\d+(?:\.\d+)?)\s*mm",
-        }
-        for key, pattern in margin_patterns.items():
-            match = re.search(pattern, raw_text, re.IGNORECASE)
-            if match:
-                params[key] = cls._mm_to_hwpunit(float(match.group(1)))
-
-        if not params:
+        page_def = cls._extract_page_def_params(raw_text, lowered_text)
+        if not page_def:
             return ""
-        return f'execute_hwp_action("PageSetup", "HPageDef", {params!r})'
+        params: dict[str, object] = {
+            "ApplyTo": 3,
+            "PageDef": page_def,
+        }
+        return f'execute_hwp_action("PageSetup", "SecDef", {params!r})'
+
+    @classmethod
+    def _build_style_script(cls, raw_text: str, lowered_text: str) -> str:
+        style_params = cls._extract_style_params(raw_text, lowered_text)
+        if "NameLocal" not in style_params:
+            return ""
+        has_style_body = any(
+            bool(style_params.get(key))
+            for key in ("CharShape", "ParaShape")
+        )
+        if not has_style_body:
+            return ""
+        return "\n".join(
+            [
+                f"_style_params = {style_params!r}",
+                "try:",
+                '    execute_hwp_action("StyleDirectEdit", "Style", _style_params)',
+                "except Exception:",
+                '    execute_hwp_action("StyleEx", "Style", _style_params)',
+            ]
+        )
+
+    @classmethod
+    def _build_style_apply_script(cls, raw_text: str, lowered_text: str) -> str:
+        if not cls._contains_any(lowered_text, ("스타일", "style")):
+            return ""
+        if not cls._contains_any(lowered_text, ("적용", "사용", "써", "지정", "바꿔", "변경", "apply", "use")):
+            return ""
+
+        style_params = cls._extract_style_params(raw_text, lowered_text)
+        has_style_body = any(bool(style_params.get(key)) for key in ("CharShape", "ParaShape"))
+        if has_style_body:
+            return ""
+
+        style_name = cls._extract_style_name(raw_text)
+        if not style_name:
+            return ""
+
+        lines: list[str] = []
+        if cls._contains_any(lowered_text, ("문서 전체", "전체 문서", "문서전체")):
+            lines.append('run_hwp_action("SelectAll")')
+        lines.append(f'execute_hwp_action("Style", "Style", {{"NameLocal": {style_name!r}}})')
+        return "\n".join(lines)
+
+    @classmethod
+    def _build_style_management_script(cls, raw_text: str, lowered_text: str) -> str:
+        if not cls._contains_any(lowered_text, ("스타일", "style")):
+            return ""
+
+        if cls._contains_any(lowered_text, ("사용 안 하는", "사용안하는", "미사용", "unused")) and cls._contains_any(lowered_text, ("삭제", "제거", "정리", "지워", "remove")):
+            return "remove_unused_styles()"
+
+        if cls._contains_any(lowered_text, ("목록", "리스트", "list", "show all")) and cls._contains_any(lowered_text, ("보여", "알려", "확인", "조회", "출력", "가져")):
+            used_only = cls._contains_any(lowered_text, ("사용 중", "사용중", "적용된", "used"))
+            return f"print(get_style_list({used_only!r}))"
+
+        if cls._contains_any(lowered_text, ("현재", "커서", "문단", "paragraph")) and cls._contains_any(lowered_text, ("뭐", "무엇", "이름", "어떤", "알려", "보여", "확인", "조회")):
+            return "print(get_current_style_name())"
+
+        if cls._contains_any(lowered_text, ("삭제", "제거", "지워", "없애", "remove", "delete")):
+            source_name, replacement_name = cls._extract_style_delete_spec(raw_text)
+            if source_name:
+                if replacement_name:
+                    return f"delete_style({source_name!r}, {replacement_name!r})"
+                return f"delete_style({source_name!r})"
+
+        return ""
 
     @classmethod
     def _build_header_footer_script(cls, lowered_text: str) -> str:
@@ -1365,6 +1784,18 @@ class ChatWorker(QThread):
         if hwp_method_read_script:
             return hwp_method_read_script
 
+        style_management_script = cls._build_style_management_script(raw, text)
+        if style_management_script:
+            return style_management_script
+
+        style_script = cls._build_style_script(raw, text)
+        if style_script:
+            return style_script
+
+        style_apply_script = cls._build_style_apply_script(raw, text)
+        if style_apply_script:
+            return style_apply_script
+
         page_setup_script = cls._build_page_setup_script(raw, text)
         if page_setup_script:
             return page_setup_script
@@ -1618,7 +2049,7 @@ class ChatWorker(QThread):
             "- insert_paragraph()\n"
             "- insert_small_paragraph()\n"
             '- insert_equation("hwp_equation_syntax")\n'
-            '- insert_template("header.hwp|box.hwp|box_white.hwp")\n'
+            '- insert_template("header.hwp")\n'
             '- focus_placeholder("@@@|###|&&&")\n'
             "- insert_box()\n"
             "- exit_box()\n"
@@ -1630,11 +2061,16 @@ class ChatWorker(QThread):
             "- set_underline(True/False)\n\n"
             "- set_char_width_ratio(100)\n"
             "- set_table_border_white()\n"
+            "- set_align_center_next_line()\n"
             "- set_align_right_next_line()\n"
             "- set_align_justify_next_line()\n"
             '- run_hwp_action("ActionName")\n'
             '- execute_hwp_action("ActionName", "ParameterSetName", {"Key": value})\n'
             '- call_hwp_method("MethodName", arg1, arg2, ...)\n\n'
+            "- get_current_style_name()\n"
+            "- get_style_list(used_only=False)\n"
+            '- delete_style("style_name", "replacement_style")\n'
+            "- remove_unused_styles()\n\n"
             "Return ONLY Python code. No markdown. No explanation.\n"
             "If the user wants normal text inserted, prefer insert_text(...).\n"
             "If the user asks for a math formula, ALWAYS use insert_equation(...).\n"
@@ -1666,7 +2102,8 @@ class ChatWorker(QThread):
             f"User request: {message}\n"
         )
         client = AIClient(model=chat_model, check_usage=False)
-        raw = client.generate_script(prompt)
+        image_path = self._select_first_image_attachment(self._attachment_paths)
+        raw = client.generate_script(prompt, image_path=image_path or None)
         script = self._normalize_script(raw)
         if not self._contains_supported_script_call(script):
             return ""
@@ -1687,9 +2124,8 @@ class ChatWorker(QThread):
 
         chat_model = (
             os.getenv("GEMINI_CHAT_MODEL")
-            or os.getenv("GEMINI_MODEL")
             or ""
-        ).strip() or "gemini-3.1-pro-preview"
+        ).strip() or "gemini-3.1-flash-lite-preview"
         actions = self._infer_local_actions(message)
         has_attachments = bool(self._attachment_paths)
 
@@ -1708,7 +2144,7 @@ class ChatWorker(QThread):
             elif actions:
                 reply = "첨부 파일을 참고해 요청한 문서 작업을 실행합니다." if has_attachments else "요청한 문서 작업을 실행합니다."
             elif script:
-                reply = "첨부 파일을 참고해 감지된 한글 문서에 요청하신 내용을 입력합니다." if has_attachments else "감지된 한글 문서에 요청하신 내용을 입력합니다."
+                reply = "첨부 파일을 참고해 요청하신 내용을 적용했습니다." if has_attachments else "요청하신 내용을 적용했습니다."
             else:
                 reply = "첨부 파일과 요청을 확인했지만 아직 자동 입력으로 처리할 수 있는 편집 명령이 아니었습니다." if has_attachments else "요청을 확인했지만 아직 자동 입력으로 처리할 수 있는 편집 명령이 아니었습니다."
 

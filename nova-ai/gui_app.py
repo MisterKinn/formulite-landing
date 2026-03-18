@@ -19,6 +19,7 @@ import webbrowser
 from pathlib import Path
 from urllib import error as urllib_error
 from urllib import request as urllib_request
+from urllib.parse import urlparse
 
 # Allow running this file directly (python gui_app.py) by ensuring the
 # package parent directory is on sys.path.
@@ -60,7 +61,7 @@ from PySide6.QtGui import (
 from PySide6.QtMultimedia import QAudioFormat, QAudioSource, QMediaDevices
 from PySide6.QtWidgets import QStyledItemDelegate, QStyle
 
-from ai_client import AIClient, AIClientError
+from ai_client import AIClient, AIClientError, normalize_ai_error_message
 from chat_page import ChatComposeTextEdit, ChatMessageWidget, ChatWorker
 from figure_code_runner import FigureCodeRenderError, render_python_figure_code
 from hwp_controller import HwpController, HwpControllerError
@@ -69,7 +70,9 @@ from ocr_pipeline import extract_text, extract_text_from_pil_image
 from layout_detector import detect_container, crop_inside_rect
 from image_path_utils import load_pil_image
 from prompt_loader import get_image_generation_prompt
+from pdf_problem_splitter import split_pdf_into_problem_items
 from script_runner import ScriptRunner, ScriptCancelled
+from upload_items import UploadItem, build_upload_item
 from backend.oauth_desktop import (
     get_stored_user,
     is_logged_in,
@@ -88,6 +91,7 @@ from backend.firebase_profile import (
     is_desktop_session_active,
     PLAN_LIMITS,
 )
+from runtime_env import can_connect, first_env_value, load_runtime_env, missing_env_keys
 
 
 class LoginWorker(QThread):
@@ -214,9 +218,10 @@ class VoiceTranscriptionWorker(QThread):
         if not api_key:
             raise RuntimeError("GEMINI_API_KEY is missing.")
         try:
-            import google.generativeai as genai
+            from google import genai
+            from google.genai import types
         except Exception as exc:
-            raise RuntimeError("google-generativeai package is not installed.") from exc
+            raise RuntimeError("google-genai package is not installed.") from exc
 
         suffix = Path(self._wav_path).suffix.lower()
         mime_type = {
@@ -227,18 +232,24 @@ class VoiceTranscriptionWorker(QThread):
             ".webm": "audio/webm",
         }.get(suffix, "audio/wav")
 
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(model_name)
-        with open(self._wav_path, "rb") as audio_file:
-            response = model.generate_content(
-                [
-                    (
-                        "다음 한국어 음성을 한글 문서 편집 보조용 명령문으로 정확히 받아쓴다. "
-                        "설명은 추가하지 말고, 들린 명령만 평문으로 반환한다."
-                    ),
-                    {"mime_type": mime_type, "data": audio_file.read()},
-                ],
-            )
+        client = genai.Client(api_key=api_key)
+        try:
+            with open(self._wav_path, "rb") as audio_file:
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=[
+                        (
+                            "다음 한국어 음성을 한글 문서 편집 보조용 명령문으로 정확히 받아쓴다. "
+                            "설명은 추가하지 말고, 들린 명령만 평문으로 반환한다."
+                        ),
+                        types.Part.from_bytes(data=audio_file.read(), mime_type=mime_type),
+                    ],
+                )
+        finally:
+            try:
+                client.close()
+            except Exception:
+                pass
         return self._extract_gemini_transcription_text(response)
 
     def run(self) -> None:  # type: ignore[override]
@@ -255,9 +266,6 @@ class VoiceTranscriptionWorker(QThread):
                 pass
             raw_model = (
                 self._model
-                or os.getenv("GEMINI_TRANSCRIBE_MODEL")
-                or os.getenv("GEMINI_AUDIO_MODEL")
-                or os.getenv("GEMINI_MODEL")
                 or DEFAULT_GEMINI_MODEL
             )
             model_name = _normalize_model_name(raw_model)
@@ -275,12 +283,12 @@ class AIWorker(QThread):
 
     def __init__(
         self,
-        image_paths: list[str],
+        image_items: list[UploadItem],
         image_mode: str = "crop",
         generation_mode: str = "problem",
     ) -> None:
         super().__init__()
-        self._image_paths = image_paths
+        self._image_items = image_items
         mode = (image_mode or "crop").strip().lower()
         if mode not in {"no_image", "crop", "ai_generate"}:
             mode = "crop"
@@ -623,8 +631,7 @@ Preserve semantics and layout, but normalize rendering to clean exam-print style
             pass
 
         model_name = _normalize_model_name((
-            os.getenv("GEMINI_MODEL")
-            or os.getenv("GEMINI_IMAGE_MODEL")
+            os.getenv("GEMINI_IMAGE_MODEL")
             or DEFAULT_GEMINI_MODEL
         ).strip())
         if "image" not in model_name:
@@ -636,19 +643,35 @@ Preserve semantics and layout, but normalize rendering to clean exam-print style
         if not api_key:
             raise AIClientError("GEMINI_API_KEY is missing.")
         try:
-            import google.generativeai as genai
+            from google import genai
+            from google.genai import types
             from PIL import Image  # type: ignore[import-not-found]
             import io
         except Exception as exc:
             raise AIClientError(f"이미지 생성 모듈 로딩 실패: {exc}") from exc
 
+        client = None
         try:
-            genai.configure(api_key=api_key)
-            model = genai.GenerativeModel(model_name)
+            client = genai.Client(api_key=api_key)
             image = self._deskew_exam_style_image(load_pil_image(crop_path, mode="RGB"))
-            response = model.generate_content([prompt_text, image])
+            buffer = io.BytesIO()
+            image.save(buffer, format="PNG")
+            response = client.models.generate_content(
+                model=model_name,
+                contents=[
+                    prompt_text,
+                    types.Part.from_bytes(data=buffer.getvalue(), mime_type="image/png"),
+                ],
+                config=types.GenerateContentConfig(response_modalities=["IMAGE"]),
+            )
         except Exception as exc:
             raise AIClientError(f"Gemini 이미지 생성 실패: {exc}") from exc
+        finally:
+            try:
+                if client is not None:
+                    client.close()
+            except Exception:
+                pass
         img_bytes, mime = self._extract_inline_image_bytes(response)
 
         if not img_bytes:
@@ -865,77 +888,6 @@ Preserve semantics and layout, but normalize rendering to clean exam-print style
         processed = self._apply_python_figure_pipeline(idx, processed, log_fn)
         return self._apply_local_figure_pipeline(idx, processed, log_fn), image_credit_cost
 
-    @staticmethod
-    def _script_contains_table_style(script: str) -> bool:
-        lowered = (script or "").lower()
-        style_markers = (
-            "fill_color",
-            "background_color",
-            "bg_color",
-            "border_color",
-            "border_type",
-            "border_width",
-            "line_style",
-            "line_width",
-        )
-        return any(marker in lowered for marker in style_markers)
-
-    def _maybe_refine_table_styles(
-        self,
-        *,
-        idx: int,
-        client: AIClient,
-        image_path: str,
-        script: str,
-        ocr_text: str,
-        log_fn,
-    ) -> str:
-        code = self._extract_code(script or "")
-        if "insert_table(" not in code:
-            return code
-        if self._script_contains_table_style(code):
-            return code
-
-        style_prompt = (
-            "You are editing an existing HWP automation script.\n"
-            "Task: keep all commands and text, but enrich ONLY insert_table(...) cell_data styles "
-            "from the attached image.\n\n"
-            "Hard constraints:\n"
-            "1) Keep function order and non-table commands unchanged.\n"
-            "2) Do NOT remove existing text.\n"
-            "3) Only add style keys inside table cell objects: fill_color, border_color, "
-            "border_type, border_width, border_color_left/right/top/bottom, "
-            "border_type_left/right/top/bottom, border_width_left/right/top/bottom.\n"
-            "4) If outside borders differ from inside borders, use side-specific keys.\n"
-            "5) If no visual evidence for a style, leave that cell unchanged.\n"
-            "6) Return ONLY full Python code.\n\n"
-            "OCR hint:\n"
-            f"{ocr_text or '(none)'}\n\n"
-            "Existing script:\n"
-            "```python\n"
-            f"{code}\n"
-            "```"
-        )
-
-        try:
-            refined_raw = client.generate_script(style_prompt, image_path=image_path)
-        except Exception as exc:
-            log_fn(f"[{idx}] Table-style refine skipped: {exc}")
-            return code
-
-        refined = self._extract_code(refined_raw or "")
-        if not refined.strip():
-            log_fn(f"[{idx}] Table-style refine returned empty script")
-            return code
-        if refined.count("insert_table(") != code.count("insert_table("):
-            log_fn(f"[{idx}] Table-style refine rejected: insert_table count mismatch")
-            return code
-        if not self._script_contains_table_style(refined):
-            log_fn(f"[{idx}] Table-style refine rejected: style keys not added")
-            return code
-        log_fn(f"[{idx}] Table-style refine applied")
-        return refined
-
     def run(self) -> None:  # type: ignore[override]
         import sys
         def _log(msg: str) -> None:
@@ -948,11 +900,14 @@ Preserve semantics and layout, but normalize rendering to clean exam-print style
                     pass
         
         try:
-            total = len(self._image_paths)
+            total = len(self._image_items)
             results: list[str] = [""] * total
             _log(f"Starting AI generation for {total} images")
 
-            def _job(idx: int, image_path: str) -> str:
+            def _job(idx: int, upload_item: UploadItem) -> str:
+                image_path = str(upload_item.ai_input_path or "").strip()
+                if not image_path:
+                    raise AIClientError("AI 입력 이미지 경로가 비어 있습니다.")
                 _log(f"[{idx}] Processing: {image_path}")
                 user = get_stored_user() or {}
                 uid = str(user.get("uid") or "")
@@ -977,8 +932,9 @@ Preserve semantics and layout, but normalize rendering to clean exam-print style
                         f"{extra_hint}"
                     )
 
-                # 1 image : 1 AIClient (1-to-1 mapping, safe for concurrency)
-                # ???? ??(????????)????? ??????????? ??? ???? ?????.
+                # 1 image : 1 AIClient wrapper. Each actual generate_* call inside
+                # AIClient opens a fresh google.genai client and closes it after
+                # the response, so concurrent batches do not share a live SDK client.
                 try:
                     client = AIClient(check_usage=False)
                 except Exception as e:
@@ -1079,6 +1035,33 @@ Preserve semantics and layout, but normalize rendering to clean exam-print style
                     except Exception as exc:
                         _log(f"[{idx}] Inside-box OCR hint skipped: {exc}")
                     _log(f"[{idx}] Container hint enabled for single-pass generation")
+                elif det.rect:
+                    generation_description = (
+                        "Generate the FULL HWP automation code for the ENTIRE problem in ONE pass. "
+                        "A bordered rectangular region was detected in the source. "
+                        "If that region is a real printed single-cell box/table containing text, equations, or a short paragraph, "
+                        "preserve it as `insert_table(1, 1, ...)` instead of flattening it into normal lines. "
+                        "Use a template only when literal '<보기>' text is visibly present."
+                    )
+                    try:
+                        inside_img = crop_inside_rect(image_path, det.rect)
+                        if inside_img is not None:
+                            inside_ocr = extract_text_from_pil_image(inside_img).strip()
+                            compact_inside_ocr = " ".join(inside_ocr.split()).strip()
+                            if compact_inside_ocr:
+                                inside_box_ocr_hint = compact_inside_ocr[:1200]
+                                if len(compact_inside_ocr) > 1200:
+                                    inside_box_ocr_hint += "..."
+                                generation_description += (
+                                    " The bordered region contains readable content; keep the visible reading order inside that 1x1 table "
+                                    "and preserve centered equation lines or left-aligned paragraph text as seen."
+                                )
+                                _log(
+                                    f"[{idx}] Generic bordered-region OCR hint length: {len(compact_inside_ocr)}"
+                                )
+                    except Exception as exc:
+                        _log(f"[{idx}] Generic bordered-region OCR hint skipped: {exc}")
+                    _log(f"[{idx}] Generic bordered-region hint enabled for single-pass generation")
                 elif det.template:
                     generation_description = (
                         "Generate the FULL HWP automation code for the ENTIRE problem in ONE pass. "
@@ -1108,14 +1091,6 @@ Preserve semantics and layout, but normalize rendering to clean exam-print style
                 if not raw_result.strip():
                     _log(f"[{idx}] WARNING: Empty AI response!")
                 final_code = self._extract_code(raw_result)
-                final_code = self._maybe_refine_table_styles(
-                    idx=idx,
-                    client=client,
-                    image_path=image_path,
-                    script=final_code,
-                    ocr_text=ocr_text_full,
-                    log_fn=_log,
-                )
                 final_code = _append_explanation_if_needed(final_code)
                 final_code, image_credit_cost = self._apply_image_mode_pipeline(
                     idx, image_path, final_code, _log
@@ -1134,9 +1109,8 @@ Preserve semantics and layout, but normalize rendering to clean exam-print style
                     increment_ai_usage(uid, amount=total_usage_cost)
                 return final_code
 
-            # Generate code in batches to avoid flooding the model/API with
-            # too many files at once. Default batch size is 10, while an
-            # environment variable can still lower or raise that cap.
+            # Generate code in batches while still allowing the environment
+            # variable to lower or raise the default concurrency cap.
             max_workers_env = os.getenv("NOVA_AI_MAX_WORKERS")
             max_workers = max(1, min(total, 10))
             if max_workers_env:
@@ -1150,9 +1124,9 @@ Preserve semantics and layout, but normalize rendering to clean exam-print style
                 with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
                     future_to_idx: dict[concurrent.futures.Future[str], int] = {}
                     for idx in range(batch_start, batch_end):
-                        image_path = self._image_paths[idx]
+                        upload_item = self._image_items[idx]
                         self.progress.emit(idx, "\uC0DD\uC131\uC911...")
-                        future_to_idx[ex.submit(_job, idx, image_path)] = idx
+                        future_to_idx[ex.submit(_job, idx, upload_item)] = idx
 
                     for fut in concurrent.futures.as_completed(future_to_idx):
                         idx = future_to_idx[fut]
@@ -2433,7 +2407,7 @@ class NovaAILiteWindow(QWidget):
         layout.setContentsMargins(16, 11, 16, 12)
         layout.setSpacing(6)
 
-        self.selected_images: list[str] = []
+        self.selected_images: list[UploadItem] = []
         self.generated_code: str = ""
         self.generated_codes: list[str] = []
         self._generated_codes_by_index: list[str] = []
@@ -3146,30 +3120,6 @@ class NovaAILiteWindow(QWidget):
         self._chat_attach_btn.setToolTip("이미지 또는 PDF 업로드")
         self._chat_attach_btn.clicked.connect(self.on_upload_image)
         _chat_action_row.addWidget(self._chat_attach_btn)
-        self._chat_voice_btn = QPushButton()
-        self._chat_voice_btn.setObjectName("chatVoiceBtn")
-        self._chat_voice_btn.setFixedHeight(36)
-        self._chat_voice_btn.setMinimumWidth(108)
-        self._chat_voice_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._chat_voice_btn.setToolTip("음성 편집 시작/중지")
-        self._chat_voice_btn.setVisible(not self._hide_voice_edit_ui)
-        _chat_action_row.addWidget(self._chat_voice_btn)
-        self._chat_voice_preview = QFrame()
-        self._chat_voice_preview.setObjectName("chatVoicePreview")
-        self._chat_voice_preview.setVisible(False)
-        self._chat_voice_preview.setMinimumHeight(36)
-        self._chat_voice_preview.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        _chat_voice_preview_lay = QHBoxLayout(self._chat_voice_preview)
-        _chat_voice_preview_lay.setContentsMargins(10, 0, 10, 0)
-        _chat_voice_preview_lay.setSpacing(0)
-        self._chat_voice_preview_label = QLabel("")
-        self._chat_voice_preview_label.setObjectName("chatVoicePreviewLabel")
-        self._chat_voice_preview_label.setWordWrap(False)
-        self._chat_voice_preview_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        _chat_voice_preview_lay.addWidget(self._chat_voice_preview_label)
-        if self._hide_voice_edit_ui:
-            self._chat_voice_preview.hide()
-        _chat_action_row.addWidget(self._chat_voice_preview, 1)
         _chat_action_row.addStretch(1)
         self._chat_send_btn = QPushButton()
         self._chat_send_btn.setObjectName("chatSendBtn")
@@ -3185,8 +3135,6 @@ class NovaAILiteWindow(QWidget):
         self._chat_send_btn.clicked.connect(self._on_chat_send_clicked)
         self._chat_input.submitted.connect(self._on_chat_send_clicked)
         self._chat_input.filesDropped.connect(self._on_files_dropped)
-        self._chat_voice_btn.clicked.connect(self._on_chat_voice_clicked)
-        self._update_chat_voice_button()
 
         # ???? ?? ??? ??(?????? ??, ???????? ??) ????
         _hdr_top = 6
@@ -3359,16 +3307,13 @@ class NovaAILiteWindow(QWidget):
         self.update_filename()
         self._auto_type_after_ai = False
         self._current_code_index = -1
-        self._current_code_path: str | None = None
+        self._current_code_item_id: str | None = None
         self._code_view_updating = False
         self._ai_error_messages: dict[int, str] = {}
         # Animate "????? status in the list.
         self._status_anim_timer = QTimer(self)
         self._status_anim_timer.setInterval(120)
         self._status_anim_timer.timeout.connect(self._tick_status_animation)
-        self._voice_poll_timer = QTimer(self)
-        self._voice_poll_timer.setInterval(250)
-        self._voice_poll_timer.timeout.connect(self._poll_voice_segment)
 
         # Capture ESC globally to stop typing even during long operations.
         app = QApplication.instance()
@@ -3861,16 +3806,53 @@ class NovaAILiteWindow(QWidget):
         if self.order_list.count() != len(self.selected_images):
             self._render_order_list()
             return
-        for idx, path in enumerate(self.selected_images):
+        for idx, upload_item in enumerate(self.selected_images):
             item = self.order_list.item(idx)
             if item is None:
                 self._render_order_list()
                 return
-            name = os.path.basename(path)
+            name = upload_item.order_title
             status = self._gen_statuses[idx] if idx < len(self._gen_statuses) else "대기중"
             item.setText(f"{idx + 1}. {name} - {status}")
-            item.setData(Qt.ItemDataRole.UserRole, path)
+            item.setData(Qt.ItemDataRole.UserRole, upload_item.item_id)
         self._sync_order_animation_timer()
+
+    @staticmethod
+    def _upload_item_ai_path(upload_item: UploadItem | None) -> str | None:
+        if upload_item is None:
+            return None
+        path = str(upload_item.ai_input_path or "").strip()
+        return path or None
+
+    @staticmethod
+    def _upload_item_crop_source_path(upload_item: UploadItem | None) -> str | None:
+        if upload_item is None:
+            return None
+        path = str(upload_item.crop_source_path or "").strip()
+        return path or None
+
+    @staticmethod
+    def _upload_item_display_name(upload_item: UploadItem | None) -> str:
+        if upload_item is None:
+            return ""
+        return upload_item.order_title
+
+    def _selected_attachment_paths(self) -> list[str]:
+        paths: list[str] = []
+        for upload_item in self.selected_images:
+            path = self._upload_item_ai_path(upload_item)
+            if path:
+                paths.append(path)
+        return paths
+
+    def _find_selected_index_by_item_id(self, item_id: str) -> int:
+        normalized = str(item_id or "").strip()
+        if not normalized:
+            return -1
+        for idx, upload_item in enumerate(self.selected_images):
+            if upload_item.item_id == normalized:
+                return idx
+        return -1
 
     def _connect(self) -> HwpController:
         controller = HwpController()
@@ -4096,7 +4078,11 @@ class NovaAILiteWindow(QWidget):
         self._begin_chat_pipeline_status("AI가 해석중...")
         self._set_chat_busy(True)
         current_filename = self._current_detected_filename() or ""
-        self._chat_worker = ChatWorker(message, current_filename, attachment_paths=self.selected_images)
+        self._chat_worker = ChatWorker(
+            message,
+            current_filename,
+            attachment_paths=self._selected_attachment_paths(),
+        )
         self._chat_worker.finished.connect(self._on_chat_worker_finished)
         self._chat_worker.error.connect(self._on_chat_worker_error)
         self._chat_worker.start()
@@ -4540,18 +4526,21 @@ class NovaAILiteWindow(QWidget):
         if not self.selected_images:
             QMessageBox.warning(self, "\uC54C\uB9BC", "\uC774\uBBF8\uC9C0\uB97C \uBA3C\uC800 \uC120\uD0DD\uD574\uC8FC\uC138\uC694.")
             return
-        remaining = self._get_remaining_send_quota()
-        if remaining <= 0:
+        remaining_credits = self._get_remaining_send_quota()
+        base_cost = self._typing_generation_base_cost(getattr(self, "_typing_generation_mode", "problem"))
+        remaining_slots = remaining_credits // max(1, base_cost)
+        if remaining_slots <= 0:
             QMessageBox.warning(self, "\uC54C\uB9BC", "\uB0A8\uC740 \uC0AC\uC6A9 \uD69F\uC218\uAC00 \uC5C6\uC5B4 \uC2E4\uD589\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.")
             return
-        if len(self.selected_images) > remaining:
-            exceeded = len(self.selected_images) - remaining
+        if len(self.selected_images) > remaining_slots:
+            exceeded = len(self.selected_images) - remaining_slots
             QMessageBox.warning(
                 self,
                 "\uC54C\uB9BC",
-                f"\uD604\uC7AC \uB0A8\uC740 \uD69F\uC218\uB294 {remaining}\uD68C\uC785\uB2C8\uB2E4.\n"
+                f"\uD604\uC7AC \uB0A8\uC740 \uD06C\uB808\uB527\uC740 {remaining_credits}\uC785\uB2C8\uB2E4.\n"
+                f"\uD604\uC7AC \uBAA8\uB4DC\uB294 \uBB38\uC81C\uB2F9 {base_cost}\uD06C\uB808\uB527\uC774 \uD544\uC694\uD569\uB2C8\uB2E4.\n"
                 f"\uC120\uD0DD\uD55C {len(self.selected_images)}\uAC1C \uC911 {exceeded}\uAC1C\uB294 \uC81C\uC678\uB429\uB2C8\uB2E4.\n"
-                "\uB0A8\uC740 \uD69F\uC218 \uB0B4\uC5D0\uC11C\uB9CC \uCC98\uB9AC\uB429\uB2C8\uB2E4.",
+                "\uB0A8\uC740 \uD06C\uB808\uB527 \uBC94\uC704 \uB0B4\uC5D0\uC11C\uB9CC \uCC98\uB9AC\uB429\uB2C8\uB2E4.",
             )
             return
         if self._ai_worker and self._ai_worker.isRunning():
@@ -4575,7 +4564,7 @@ class NovaAILiteWindow(QWidget):
         self._render_order_list()
         self.code_view.setPlainText("")
         self._ai_worker = AIWorker(
-            self.selected_images,
+            list(self.selected_images),
             image_mode=self._image_mode,
             generation_mode=self._typing_generation_mode,
         )
@@ -4614,22 +4603,26 @@ class NovaAILiteWindow(QWidget):
             self._update_replay_button_visibility()
             return
         self._refresh_typing_mode_labels()
-        for idx, path in enumerate(self.selected_images):
-            name = os.path.basename(path)
+        for idx, upload_item in enumerate(self.selected_images):
+            name = self._upload_item_display_name(upload_item)
             status = self._gen_statuses[idx] if idx < len(self._gen_statuses) else "\uB300\uAE30\uC911"
             item = QListWidgetItem(f"{idx + 1}. {name} - {status}")
-            item.setData(Qt.ItemDataRole.UserRole, path)
+            item.setData(Qt.ItemDataRole.UserRole, upload_item.item_id)
             self.order_list.addItem(item)
             chat_item = QListWidgetItem()
-            chat_item.setData(Qt.ItemDataRole.UserRole, path)
-            chat_card = ChatAttachmentCard(path, removable=self._is_order_editable(), parent=self._chat_file_list)
+            chat_item.setData(Qt.ItemDataRole.UserRole, upload_item.item_id)
+            chat_card = ChatAttachmentCard(
+                upload_item,
+                removable=self._is_order_editable(),
+                parent=self._chat_file_list,
+            )
             chat_card.remove_clicked.connect(self._on_chat_attachment_remove_clicked)
             chat_item.setSizeHint(chat_card.sizeHint())
             self._chat_file_list.addItem(chat_item)
             self._chat_file_list.setItemWidget(chat_item, chat_card)
             if hasattr(self, "_chat_attachment_strip_layout"):
                 inline_card = ChatAttachmentCard(
-                    path,
+                    upload_item,
                     removable=self._is_order_editable(),
                     parent=self._chat_attachment_strip,
                     compact=True,
@@ -4740,7 +4733,8 @@ class NovaAILiteWindow(QWidget):
             self._set_typing_status("\uD0C0\uC774\uD551 \uC9C4\uD589\uC911...")
             target_filename = self._current_detected_filename()
             # Pass original image path so insert_cropped_image can crop from it
-            src_img = self.selected_images[idx] if idx < len(self.selected_images) else None
+            src_item = self.selected_images[idx] if idx < len(self.selected_images) else None
+            src_img = self._upload_item_crop_source_path(src_item)
             self._typing_worker.enqueue(idx, script, target_filename, src_img)
             return
 
@@ -5156,9 +5150,9 @@ class NovaAILiteWindow(QWidget):
         if not path:
             return False
         before_count = len(self.selected_images)
-        new_paths = list(self.selected_images)
-        new_paths.append(path)
-        self._set_selected_images(new_paths)
+        new_items = list(self.selected_images)
+        new_items.append(build_upload_item(path, source_kind="image"))
+        self._set_selected_images(new_items)
         return len(self.selected_images) > before_count
 
     def _should_restore_hwp_after_click(self, obj: object) -> bool:
@@ -5217,13 +5211,13 @@ class NovaAILiteWindow(QWidget):
         idx = self.order_list.row(item)
         if idx < 0 or idx >= len(self._generated_codes_by_index):
             self._current_code_index = -1
-            self._current_code_path = None
+            self._current_code_item_id = None
             self._set_code_view_text("")
             self._update_code_type_button_state()
             return
         self._current_code_index = idx
-        path = item.data(Qt.ItemDataRole.UserRole)
-        self._current_code_path = path if isinstance(path, str) else None
+        item_id = item.data(Qt.ItemDataRole.UserRole)
+        self._current_code_item_id = item_id if isinstance(item_id, str) else None
         code = self._generated_codes_by_index[idx] or ""
         self._set_code_view_text(code)
         self._update_code_type_button_state()
@@ -5281,43 +5275,47 @@ class NovaAILiteWindow(QWidget):
             prefix = ""
             if seq > 0:
                 prefix = "insert_enter()\n" * 4
-            src_img = self.selected_images[idx] if idx < len(self.selected_images) else None
+            src_item = self.selected_images[idx] if idx < len(self.selected_images) else None
+            src_img = self._upload_item_crop_source_path(src_item)
             self._typing_worker.enqueue(idx, f"{prefix}{code}\n", target_filename, src_img)
 
     def _on_order_rows_moved(self, *args) -> None:
         # Rebuild selected_images order based on list widget items.
         if not self.selected_images:
             return
-        new_paths: list[str] = []
+        new_item_ids: list[str] = []
         for i in range(self.order_list.count()):
             item = self.order_list.item(i)
-            path = item.data(Qt.ItemDataRole.UserRole)
-            if isinstance(path, str) and path:
-                new_paths.append(path)
-        if not new_paths or len(new_paths) != len(self.selected_images):
+            item_id = item.data(Qt.ItemDataRole.UserRole)
+            if isinstance(item_id, str) and item_id:
+                new_item_ids.append(item_id)
+        if not new_item_ids or len(new_item_ids) != len(self.selected_images):
             return
-        old_index_by_path = {p: i for i, p in enumerate(self.selected_images)}
-        self.selected_images = new_paths
+        old_index_by_id = {item.item_id: i for i, item in enumerate(self.selected_images)}
+        item_by_id = {item.item_id: item for item in self.selected_images}
+        if any(item_id not in item_by_id for item_id in new_item_ids):
+            return
+        self.selected_images = [item_by_id[item_id] for item_id in new_item_ids]
         if self._generated_codes_by_index:
             self._generated_codes_by_index = [
-                self._generated_codes_by_index[old_index_by_path[p]]
-                for p in new_paths
-                if p in old_index_by_path
+                self._generated_codes_by_index[old_index_by_id[item_id]]
+                for item_id in new_item_ids
+                if item_id in old_index_by_id
             ]
         if self._gen_statuses:
             self._gen_statuses = [
-                self._gen_statuses[old_index_by_path[p]]
-                for p in new_paths
-                if p in old_index_by_path
+                self._gen_statuses[old_index_by_id[item_id]]
+                for item_id in new_item_ids
+                if item_id in old_index_by_id
             ]
         self._render_order_list()
-        if self._current_code_path and self._current_code_path in new_paths:
-            self._current_code_index = new_paths.index(self._current_code_path)
+        if self._current_code_item_id and self._current_code_item_id in new_item_ids:
+            self._current_code_index = new_item_ids.index(self._current_code_item_id)
             code = self._generated_codes_by_index[self._current_code_index] or ""
             self._set_code_view_text(code)
         else:
             self._current_code_index = -1
-            self._current_code_path = None
+            self._current_code_item_id = None
             self._set_code_view_text("")
         self._update_code_type_button_state()
 
@@ -5350,18 +5348,17 @@ class NovaAILiteWindow(QWidget):
             self._gen_statuses.pop(idx)
         self._render_order_list()
 
-    def _on_chat_attachment_remove_clicked(self, path: str) -> None:
+    def _on_chat_attachment_remove_clicked(self, item_id: str) -> None:
         if not self._is_order_editable():
             QMessageBox.information(self, "알림", "생성 중에는 항목을 삭제할 수 없습니다.")
             return
-        try:
-            idx = self.selected_images.index(path)
-        except ValueError:
+        idx = self._find_selected_index_by_item_id(item_id)
+        if idx < 0:
             return
         self._remove_selected_file_at(idx)
 
-    def _set_selected_images(self, file_paths: list[str]) -> None:
-        next_images = [path for path in file_paths if path]
+    def _set_selected_images(self, upload_items: list[UploadItem]) -> None:
+        next_images = [item for item in upload_items if isinstance(item, UploadItem)]
         if next_images and not is_logged_in():
             QMessageBox.information(
                 self,
@@ -5380,7 +5377,7 @@ class NovaAILiteWindow(QWidget):
             self._gen_statuses = []
             self._generated_codes_by_index = []
             self._current_code_index = -1
-            self._current_code_path = None
+            self._current_code_item_id = None
             self._set_code_view_text("")
             self._update_code_type_button_state()
             self._refresh_typing_mode_labels()
@@ -5392,7 +5389,7 @@ class NovaAILiteWindow(QWidget):
         self._gen_statuses = ["\uB300\uAE30\uC911"] * len(self.selected_images)
         self._render_order_list()
         self._current_code_index = -1
-        self._current_code_path = None
+        self._current_code_item_id = None
         self._set_code_view_text("")
         self._update_code_type_button_state()
         self._update_order_list_visibility()
@@ -5400,19 +5397,41 @@ class NovaAILiteWindow(QWidget):
 
     def _add_selected_images(self, file_paths: list[str]) -> None:
         supported_exts = {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp", ".pdf"}
-        next_images: list[str] = []
+        next_images: list[UploadItem] = []
         seen: set[str] = set()
-        for path in (file_paths or []):
-            normalized = str(path or "").strip()
-            if not normalized or normalized in seen:
-                continue
-            if not os.path.isfile(normalized):
-                continue
-            if Path(normalized).suffix.lower() not in supported_exts:
-                continue
-            next_images.append(normalized)
-            seen.add(normalized)
+        warnings: list[str] = []
+        previous_status = self.typing_status_label.text().strip()
+        processing_pdf = False
+        try:
+            for path in (file_paths or []):
+                normalized = str(path or "").strip()
+                if not normalized or normalized in seen:
+                    continue
+                if not os.path.isfile(normalized):
+                    continue
+                ext = Path(normalized).suffix.lower()
+                if ext not in supported_exts:
+                    continue
+                if ext == ".pdf":
+                    if not processing_pdf:
+                        processing_pdf = True
+                        self._set_typing_status("PDF 문제 분석중...")
+                        QApplication.processEvents()
+                    summary = split_pdf_into_problem_items(normalized)
+                    next_images.extend(summary.items)
+                    if summary.warnings:
+                        warnings.append(f"{os.path.basename(normalized)}: {' / '.join(summary.warnings)}")
+                    if not summary.items:
+                        warnings.append(f"{os.path.basename(normalized)}: 검출된 문제가 없어 추가하지 않았습니다.")
+                else:
+                    next_images.append(build_upload_item(normalized, source_kind="image"))
+                seen.add(normalized)
+        finally:
+            if processing_pdf:
+                self._set_typing_status(previous_status)
         self._set_selected_images(next_images)
+        if warnings:
+            QMessageBox.information(self, "PDF 분석 결과", "\n".join(dict.fromkeys(warnings)))
 
     def _set_order_editable(self, enabled: bool) -> None:
         if enabled:
@@ -5453,12 +5472,14 @@ class NovaAILiteWindow(QWidget):
         return max(0, limit - usage)
 
     def _limit_images_by_remaining_quota(
-        self, image_paths: list[str], show_message: bool = True
-    ) -> list[str]:
-        if not image_paths:
-            return image_paths
-        remaining = self._get_remaining_send_quota()
-        if remaining <= 0:
+        self, image_items: list[UploadItem], show_message: bool = True
+    ) -> list[UploadItem]:
+        if not image_items:
+            return image_items
+        remaining_credits = self._get_remaining_send_quota()
+        base_cost = self._typing_generation_base_cost(getattr(self, "_typing_generation_mode", "problem"))
+        remaining_slots = remaining_credits // max(1, base_cost)
+        if remaining_slots <= 0:
             if show_message:
                 QMessageBox.warning(
                     self,
@@ -5466,18 +5487,19 @@ class NovaAILiteWindow(QWidget):
                     "\uB0A8\uC740 \uC0AC\uC6A9 \uD69F\uC218\uAC00 \uC5C6\uC5B4 \uC774\uBBF8\uC9C0\uB97C \uCD94\uAC00\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.",
                 )
             return []
-        if len(image_paths) <= remaining:
-            return image_paths
+        if len(image_items) <= remaining_slots:
+            return image_items
 
-        exceeded = len(image_paths) - remaining
+        exceeded = len(image_items) - remaining_slots
         if show_message:
             QMessageBox.information(
                 self,
                 "\uC54C\uB9BC",
-                f"\uD604\uC7AC \uB0A8\uC740 \uD69F\uC218\uB294 {remaining}\uD68C\uC785\uB2C8\uB2E4.\n"
-                f"\uC120\uD0DD\uD55C {len(image_paths)}\uAC1C \uC911 {exceeded}\uAC1C\uB9CC \uC81C\uC678\uD558\uACE0 \uCD94\uAC00\uB429\uB2C8\uB2E4.",
+                f"\uD604\uC7AC \uB0A8\uC740 \uD06C\uB808\uB527\uC740 {remaining_credits}\uC785\uB2C8\uB2E4.\n"
+                f"\uD604\uC7AC \uBAA8\uB4DC\uB294 \uBB38\uC81C\uB2F9 {base_cost}\uD06C\uB808\uB527\uC774 \uD544\uC694\uD569\uB2C8\uB2E4.\n"
+                f"\uC120\uD0DD\uD55C {len(image_items)}\uAC1C \uC911 {exceeded}\uAC1C\uB9CC \uC81C\uC678\uD558\uACE0 \uCD94\uAC00\uB429\uB2C8\uB2E4.",
             )
-        return image_paths[:remaining]
+        return image_items[:remaining_slots]
 
     def _update_send_button_state(self) -> None:
         has_images = bool(self.selected_images)
@@ -5485,11 +5507,13 @@ class NovaAILiteWindow(QWidget):
         if not has_images:
             self.btn_ai_type.setEnabled(False)
             return
-        remaining = self._get_remaining_send_quota()
-        if remaining <= 0:
+        remaining_credits = self._get_remaining_send_quota()
+        base_cost = self._typing_generation_base_cost(getattr(self, "_typing_generation_mode", "problem"))
+        remaining_slots = remaining_credits // max(1, base_cost)
+        if remaining_slots <= 0:
             self.btn_ai_type.setEnabled(False)
             return
-        if len(self.selected_images) > remaining:
+        if len(self.selected_images) > remaining_slots:
             self.btn_ai_type.setEnabled(False)
             return
         if status and status != "\uD0C0\uC774\uD551 \uC644\uB8CC":
@@ -5549,7 +5573,8 @@ class NovaAILiteWindow(QWidget):
         self._set_typing_status("\uC120\uD0DD \uCF54\uB4DC \uD0C0\uC774\uD551\uC911...")
         self._ensure_typing_worker()
         target_filename = self._current_detected_filename()
-        src_img = self.selected_images[idx] if idx < len(self.selected_images) else None
+        src_item = self.selected_images[idx] if idx < len(self.selected_images) else None
+        src_img = self._upload_item_crop_source_path(src_item)
         self._typing_worker.enqueue(idx, f"{script}\n", target_filename, src_img)
 
     def _current_detected_filename(self) -> str | None:
@@ -5598,7 +5623,7 @@ class NovaAILiteWindow(QWidget):
     def _on_order_view_clicked(self, idx: int) -> None:
         if idx < 0 or idx >= len(self.selected_images):
             return
-        title = f"{idx + 1}. {os.path.basename(self.selected_images[idx])}"
+        title = f"{idx + 1}. {self._upload_item_display_name(self.selected_images[idx])}"
         code = ""
         if idx < len(self._generated_codes_by_index):
             code = self._generated_codes_by_index[idx] or ""
@@ -5647,9 +5672,11 @@ def _normalize_runtime_error_message(message: str) -> str:
             "Nova AI와 HWP를 같은 권한으로 실행해 주세요."
         )
 
+    normalized_ai = normalize_ai_error_message(text)
+    if normalized_ai != text:
+        return normalized_ai
+
     lower = text.lower()
-    if "gemini_api_key is missing" in lower:
-        return "GEMINI_API_KEY가 설정되어 있지 않습니다. .env 파일을 확인해 주세요."
     if "insert_cropped_image" in lower and ("source image path" in lower or "원본 이미지 경로" in text):
         return "원본 이미지 경로를 찾지 못해 크롭 이미지를 삽입할 수 없습니다."
     if "insert_cropped_image" in lower and ("invalid" in lower or "좌표" in text):
@@ -5962,15 +5989,20 @@ class DropPlaceholder(QWidget):
 class ChatAttachmentCard(QFrame):
     remove_clicked = Signal(str)
 
-    def __init__(self, path: str, removable: bool = True, parent=None, compact: bool = False) -> None:
+    def __init__(
+        self,
+        upload_item: UploadItem,
+        removable: bool = True,
+        parent=None,
+        compact: bool = False,
+    ) -> None:
         super().__init__(parent)
-        self._path = path
-        ext = Path(path).suffix.lower()
-        is_pdf = ext == ".pdf"
-        badge_text = "PDF" if is_pdf else "IMG"
+        self._item_id = upload_item.item_id
+        is_pdf = upload_item.is_pdf
+        badge_text = upload_item.badge_text
         badge_bg = "#fee2e2" if is_pdf else "#dbeafe"
         badge_fg = "#dc2626" if is_pdf else "#2563eb"
-        file_type = "pdf 파일" if is_pdf else "이미지 파일"
+        file_type = upload_item.file_type_label
         radius = 12 if compact else 14
         badge_size = 34 if compact else 44
         badge_radius = 10 if compact else 12
@@ -6002,7 +6034,7 @@ class ChatAttachmentCard(QFrame):
         text_col = QVBoxLayout()
         text_col.setContentsMargins(0, 0, 0, 0)
         text_col.setSpacing(2 if compact else 3)
-        name_label = QLabel(os.path.basename(path))
+        name_label = QLabel(upload_item.order_title)
         name_label.setWordWrap(not compact)
         name_label.setStyleSheet(
             f"color: #111827; font-size: {name_font_size}px; font-weight: 700; background: transparent; border: none;"
@@ -6027,7 +6059,7 @@ class ChatAttachmentCard(QFrame):
             "QPushButton:hover { background-color: #f3f4f6; }"
             "QPushButton:disabled { background-color: transparent; }"
         )
-        remove_btn.clicked.connect(lambda: self.remove_clicked.emit(self._path))
+        remove_btn.clicked.connect(lambda: self.remove_clicked.emit(self._item_id))
         layout.addWidget(remove_btn, 0, Qt.AlignmentFlag.AlignTop)
 
 
@@ -6227,40 +6259,92 @@ def _clear_comtypes_cache() -> None:
 
 
 def _load_runtime_env_files() -> None:
-    """Load .env/.env.local files for packaged runtime settings."""
-    root_dir = Path(__file__).resolve().parent
-    runtime_root = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else root_dir
-    candidates: list[tuple[Path, bool]] = [
-        (runtime_root / ".env", False),
-        (root_dir / ".env", False),
-        (Path.cwd() / ".env", False),
-        (runtime_root / ".env.local", True),
-        (root_dir / ".env.local", True),
-        (Path.cwd() / ".env.local", True),
-        (runtime_root / ".env.example", False),
-        (root_dir / ".env.example", False),
+    """Load packaged runtime settings from shared runtime env files."""
+    load_runtime_env(__file__)
+
+
+def _format_env_group(group: tuple[str, ...]) -> str:
+    return " 또는 ".join(group)
+
+
+def _hostname_from_url(raw_url: str) -> str:
+    text = str(raw_url or "").strip()
+    if not text:
+        return ""
+    if "://" not in text:
+        text = f"https://{text}"
+    try:
+        return str(urlparse(text).hostname or "").strip().lower()
+    except Exception:
+        return ""
+
+
+def _collect_startup_preflight_issues() -> tuple[list[str], list[str]]:
+    _load_runtime_env_files()
+    blocking: list[str] = []
+    warnings: list[str] = []
+
+    required_keys = [
+        ("GEMINI_API_KEY",),
+        ("NEXT_PUBLIC_FIREBASE_API_KEY", "FIREBASE_API_KEY"),
+        ("NEXT_PUBLIC_FIREBASE_PROJECT_ID", "FIREBASE_PROJECT_ID"),
     ]
+    missing_groups = missing_env_keys(required_keys)
+    if missing_groups:
+        missing_text = ", ".join(_format_env_group(group) for group in missing_groups)
+        blocking.append(
+            "배포용 설정 파일에서 필수 값이 누락되었습니다.\n"
+            f"누락 항목: {missing_text}\n"
+            "운영자에게 최신 설치 파일을 다시 받아 설치해 주세요."
+        )
+        return blocking, warnings
 
-    def _current_value(key: str) -> str:
-        return str(os.environ.get(key) or "").strip()
+    checks = [
+        ("로그인 서버", "identitytoolkit.googleapis.com"),
+        ("AI 서버", "generativelanguage.googleapis.com"),
+    ]
+    web_base_url = first_env_value(
+        "NOVA_USAGE_API_BASE_URL",
+        "NOVA_WEB_BASE_URL",
+        "NOVA_APP_BASE_URL",
+        "NEXT_PUBLIC_APP_URL",
+    ) or "https://www.nova-ai.work"
+    web_host = _hostname_from_url(web_base_url)
+    if web_host:
+        checks.append(("Nova 웹 서버", web_host))
 
-    for path, override in candidates:
-        if not path.exists():
+    for label, host in checks:
+        ok, detail = can_connect(host, timeout_sec=2.0)
+        if ok:
             continue
-        try:
-            for line in path.read_text(encoding="utf-8").splitlines():
-                stripped = line.strip()
-                if not stripped or stripped.startswith("#") or "=" not in stripped:
-                    continue
-                key, value = stripped.split("=", 1)
-                key = key.strip().lstrip("\ufeff")
-                value = value.strip().strip('"').strip("'")
-                if not key:
-                    continue
-                if override or not _current_value(key):
-                    os.environ[key] = value
-        except Exception:
-            continue
+        hint = (
+            f"{label}({host})에 연결하지 못했습니다."
+            if label != "Nova 웹 서버"
+            else f"{label}({host})에 연결하지 못했습니다. 사용량 동기화나 세션 확인이 지연될 수 있습니다."
+        )
+        if detail:
+            hint = f"{hint}\n세부 오류: {detail}"
+        warnings.append(hint)
+
+    return blocking, warnings
+
+
+def _show_startup_preflight(parent: QWidget) -> bool:
+    enabled = str(os.getenv("NOVA_STARTUP_PREFLIGHT", "1")).strip().lower()
+    if enabled in {"0", "false", "off", "no"}:
+        return True
+
+    blocking, warnings = _collect_startup_preflight_issues()
+    if blocking:
+        QMessageBox.critical(parent, "배포 설정 오류", "\n\n".join(blocking))
+        return False
+    if warnings:
+        QMessageBox.warning(
+            parent,
+            "네트워크 점검 안내",
+            "\n\n".join(warnings) + "\n\n계속 실행은 가능하지만 로그인 또는 AI 기능이 실패할 수 있습니다.",
+        )
+    return True
 
 
 def _version_to_tuple(version_text: str) -> tuple[int, ...]:
@@ -6427,6 +6511,7 @@ def main() -> None:
     window.setMinimumSize(360, 480)
     window.resize(460, 640)
     window.show()
+    QTimer.singleShot(200, lambda: None if _show_startup_preflight(window) else app.quit())
     QTimer.singleShot(800, lambda: _maybe_show_update_notice(window))
     sys.exit(app.exec())
 
