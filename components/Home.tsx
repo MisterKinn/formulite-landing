@@ -338,53 +338,58 @@ export default function Home() {
                     </div>
                 </div>
             )}
-            <div className="container">
-                <div className="hero-stack">
-                    <h1 className="title hero">
-                        복잡한 한글 수식 입력
-                        <br />
-                        이제는{" "}
-                        <span className="text-gradient">{typedText}</span>
-                        <span className="typing-cursor"></span>
-                        에게 맡기세요
-                    </h1>
-                    <p className="subtitle hero-subtitle-emphasis">
-                        더 이상 내신 기출문제집 타이핑에 시간쓰지 마세요.
-                        <br />
-                        Nova AI가 압도적인 타이핑을 보여드리겠습니다.
-                    </p>
+            <div className="hero-intro">
+                <div className="hero-stars" aria-hidden="true">
+                    <div className="hero-star hero-star--1" />
+                    <div className="hero-star hero-star--2" />
+                    <div className="hero-star hero-star--3" />
+                    <div className="hero-star hero-star--4" />
+                    <div className="hero-star hero-star--5" />
+                    <div className="hero-star hero-star--6" />
+                    <div className="hero-star hero-star--7" />
+                    <div className="hero-star hero-star--8" />
+                    <div className="hero-star hero-star--9" />
+                    <div className="hero-star hero-star--10" />
+                    <div className="hero-star hero-star--11" />
+                    <div className="hero-star hero-star--12" />
+                </div>
+                <div className="container">
+                    <div className="hero-stack">
+                        <h1 className="title hero">
+                            복잡한 한글 수식 입력
+                            <br />
+                            이제는{" "}
+                            <span className="text-gradient">{typedText}</span>
+                            <span className="typing-cursor"></span>
+                            에게 맡기세요
+                        </h1>
+                        <p className="subtitle hero-subtitle-emphasis">
+                            더 이상 내신 기출문제집 타이핑에 시간쓰지 마세요.
+                            <br />
+                            Nova AI가 압도적인 타이핑을 보여드리겠습니다.
+                        </p>
 
-                    <div className="hero-actions">
-                        <a
-                            href="https://storage.googleapis.com/physics2/NovaAI_Setup_2.0.0.exe"
-                            download
-                            style={{ textDecoration: "none" }}
-                        >
-                            <button className="primary-button">
-                                <svg
-                                    width="18"
-                                    height="18"
-                                    viewBox="0 0 24 24"
-                                    fill="currentColor"
-                                >
-                                    <path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.9-1.801" />
-                                </svg>
-                                Windows용 다운로드
-                            </button>
-                        </a>
+                        <div className="hero-actions">
+                            <a
+                                href="https://storage.googleapis.com/physics2/NovaAI_Setup_2.0.0.exe"
+                                download
+                                style={{ textDecoration: "none" }}
+                            >
+                                <button className="primary-button hero-download-button">
+                                    <svg
+                                        width="18"
+                                        height="18"
+                                        viewBox="0 0 24 24"
+                                        fill="currentColor"
+                                    >
+                                        <path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.9-1.801" />
+                                    </svg>
+                                    Windows용 다운로드
+                                </button>
+                            </a>
+                        </div>
                     </div>
                 </div>
-            </div>
-
-            <div className="hero-image-wrap">
-                <video
-                    src="/novaai.mp4"
-                    className="hero-main-image"
-                    autoPlay
-                    loop
-                    muted
-                    playsInline
-                />
             </div>
 
             {/* Process showcase - 4 step images */}

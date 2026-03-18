@@ -873,9 +873,91 @@ nextjs-portal {
 
 .hero-stack {
     text-align: center;
-    margin-bottom: 3rem;
+    margin-bottom: 0;
     position: relative;
     z-index: 1;
+}
+
+.hero-intro {
+    min-height: calc(100vh - var(--navbar-height) - var(--home-event-strip-height));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 3rem 0 5.5rem;
+    position: relative;
+    overflow: hidden;
+}
+
+/* ── Falling stars ── */
+.hero-stars {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+}
+
+.hero-intro > .container {
+    position: relative;
+    z-index: 1;
+}
+
+.hero-star {
+    position: absolute;
+    width: 2px;
+    height: 2px;
+    border-radius: 50%;
+    background: #fff;
+    opacity: 0;
+    animation: starfall linear infinite;
+    box-shadow: 0 0 4px 1px rgba(255, 255, 255, 0.3);
+}
+
+.hero-star::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 1px;
+    height: 18px;
+    background: linear-gradient(to bottom, rgba(255,255,255,0.5), transparent);
+}
+
+@keyframes starfall {
+    0% {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    10% {
+        opacity: 1;
+    }
+    80% {
+        opacity: 0.6;
+    }
+    100% {
+        opacity: 0;
+        transform: translateY(calc(100vh + 20px));
+    }
+}
+
+.hero-star--1  { left:  5%; animation-duration: 6s;  animation-delay: 0s;    width: 2px; height: 2px; }
+.hero-star--2  { left: 15%; animation-duration: 8s;  animation-delay: 1.2s;  width: 1.5px; height: 1.5px; }
+.hero-star--3  { left: 28%; animation-duration: 7s;  animation-delay: 0.5s;  width: 2.5px; height: 2.5px; }
+.hero-star--4  { left: 38%; animation-duration: 9s;  animation-delay: 3s;    width: 1.5px; height: 1.5px; }
+.hero-star--5  { left: 48%; animation-duration: 6.5s; animation-delay: 2s;   width: 2px; height: 2px; }
+.hero-star--6  { left: 58%; animation-duration: 7.5s; animation-delay: 4s;   width: 2px; height: 2px; }
+.hero-star--7  { left: 68%; animation-duration: 8.5s; animation-delay: 1s;   width: 1.5px; height: 1.5px; }
+.hero-star--8  { left: 78%; animation-duration: 6s;  animation-delay: 3.5s;  width: 2.5px; height: 2.5px; }
+.hero-star--9  { left: 88%; animation-duration: 7s;  animation-delay: 0.8s;  width: 2px; height: 2px; }
+.hero-star--10 { left: 95%; animation-duration: 9.5s; animation-delay: 2.5s; width: 1.5px; height: 1.5px; }
+.hero-star--11 { left: 22%; animation-duration: 10s;  animation-delay: 5s;   width: 2px; height: 2px; }
+.hero-star--12 { left: 72%; animation-duration: 8s;  animation-delay: 6s;    width: 2px; height: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+    .hero-star {
+        animation: none;
+        display: none;
+    }
 }
 
 .hero-actions {
@@ -883,6 +965,7 @@ nextjs-portal {
     align-items: center;
     justify-content: center;
     gap: 1.5rem;
+    margin-bottom: 2rem;
 }
 
 .hero-text-link {
@@ -895,35 +978,6 @@ nextjs-portal {
 
 .hero-text-link:hover {
     color: #999;
-}
-
-/* Hero main image */
-.hero-image-wrap {
-    width: 100%;
-    padding: 0 var(--padding-x);
-    margin-top: 8rem;
-    margin-bottom: 3.5rem;
-}
-
-.hero-main-image {
-    width: 100%;
-    height: auto;
-    border-radius: 12px;
-    display: block;
-}
-
-@media (max-width: 1024px) {
-    .hero-image-wrap {
-        padding: 0 var(--padding-x-tablet);
-        margin-bottom: 3rem;
-    }
-}
-
-@media (max-width: 768px) {
-    .hero-image-wrap {
-        padding: 0 var(--padding-x-mobile);
-        margin-bottom: 2.25rem;
-    }
 }
 
 /* Typing cursor animation */
@@ -1088,6 +1142,21 @@ nextjs-portal {
     font-size: 1rem;
     cursor: pointer;
     text-decoration: none;
+}
+
+@media (min-width: 1024px) {
+    .hero-download-button {
+        padding: 1.05rem 2.7rem;
+        font-size: 1.1rem;
+        font-weight: 700;
+        border-radius: 16px;
+        gap: 0.7rem;
+    }
+
+    .hero-download-button svg {
+        width: 20px;
+        height: 20px;
+    }
 }
 
 .cta-buttons {
@@ -2581,14 +2650,14 @@ nextjs-portal {
    📸 PROCESS SHOWCASE (4-step images)
    ======================================== */
 .process-showcase {
-    padding: 5.5rem var(--padding-x);
+    padding: 4rem var(--padding-x);
     background: #1d1d1f;
     text-align: center;
 }
 
 @media (max-width: 1024px) {
     .process-showcase {
-        padding: 4.5rem var(--padding-x-tablet);
+        padding: 3.5rem var(--padding-x-tablet);
     }
 
     .process-showcase-carousel {
@@ -2598,7 +2667,7 @@ nextjs-portal {
 
 @media (max-width: 768px) {
     .process-showcase {
-        padding: 3.5rem var(--padding-x-mobile) 1rem;
+        padding: 2.5rem var(--padding-x-mobile) 1rem;
     }
 }
 
