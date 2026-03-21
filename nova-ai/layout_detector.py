@@ -16,7 +16,7 @@ def _debug(msg: str) -> None:
             pass
 
 
-ContainerTemplate = Literal["header.hwp"]
+ContainerTemplate = Literal["header.hwp", "box.hwp"]
 
 
 @dataclass(frozen=True)
@@ -39,7 +39,7 @@ class ContainerDetection:
 
 def detect_container(image_path: str) -> ContainerDetection:
     """
-    Detect a <보기>-like container and choose the correct template.
+    Detect a printed container and choose the correct template.
 
     Heuristics:
     - Detect the best rectangle candidate (container border) using edge + contour geometry.
@@ -47,6 +47,7 @@ def detect_container(image_path: str) -> ContainerDetection:
     - Detect '<보기>' text using pytesseract word boxes; tolerate spaced '< 보 기 >'.
     - Decision:
         - If explicit '<보기>' text is found AND it belongs to the detected box: header.hwp
+        - Else if a strong bordered rectangular box is found: box.hwp
         - Else: template=None
     """
     _debug(f"Detecting container for: {image_path}")
@@ -61,6 +62,8 @@ def detect_container(image_path: str) -> ContainerDetection:
     explicit_view_box = bool(has_view_text and rect is not None and _view_text_matches_rect(view_bbox, rect))
     if explicit_view_box:
         template = "header.hwp"
+    elif rect is not None and float(border_score) >= 0.12:
+        template = "box.hwp"
 
     _debug(
         "Template decision: "
@@ -257,7 +260,8 @@ def _detect_best_rectangle(image_path: str) -> tuple[Optional[Tuple[int, int, in
         if ww < 40 or hh < 20:
             continue
         aspect = ww / max(1.0, float(hh))
-        if aspect < 1.1 or aspect > 30:
+        # Accept both wide view-boxes and tall reading-passage boxes.
+        if aspect < 0.45 or aspect > 30:
             continue
         # Exclude near full-page frames and very near borders (likely page edge)
         margin = int(min(w, h) * 0.02)
@@ -365,6 +369,14 @@ def crop_inside_rect(image_path: str, rect: Tuple[int, int, int, int], *, inset:
     y1 = min(img.height, y + h - inset)
     if x1 <= x0 or y1 <= y0:
         return None
+    refined = refine_content_rect(
+        image_path,
+        (x0, y0, x1 - x0, y1 - y0),
+        min_padding=max(4, inset),
+    )
+    if refined is not None:
+        rx, ry, rw, rh = refined
+        return img.crop((rx, ry, rx + rw, ry + rh))
     return img.crop((x0, y0, x1, y1))
 
 
@@ -388,4 +400,283 @@ def mask_rect_on_image(image_path: str, rect: Tuple[int, int, int, int], *, pad:
     draw = ImageDraw.Draw(img)
     draw.rectangle([x0, y0, x1, y1], fill=(255, 255, 255))
     return img
+
+
+def _union_bbox(
+    a: Optional[Tuple[int, int, int, int]],
+    b: Optional[Tuple[int, int, int, int]],
+) -> Optional[Tuple[int, int, int, int]]:
+    if a is None:
+        return b
+    if b is None:
+        return a
+    ax, ay, aw, ah = a
+    bx, by, bw, bh = b
+    left = min(ax, bx)
+    top = min(ay, by)
+    right = max(ax + aw, bx + bw)
+    bottom = max(ay + ah, by + bh)
+    return (left, top, max(1, right - left), max(1, bottom - top))
+
+
+def _mask_bbox(mask) -> Optional[Tuple[int, int, int, int]]:
+    try:
+        import cv2  # type: ignore[import-not-found]
+        import numpy as np  # type: ignore[import-not-found]
+    except Exception:
+        return None
+    if mask is None or getattr(mask, "size", 0) == 0:
+        return None
+    points = cv2.findNonZero(mask)
+    if points is None:
+        return None
+    x, y, w, h = cv2.boundingRect(points)
+    if w <= 0 or h <= 0:
+        return None
+    return (int(x), int(y), int(w), int(h))
+
+
+def _trim_dense_edge_lines(mask, *, max_trim_ratio: float = 0.12):
+    try:
+        import numpy as np  # type: ignore[import-not-found]
+    except Exception:
+        return mask
+    if mask is None or getattr(mask, "size", 0) == 0:
+        return mask
+    trimmed = mask.copy()
+    h, w = trimmed.shape[:2]
+    if h < 8 or w < 8:
+        return trimmed
+
+    top = 0
+    bottom = h
+    left = 0
+    right = w
+    max_trim_y = max(1, int(h * max_trim_ratio))
+    max_trim_x = max(1, int(w * max_trim_ratio))
+    band = 2
+    density_threshold = 0.22
+
+    while top < max_trim_y:
+        sample = trimmed[top : min(h, top + band), left:right]
+        if sample.size == 0:
+            break
+        density = float(np.count_nonzero(sample)) / float(sample.size)
+        if density < density_threshold:
+            break
+        top += 1
+
+    while (h - bottom) < max_trim_y and bottom > top:
+        sample = trimmed[max(top, bottom - band) : bottom, left:right]
+        if sample.size == 0:
+            break
+        density = float(np.count_nonzero(sample)) / float(sample.size)
+        if density < density_threshold:
+            break
+        bottom -= 1
+
+    while left < max_trim_x:
+        sample = trimmed[top:bottom, left : min(w, left + band)]
+        if sample.size == 0:
+            break
+        density = float(np.count_nonzero(sample)) / float(sample.size)
+        if density < density_threshold:
+            break
+        left += 1
+
+    while (w - right) < max_trim_x and right > left:
+        sample = trimmed[top:bottom, max(left, right - band) : right]
+        if sample.size == 0:
+            break
+        density = float(np.count_nonzero(sample)) / float(sample.size)
+        if density < density_threshold:
+            break
+        right -= 1
+
+    if top > 0:
+        trimmed[:top, :] = 0
+    if bottom < h:
+        trimmed[bottom:, :] = 0
+    if left > 0:
+        trimmed[:, :left] = 0
+    if right < w:
+        trimmed[:, right:] = 0
+    return trimmed
+
+
+def _filter_small_components(mask):
+    try:
+        import cv2  # type: ignore[import-not-found]
+        import numpy as np  # type: ignore[import-not-found]
+    except Exception:
+        return mask
+    if mask is None or getattr(mask, "size", 0) == 0:
+        return mask
+    h, w = mask.shape[:2]
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
+    filtered = np.zeros_like(mask)
+    min_area = max(10, int((h * w) * 0.00015))
+    min_span_w = max(10, int(w * 0.08))
+    min_span_h = max(10, int(h * 0.08))
+    for label in range(1, num_labels):
+        x, y, comp_w, comp_h, area = stats[label]
+        if area >= min_area or comp_w >= min_span_w or comp_h >= min_span_h:
+            filtered[labels == label] = 255
+    return filtered
+
+
+def _detect_ocr_bbox_in_rect(
+    image_path: str,
+    rect: Tuple[int, int, int, int],
+) -> Optional[Tuple[int, int, int, int]]:
+    try:
+        import os
+        import pytesseract  # type: ignore[import-not-found]
+    except Exception:
+        return None
+
+    x, y, w, h = rect
+    if w <= 0 or h <= 0:
+        return None
+
+    try:
+        tesseract_cmd = os.getenv("TESSERACT_CMD")
+        if tesseract_cmd:
+            pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
+    except Exception:
+        pass
+
+    try:
+        img = load_pil_image(image_path, mode="RGB").crop((x, y, x + w, y + h))
+    except Exception:
+        return None
+
+    try:
+        data = pytesseract.image_to_data(
+            img,
+            lang="kor+eng",
+            output_type=pytesseract.Output.DICT,
+        )
+    except Exception:
+        return None
+
+    xs: list[int] = []
+    ys: list[int] = []
+    xe: list[int] = []
+    ye: list[int] = []
+    count = len(data.get("text", []))
+    for i in range(count):
+        text = str(data["text"][i] or "").strip()
+        if not text:
+            continue
+        try:
+            conf = float(data.get("conf", ["-1"] * count)[i] or -1)
+        except Exception:
+            conf = -1
+        if conf < 20 and len(text) < 2:
+            continue
+        left = int(data["left"][i])
+        top = int(data["top"][i])
+        width = int(data["width"][i])
+        height = int(data["height"][i])
+        if width <= 0 or height <= 0:
+            continue
+        xs.append(left)
+        ys.append(top)
+        xe.append(left + width)
+        ye.append(top + height)
+    if not xs:
+        return None
+    return (min(xs), min(ys), max(xe) - min(xs), max(ye) - min(ys))
+
+
+def refine_content_rect(
+    image_path: str,
+    rect: Tuple[int, int, int, int],
+    *,
+    min_padding: int = 6,
+) -> Optional[Tuple[int, int, int, int]]:
+    """
+    Tighten a proposed crop rectangle to the actual visible content.
+
+    Strategy:
+    - start from an existing coarse rectangle
+    - build an ink/edge mask from threshold + adaptive threshold + edges
+    - remove frame-like edge lines near the crop boundary
+    - union the visual mask with OCR word boxes when available
+    - add a small padding back so the result still looks human-trimmed
+    """
+    try:
+        import cv2  # type: ignore[import-not-found]
+        import numpy as np  # type: ignore[import-not-found]
+    except Exception:
+        return None
+
+    img = load_cv2_image(image_path)
+    if img is None:
+        return None
+
+    img_h, img_w = img.shape[:2]
+    x, y, w, h = rect
+    x = max(0, min(int(x), img_w - 1))
+    y = max(0, min(int(y), img_h - 1))
+    w = max(1, min(int(w), img_w - x))
+    h = max(1, min(int(h), img_h - y))
+    if w < 4 or h < 4:
+        return (x, y, w, h)
+
+    roi = img[y : y + h, x : x + w]
+    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+    blurred = cv2.GaussianBlur(gray, (3, 3), 0)
+
+    try:
+        _, otsu = cv2.threshold(
+            blurred,
+            0,
+            255,
+            cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU,
+        )
+    except Exception:
+        otsu = cv2.threshold(blurred, 200, 255, cv2.THRESH_BINARY_INV)[1]
+
+    adaptive = cv2.adaptiveThreshold(
+        blurred,
+        255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY_INV,
+        31,
+        11,
+    )
+    edges = cv2.Canny(blurred, 50, 150)
+
+    mask = cv2.bitwise_or(otsu, adaptive)
+    mask = cv2.bitwise_or(mask, edges)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8), iterations=1)
+    mask = _trim_dense_edge_lines(mask)
+    mask = _filter_small_components(mask)
+
+    visual_bbox = _mask_bbox(mask)
+    ocr_bbox = _detect_ocr_bbox_in_rect(image_path, (x, y, w, h))
+    bbox = _union_bbox(visual_bbox, ocr_bbox)
+    if bbox is None:
+        return (x, y, w, h)
+
+    bx, by, bw, bh = bbox
+    if bw <= 0 or bh <= 0:
+        return (x, y, w, h)
+
+    area_ratio = float(bw * bh) / float(max(1, w * h))
+    if area_ratio < 0.01:
+        return (x, y, w, h)
+
+    pad_x = max(int(min_padding), int(bw * 0.03))
+    pad_y = max(int(min_padding), int(bh * 0.04))
+
+    rx0 = max(0, x + bx - pad_x)
+    ry0 = max(0, y + by - pad_y)
+    rx1 = min(img_w, x + bx + bw + pad_x)
+    ry1 = min(img_h, y + by + bh + pad_y)
+    if rx1 <= rx0 or ry1 <= ry0:
+        return (x, y, w, h)
+    return (rx0, ry0, rx1 - rx0, ry1 - ry0)
 

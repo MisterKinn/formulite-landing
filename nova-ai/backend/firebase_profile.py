@@ -97,6 +97,7 @@ _admin_token_cache: Dict[str, Any] = {
 # Normalize web `plan` and legacy desktop `tier` into one canonical value.
 _PLAN_ALIASES = {
     "free": "free",
+    "go": "go",
     "standard": "plus",
     "plus": "plus",
     "pro": "pro",
@@ -116,6 +117,8 @@ def _normalize_plan_tier(value: Any, fallback: str = "free") -> str:
 PLAN_LIMITS = {
     "free": 5,
     "Free": 5,
+    "go": 110,
+    "Go": 110,
     "standard": 330,
     "Standard": 330,
     "plus": 330,

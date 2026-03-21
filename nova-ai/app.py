@@ -26,6 +26,7 @@ Use ONLY the following functions:
 - insert_equation("hwp_equation_syntax")
 - insert_latex_equation("latex_math")
 - insert_template("header.hwp")
+- insert_template("box.hwp")
 - focus_placeholder("@@@|###")
 
 Return ONLY Python code. No explanations.

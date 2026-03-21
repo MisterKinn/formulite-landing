@@ -20,7 +20,7 @@ General:
   - `insert_text('a')`
 
 Reading / literature:
-- Long reading passages should be typed directly without using `box_white.hwp`.
+- Long reading passages should be typed directly unless they are visibly enclosed in a printed rectangle; boxed passages should use `box.hwp`.
 - Poetry: every line break matters; preserve each poetic line with `insert_enter()`.
 - Stanza gaps use an empty line if visible.
 - `(가)`, `(나)` labels should be bold.
@@ -362,7 +362,7 @@ COMMON MATH PATTERNS:
 SECTION 5: ENGLISH
 
 - English passage text is plain text, not equations.
-- Most English passages should be typed directly without using `box_white.hwp`.
+- Most English passages should be typed directly unless they are visibly enclosed in a printed rectangle; boxed passages should use `box.hwp`.
 - Korean question line and choices stay outside the passage box.
 - Preserve underlined English spans with underline toggles.
 - Preserve long blanks with visible underscore text.
@@ -372,7 +372,7 @@ SECTION 5: ENGLISH
 SECTION 6: KOREAN HISTORY
 
 - Dialogue, source quotes, and historical materials are common.
-- Historical source text should be typed directly without using `box.hwp`.
+- Historical source text should be typed directly unless the source itself is visibly enclosed in a printed rectangle; boxed source text should use `box.hwp`.
 - Keep `(가)`, `(나)`, era names, year labels, and Chinese characters exactly.
 - Underlined historical terms should preserve underline only on the emphasized span.
 - Arrows/timelines should stay visible as text if they are text-level elements.

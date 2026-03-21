@@ -140,6 +140,7 @@ Crop rules:
 4) If there are multiple figures, crop them separately.
 5) Coordinates must be decimal ratios between `0.0` and `1.0`.
 6) Make the crop as tight as possible around the actual figure/diagram, while still keeping essential labels/arrows.
+6.5) When uncertain, prefer a slightly generous box that fully contains the figure; the app will auto-tighten extra whitespace afterward.
 7) Do NOT include nearby stem text, question text, choice lines, score labels, or large blank margins unless they truly belong to the figure.
 8) If the figure sits inside a larger box/container, crop the figure itself, not the whole surrounding box.
 

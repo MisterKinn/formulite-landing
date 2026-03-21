@@ -29,9 +29,11 @@ CALLBACK_PATH = "/auth-callback"
 
 _PLAN_ALIASES = {
     "free": "free",
+    "go": "go",
     "standard": "plus",
     "plus": "plus",
     "pro": "pro",
+    "ultra": "pro",
     "test": "test",
 }
 

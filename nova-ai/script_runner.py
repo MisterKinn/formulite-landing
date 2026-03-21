@@ -1478,31 +1478,81 @@ class ScriptRunner:
 
     def _drop_disabled_box_templates(self, lines: List[str]) -> List[str]:
         """
-        Drop disabled box template insertions so legacy generated scripts do not
-        load `box.hwp` or `box_white.hwp` even if they still appear.
+        Rewrite legacy `box_white.hwp` to `box.hwp`.
         """
         out: List[str] = []
-        suppress_following_placeholders = False
-        disabled_names = ("box.hwp", "box_white.hwp")
-        placeholder_lines = {
-            "focus_placeholder('@@@')",
-            'focus_placeholder("@@@")',
-            "focus_placeholder('###')",
-            'focus_placeholder("###")',
-            "focus_placeholder('&&&')",
-            'focus_placeholder("&&&")',
-        }
         for line in lines:
             stripped = line.strip()
             lowered = stripped.lower()
-            if stripped.startswith("insert_template(") and any(name in lowered for name in disabled_names):
-                suppress_following_placeholders = True
+            if stripped.startswith("insert_template(") and "box_white.hwp" in lowered:
+                out.append(re.sub(r"box_white\.hwp", "box.hwp", line, flags=re.IGNORECASE))
                 continue
-            if suppress_following_placeholders:
-                if not stripped or stripped in placeholder_lines:
-                    continue
-                suppress_following_placeholders = False
             out.append(line)
+        return out
+
+    def _rewrite_box_template_flow(self, lines: List[str]) -> List[str]:
+        """
+        Normalize `box.hwp` to the simple placeholder flow:
+        - insert_template('box.hwp')
+        - focus_placeholder('###')
+        - ... type boxed content ...
+        - exit_box()
+        """
+        out: List[str] = []
+        box_template_re = re.compile(
+            r"^\s*insert_template\(\s*(['\"])(?:box|box_white)\.hwp\1\s*\)\s*$",
+            re.IGNORECASE,
+        )
+        placeholder_re = re.compile(r"^\s*focus_placeholder\(\s*(['\"])(.*?)\1\s*\)\s*$")
+        content_re = re.compile(
+            r"^\s*(insert_text|insert_equation|insert_table|insert_cropped_image|insert_generated_image|set_bold|set_underline|set_align_center_next_line|set_align_justify_next_line|set_align_right_next_line)\("
+        )
+        box_template_pending = False
+        inside_box = False
+
+        for line in lines:
+            stripped = line.strip()
+
+            if box_template_re.match(stripped):
+                if inside_box and (not out or out[-1].strip() != "exit_box()"):
+                    out.append("exit_box()")
+                out.append("insert_template('box.hwp')")
+                box_template_pending = True
+                inside_box = False
+                continue
+
+            m = placeholder_re.match(stripped)
+            if m:
+                marker = m.group(2)
+                if box_template_pending and marker in ("@@@", "&&&"):
+                    continue
+                if box_template_pending and marker == "###":
+                    out.append("focus_placeholder('###')")
+                    box_template_pending = False
+                    inside_box = True
+                    continue
+                if inside_box and marker == "&&&":
+                    if not out or out[-1].strip() != "exit_box()":
+                        out.append("exit_box()")
+                    inside_box = False
+                    continue
+
+            if box_template_pending and content_re.match(stripped):
+                out.append("focus_placeholder('###')")
+                box_template_pending = False
+                inside_box = True
+
+            if stripped == "exit_box()" and inside_box:
+                out.append(line)
+                inside_box = False
+                box_template_pending = False
+                continue
+
+            out.append(line)
+
+        if inside_box and (not out or out[-1].strip() != "exit_box()"):
+            out.append("exit_box()")
+
         return out
 
     def _rewrite_header_template_flow(self, lines: List[str]) -> List[str]:
@@ -1837,6 +1887,7 @@ class ScriptRunner:
         ).split("\n")
         expanded_lines = self._drop_disabled_box_templates(expanded_lines)
         expanded_lines = self._rewrite_header_template_flow(expanded_lines)
+        expanded_lines = self._rewrite_box_template_flow(expanded_lines)
         expanded_lines = self._normalize_placeholders(expanded_lines)
         expanded_lines = self._normalize_box_paragraphs(expanded_lines)
         expanded_lines = self._normalize_box_template_order(expanded_lines)

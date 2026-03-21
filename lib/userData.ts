@@ -2,7 +2,15 @@ export type UserPlan = "free" | "go" | "plus" | "pro" | "test";
 
 type PlainObject = Record<string, unknown>;
 
-const PLAN_VALUES: UserPlan[] = ["free", "go", "plus", "pro", "test"];
+const PLAN_ALIASES: Record<string, UserPlan> = {
+    free: "free",
+    go: "go",
+    standard: "plus",
+    plus: "plus",
+    pro: "pro",
+    ultra: "pro",
+    test: "test",
+};
 
 export function nowIsoString(): string {
     return new Date().toISOString();
@@ -11,9 +19,7 @@ export function nowIsoString(): string {
 export function normalizePlanLike(value: unknown, fallback: UserPlan = "free"): UserPlan {
     if (typeof value !== "string") return fallback;
     const normalized = value.trim().toLowerCase();
-    return PLAN_VALUES.includes(normalized as UserPlan)
-        ? (normalized as UserPlan)
-        : fallback;
+    return PLAN_ALIASES[normalized] ?? fallback;
 }
 
 export function sanitizeForFirestore<T>(value: T): T {

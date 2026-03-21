@@ -47,6 +47,7 @@ Use ONLY the following functions:
 - insert_equation("hwp_equation_syntax")
 - insert_latex_equation("latex_math")
 - insert_template("header.hwp")
+- insert_template("box.hwp")
 - focus_placeholder("@@@|###")
 - insert_box()
 - exit_box()
@@ -76,6 +77,8 @@ instead of inserting the table as an image. You may use structured cell objects 
 - {"text": "", "diagonal": "\\"}
 - {"text": "", "diagonal": "/"}
 - {"text": "", "diagonal": "x"}
+- {"diagonal": "\\", "top_right": "ㄱ", "bottom_left": "집단"}
+- {"diagonal": "/", "top_left": "구분", "bottom_right": "횟수"}
 Covered cells may be omitted or written as None.
 If explicit merge metadata is easier, you may also pass:
 - merged_cells=[{"row": 0, "col": 0, "rowspan": 1, "colspan": 4}]
@@ -91,6 +94,8 @@ Ignore visible table background colors and border styling.
 Do not emit `fill_color`, `background_color`, `bg_color`, `border`, `border_color`,
 `border_type`, or `border_width` for table cells.
 If a cell visibly contains a diagonal line or X mark, include `diagonal: "\\"`, `diagonal: "/"`, or `diagonal: "x"`.
+If text is placed in the split triangle regions of a diagonal cell, keep it in ONE cell and use
+`top_left`, `top_right`, `bottom_left`, or `bottom_right` instead of splitting it into extra cells.
 Do NOT use text color functions or `color=...` for text runs; ignore visible font color differences and type the text normally.
 If a text run combines multiple styles at once, prefer one
 `insert_styled_text(...)` call instead of splitting the same text into
@@ -297,6 +302,7 @@ class AIClient:
             normalized_tier = str(tier or "free").lower()
             tier_label = {
                 "free": "무료",
+                "go": "Go",
                 "standard": "Plus",
                 "plus": "Plus",
                 "test": "Plus",
@@ -307,6 +313,8 @@ class AIClient:
             # 업그레이드 안내 메시지 (월 기준)
             upgrade_msg = ""
             if normalized_tier == "free":
+                upgrade_msg = "\n\n💡 Go 플랜으로 업그레이드하면 월 110회까지 사용 가능!"
+            elif normalized_tier == "go":
                 upgrade_msg = "\n\n💡 Plus 플랜으로 업그레이드하면 월 330회까지 사용 가능!"
             elif normalized_tier in ("plus", "standard", "test"):
                 upgrade_msg = "\n\n💡 Ultra 플랜으로 업그레이드하면 월 2200회까지 사용 가능!"

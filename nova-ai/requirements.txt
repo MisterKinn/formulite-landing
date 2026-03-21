@@ -2,6 +2,7 @@ python-dotenv>=1.0.0
 PySide6>=6.6
 google-genai
 Pillow>=10.0
+opencv-python-headless
 pytesseract>=0.3.10
 requests>=2.31.0
 PyMuPDF

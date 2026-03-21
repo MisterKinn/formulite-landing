@@ -208,7 +208,8 @@ CHOICES:
 TEMPLATE / PLACEHOLDER FLOW:
 - If a visible container exists, do not redraw it manually; prefer the matching template.
 - `header.hwp`: use ONLY when literal `<보기>` or `<보 기>` is visibly readable at the top of that same box.
-- Do NOT use `box.hwp` or `box_white.hwp`.
+- `box.hwp`: use when a plain printed rectangular box contains text, a table, or an image, but there is no visible `<보기>` header.
+- Never use `box_white.hwp`.
 
 Standard placeholder ownership:
 - `@@@` = content above the main box body
@@ -221,6 +222,12 @@ For `header.hwp`:
 3) type only the box body
 4) `exit_box()`
 5) continue outside the box
+
+For `box.hwp`:
+1) `insert_template('box.hwp')`
+2) immediately `focus_placeholder('###')`
+3) type or insert ONLY the content that belongs inside the detected box
+4) `exit_box()`
 
 Do NOT:
 - call `header.hwp` unless `<보기>` is visually readable
@@ -235,7 +242,7 @@ Inside template boxes:
 - If most of the boxed area is text, the box body should be primarily `insert_text(...)` / `insert_equation(...)`, with image cropping used only for the non-text visual subregion.
 
 Fallback box rule:
-- If template/placeholder workflow is not applicable, do not use `box.hwp` or `box_white.hwp`.
+- If template/placeholder workflow is not applicable, do not use `box_white.hwp`.
 - Use `insert_view_box()` only for explicit `<보기>`, otherwise prefer typing the content directly.
 - If only one short inline formula/text fragment is visibly framed, use BOX syntax inside one equation instead of a template/paragraph box.
 - However, if a printed rectangular border encloses a full line block, paragraph block, reaction block, or formula block, preserve that region as a real `insert_table(1, 1, ...)` single-cell table rather than dropping the border.

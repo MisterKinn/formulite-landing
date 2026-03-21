@@ -1656,7 +1656,7 @@ class HwpController:
 
     def _apply_box_text_style(self, font_size_pt: float = 8.0) -> None:
         try:
-            self._set_font_name("HYhwpEQ")
+            self._set_font_name(self._typing_text_font_name)
             self._set_font_size_pt(font_size_pt)
         except Exception:
             pass
@@ -1881,12 +1881,27 @@ class HwpController:
         if not name:
             raise HwpControllerError("?쒗뵆由??대쫫??鍮꾩뼱?덉뒿?덈떎.")
         base = name.lower().replace("\\", "/").rsplit("/", 1)[-1]
-        if base in ("box.hwp", "box_white.hwp"):
+        if base == "box_white.hwp":
+            base = "box.hwp"
+        if base == "box.hwp":
+            self._insert_virtual_box_template()
             return
         ok = self._try_insert_template(name)
         if not ok:
             template_path = self._template_dir / name
             raise HwpControllerError(f"?쒗뵆由우쓣 李얠? 紐삵뻽?듬땲?? {template_path}")
+
+    def _insert_virtual_box_template(self) -> None:
+        """
+        Built-in placeholder template for a plain bordered box.
+
+        This mirrors the `header.hwp -> focus_placeholder("###")` workflow:
+        - create a plain box
+        - place a literal ### marker inside
+        - let the script call focus_placeholder("###") to replace it
+        """
+        self.insert_box()
+        self.insert_text("###")
 
     def _run_action_best_effort(self, action_name: str) -> bool:
         hwp = self._ensure_connected()
@@ -2790,6 +2805,10 @@ class HwpController:
                         "equation": value.get("equation", value.get("eq")),
                         "content": value.get("content", value.get("segments")),
                         "lines": value.get("lines"),
+                        "top_left": _pick("top_left", "topLeft", "upper_left", "upperLeft"),
+                        "top_right": _pick("top_right", "topRight", "upper_right", "upperRight"),
+                        "bottom_left": _pick("bottom_left", "bottomLeft", "lower_left", "lowerLeft"),
+                        "bottom_right": _pick("bottom_right", "bottomRight", "lower_right", "lowerRight"),
                         "rowspan": max(1, int(value.get("rowspan", 1) or 1)),
                         "colspan": max(1, int(value.get("colspan", 1) or 1)),
                         "align": str(value.get("align", "") or "").strip().lower(),
@@ -2975,27 +2994,60 @@ class HwpController:
                 if not raw:
                     return {}
 
-                diag_params: dict[str, Any] = {"DiagonalType": 1}
+                # Hancom developer docs define diagonals through CellBorder /
+                # CellBorderFill with SlashFlag or BackSlashFlag. We also force
+                # a visible solid black line so the slash does not inherit an
+                # invisible border style from prior table formatting.
+                diag_params: dict[str, Any] = {
+                    "DiagonalType": 1,
+                    "DiagonalWidth": 1,
+                    "DiagonalColor": 0x000000,
+                }
                 if raw in {"\\", "＼", "backslash", "diag_down", "down", "left_top_to_right_bottom"}:
                     diag_params["BackSlashFlag"] = 0x02
+                    diag_params["__kind"] = "down"
                     return diag_params
                 if raw in {"/", "／", "slash", "diag_up", "up", "right_top_to_left_bottom"}:
                     diag_params["SlashFlag"] = 0x02
+                    diag_params["__kind"] = "up"
                     return diag_params
                 if raw in {"x", "cross", "diag_cross"}:
                     diag_params["BackSlashFlag"] = 0x02
                     diag_params["SlashFlag"] = 0x02
+                    diag_params["__kind"] = "cross"
                     return diag_params
                 return {}
 
             def _apply_selected_cell_diagonal(diag_params: dict[str, Any]) -> None:
                 if not isinstance(diag_params, dict) or not diag_params:
                     return
+                payload = {
+                    key: value
+                    for key, value in diag_params.items()
+                    if not str(key).startswith("__")
+                }
+                hwp = self._ensure_connected()
+                create_action = getattr(hwp, "CreateAction", None)
+                if callable(create_action):
+                    try:
+                        action = create_action("CellBorder")
+                        if action is not None:
+                            param = action.CreateSet()
+                            hset = getattr(param, "HSet", param)
+                            action.GetDefault(hset)
+                            self._apply_hwp_parameter_values(param, payload)
+                            action.Execute(hset)
+                            return
+                    except Exception:
+                        pass
+
                 last_exc: Exception | None = None
                 attempts = [
-                    ("CellBorder", "BorderFill", diag_params),
-                    ("CellBorder", "HCellBorderFill", diag_params),
-                    ("CellBorderFill", "HCellBorderFill", diag_params),
+                    ("CellBorder", "CellBorderFill", payload),
+                    ("CellBorder", "HCellBorderFill", payload),
+                    ("CellBorderFill", "CellBorderFill", {"ApplyTo": 0, "SelCellsBorderFill": payload}),
+                    ("CellBorderFill", "HCellBorderFill", {"ApplyTo": 0, "SelCellsBorderFill": payload}),
+                    ("CellBorderFill", "HCellBorderFill", {"ApplyTo": 0, **payload}),
                 ]
                 for action_name, param_name, payload in attempts:
                     try:
@@ -3031,7 +3083,7 @@ class HwpController:
                         action = hwp.HAction
                         param = hwp.HParameterSet.HCharShape
                         action.GetDefault("CharShape", param.HSet)
-                        param.Height = int(8.0 * 100)
+                        param.Height = int(float(self._typing_text_font_size_pt) * 100)
                         for attr in (
                             "FaceName",
                             "FaceNameUser",
@@ -3044,7 +3096,7 @@ class HwpController:
                             "FontName",
                         ):
                             if hasattr(param, attr):
-                                setattr(param, attr, "HYhwpEQ")
+                                setattr(param, attr, self._typing_text_font_name)
                         # Best-effort for versions that only accept SetItem on HSet.
                         for key in (
                             "FaceName",
@@ -3058,7 +3110,7 @@ class HwpController:
                             "FontName",
                         ):
                             try:
-                                param.HSet.SetItem(key, "HYhwpEQ")
+                                param.HSet.SetItem(key, self._typing_text_font_name)
                             except Exception:
                                 pass
                         action.Execute("CharShape", param.HSet)
@@ -3095,7 +3147,7 @@ class HwpController:
                             spec["colspan"] = colspan
                             table_specs[(r, c)] = spec
                             style_params = _extract_style_params(spec)
-                            if style_params:
+                            if style_params or _extract_diagonal_params(spec):
                                 style_specs[(r, c)] = spec
                             for rr in range(r, r + rowspan):
                                 for cc in range(c, c + colspan):
@@ -3119,6 +3171,49 @@ class HwpController:
                             pass
 
                 def _normalize_table_cell_items(spec: dict[str, Any]) -> list[Any]:
+                    diagonal = str(spec.get("diagonal", "") or "").strip().lower()
+                    top_left = spec.get("top_left")
+                    top_right = spec.get("top_right")
+                    bottom_left = spec.get("bottom_left")
+                    bottom_right = spec.get("bottom_right")
+                    has_corner_labels = any(
+                        value is not None and str(value).strip()
+                        for value in (top_left, top_right, bottom_left, bottom_right)
+                    )
+                    if has_corner_labels:
+                        out: list[Any] = []
+
+                        def _push_text(value: Any, align: str) -> None:
+                            text_value = str(value or "").strip()
+                            if not text_value:
+                                return
+                            out.append({"type": "text", "value": text_value, "align": align})
+
+                        if diagonal in {"\\", "＼", "backslash", "diag_down", "down", "left_top_to_right_bottom"}:
+                            _push_text(top_right, "right")
+                            if out and bottom_left is not None and str(bottom_left).strip():
+                                out.append({"type": "newline"})
+                            _push_text(bottom_left, "left")
+                        elif diagonal in {"/", "／", "slash", "diag_up", "up", "right_top_to_left_bottom"}:
+                            _push_text(top_left, "left")
+                            if out and bottom_right is not None and str(bottom_right).strip():
+                                out.append({"type": "newline"})
+                            _push_text(bottom_right, "right")
+                        else:
+                            _push_text(top_left, "left")
+                            if out and top_right is not None and str(top_right).strip():
+                                out.append({"type": "newline"})
+                            _push_text(top_right, "right")
+                            if out and bottom_left is not None and str(bottom_left).strip():
+                                out.append({"type": "newline"})
+                            _push_text(bottom_left, "left")
+                            if out and bottom_right is not None and str(bottom_right).strip():
+                                out.append({"type": "newline"})
+                            _push_text(bottom_right, "right")
+
+                        if out:
+                            return out
+
                     content = spec.get("content")
                     if isinstance(content, list) and content:
                         return content
@@ -3153,6 +3248,7 @@ class HwpController:
                         return
                     if isinstance(item, dict):
                         kind = str(item.get("type", "") or "").strip().lower()
+                        item_align = str(item.get("align", "") or "").strip().lower()
                         if not kind:
                             if item.get("equation") is not None:
                                 kind = "equation"
@@ -3161,6 +3257,14 @@ class HwpController:
                         if kind in {"newline", "linebreak", "break", "enter"}:
                             self.insert_enter()
                             return
+                        if item_align in {"left", "왼쪽", "좌측"}:
+                            self._set_paragraph_align("left")
+                        elif item_align in {"center", "centre", "middle", "가운데", "중앙"}:
+                            self._set_paragraph_align("center")
+                        elif item_align in {"right", "오른쪽", "우측"}:
+                            self._set_paragraph_align("right")
+                        elif item_align in {"justify", "양쪽", "양쪽정렬"}:
+                            self._set_paragraph_align("justify")
                         if kind in {"equation", "eq", "math"}:
                             eq = str(item.get("value", item.get("equation", "")) or "").strip()
                             if eq:
@@ -3187,7 +3291,7 @@ class HwpController:
                         _apply_table_font()
                         self._apply_compact_paragraph()
                         try:
-                            self._set_font_name("HYhwpEQ")
+                            self._set_font_name(self._typing_text_font_name)
                         except Exception:
                             pass
                         if align_center:

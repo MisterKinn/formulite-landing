@@ -67,10 +67,9 @@ from figure_code_runner import FigureCodeRenderError, render_python_figure_code
 from hwp_controller import HwpController, HwpControllerError
 from local_figure_renderer import LocalFigureRenderError, render_local_figure
 from ocr_pipeline import extract_text, extract_text_from_pil_image
-from layout_detector import detect_container, crop_inside_rect
+from layout_detector import detect_container, crop_inside_rect, refine_content_rect
 from image_path_utils import load_pil_image
 from prompt_loader import get_image_generation_prompt
-from pdf_problem_splitter import split_pdf_into_problem_items
 from script_runner import ScriptRunner, ScriptCancelled
 from upload_items import UploadItem, build_upload_item
 from backend.oauth_desktop import (
@@ -611,7 +610,16 @@ Preserve semantics and layout, but normalize rendering to clean exam-print style
                 f"크롭 좌표가 잘못되었습니다: ({x1_pct}, {y1_pct})-({x2_pct}, {y2_pct})"
             )
 
-        crop = img.crop((x1, y1, x2, y2))
+        refined = refine_content_rect(
+            source_image_path,
+            (x1, y1, x2 - x1, y2 - y1),
+            min_padding=8,
+        )
+        if refined is not None:
+            rx, ry, rw, rh = refined
+            crop = img.crop((rx, ry, rx + rw, ry + rh))
+        else:
+            crop = img.crop((x1, y1, x2, y2))
         tmp_dir = Path(tempfile.gettempdir()) / "nova_ai" / "generated_crops"
         tmp_dir.mkdir(parents=True, exist_ok=True)
         out_path = tmp_dir / f"crop_{os.getpid()}_{idx}_{call_no}_{uuid.uuid4().hex[:8]}.png"
@@ -1039,9 +1047,10 @@ Preserve semantics and layout, but normalize rendering to clean exam-print style
                     generation_description = (
                         "Generate the FULL HWP automation code for the ENTIRE problem in ONE pass. "
                         "A bordered rectangular region was detected in the source. "
-                        "If that region is a real printed single-cell box/table containing text, equations, or a short paragraph, "
-                        "preserve it as `insert_table(1, 1, ...)` instead of flattening it into normal lines. "
-                        "Use a template only when literal '<보기>' text is visibly present."
+                        "If that region is a real printed box containing text, a table, or an image, "
+                        "prefer the `insert_template('box.hwp')` -> `focus_placeholder('###')` workflow "
+                        "and place the boxed content inside that placeholder. "
+                        "Use `header.hwp` only when literal '<보기>' text is visibly present."
                     )
                     try:
                         inside_img = crop_inside_rect(image_path, det.rect)
@@ -1053,8 +1062,8 @@ Preserve semantics and layout, but normalize rendering to clean exam-print style
                                 if len(compact_inside_ocr) > 1200:
                                     inside_box_ocr_hint += "..."
                                 generation_description += (
-                                    " The bordered region contains readable content; keep the visible reading order inside that 1x1 table "
-                                    "and preserve centered equation lines or left-aligned paragraph text as seen."
+                                    " The bordered region contains readable content; type that content inside the box placeholder "
+                                    "in the original reading order and preserve any inner table or image that also belongs inside the box."
                                 )
                                 _log(
                                     f"[{idx}] Generic bordered-region OCR hint length: {len(compact_inside_ocr)}"
@@ -1732,7 +1741,9 @@ class ProfileDialog(_FramelessCardDialog):
         initial = (name or "?")[0].upper()
         _tier_colors = {
             "Free": "#6366f1", "free": "#6366f1",
-            "Standard": "#0ea5e9", "Plus": "#8b5cf6",
+            "Go": "#0ea5e9", "go": "#0ea5e9",
+            "Standard": "#8b5cf6", "standard": "#8b5cf6",
+            "Plus": "#8b5cf6", "plus": "#8b5cf6",
             "Pro": "#8b5cf6", "pro": "#8b5cf6", "ultra": "#8b5cf6",
         }
         accent = _tier_colors.get(tier, "#6366f1")
@@ -1756,8 +1767,9 @@ class ProfileDialog(_FramelessCardDialog):
         lay.addSpacing(4)
 
         # tier badge
-        _tier_map = {"Free": "\uBB34\uB8CC", "free": "\uBB34\uB8CC", "Standard": "Standard",
-                     "Plus": "\u25c7 PLUS",
+        _tier_map = {"Free": "\uBB34\uB8CC", "free": "\uBB34\uB8CC", "Go": "GO", "go": "GO",
+                     "Standard": "PLUS", "standard": "PLUS",
+                     "Plus": "\u25c7 PLUS", "plus": "\u25c7 PLUS",
                      "Pro": "Ultra", "pro": "Ultra", "ultra": "Ultra"}
         badge = QLabel(_tier_map.get(tier, tier) + " \uD50C\uB79C")
         badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1849,7 +1861,9 @@ class UsageDialog(_FramelessCardDialog):
 
         _tier_colors = {
             "Free": "#6366f1", "free": "#6366f1",
-            "Standard": "#0ea5e9", "Plus": "#8b5cf6",
+            "Go": "#0ea5e9", "go": "#0ea5e9",
+            "Standard": "#8b5cf6", "standard": "#8b5cf6",
+            "Plus": "#8b5cf6", "plus": "#8b5cf6",
             "Pro": "#8b5cf6", "pro": "#8b5cf6", "ultra": "#8b5cf6",
         }
         accent = _tier_colors.get(tier, "#6366f1")
@@ -1873,8 +1887,9 @@ class UsageDialog(_FramelessCardDialog):
         lay.addSpacing(4)
 
         # tier badge
-        _tier_map = {"Free": "\uBB34\uB8CC", "free": "\uBB34\uB8CC", "Standard": "Standard",
-                     "Plus": "\u25c7 PLUS",
+        _tier_map = {"Free": "\uBB34\uB8CC", "free": "\uBB34\uB8CC", "Go": "GO", "go": "GO",
+                     "Standard": "PLUS", "standard": "PLUS",
+                     "Plus": "\u25c7 PLUS", "plus": "\u25c7 PLUS",
                      "Pro": "Ultra", "pro": "Ultra", "ultra": "Ultra"}
         badge = QLabel(_tier_map.get(tier, tier) + " \uD50C\uB79C")
         badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -2268,6 +2283,7 @@ class SidebarWidget(QFrame):
     ) -> None:
         _tier_map = {
             "Free": "\uBB34\uB8CC", "free": "\uBB34\uB8CC",
+            "Go": "GO", "go": "GO",
             "Standard": "PLUS", "standard": "PLUS",
             "Plus": "PLUS", "plus": "PLUS",
             "Pro": "Ultra", "pro": "Ultra", "ultra": "Ultra",
@@ -2275,6 +2291,7 @@ class SidebarWidget(QFrame):
         # tier ??accent color
         _tier_colors = {
             "Free": "#6366f1", "free": "#6366f1",
+            "Go": "#0ea5e9", "go": "#0ea5e9",
             "Standard": "#0ea5e9", "Plus": "#8b5cf6",
             "Pro": "#8b5cf6", "pro": "#8b5cf6", "ultra": "#8b5cf6",
         }
@@ -2418,10 +2435,15 @@ class NovaAILiteWindow(QWidget):
         self._auto_type_has_inserted_any: bool = False
         self._auto_type_pending_idx: int | None = None
         self._skipped_indexes: set[int] = set()
+        self._auto_type_gap_ms = 1000
+        self._auto_type_gap_timer = QTimer(self)
+        self._auto_type_gap_timer.setSingleShot(True)
+        self._auto_type_gap_timer.timeout.connect(self._try_auto_type)
         self._typing_worker: "TypingWorker | None" = None
         self._chat_worker: "ChatWorker | None" = None
         self._chat_typing_pending = False
         self._chat_pending_reply = ""
+        self._chat_edit_credit_pending = False
         self._chat_pipeline_status_item = None
         self._chat_pipeline_status_widget: ChatMessageWidget | None = None
         self._hide_voice_edit_ui = True
@@ -2445,7 +2467,7 @@ class NovaAILiteWindow(QWidget):
         self._typing_eq_font_name = "HYhwpEQ"
         self._typing_eq_font_size_pt = 8.0
         self._typing_generation_mode = "problem"
-        self._image_mode = "no_image"
+        self._image_mode = "crop"
         self._typing_style_compact_breakpoint_px = 980
         _typing_dropdown_icon = (Path(__file__).resolve().parent / "assets" / "dropdown_triangle.png").as_posix()
 
@@ -2993,7 +3015,7 @@ class NovaAILiteWindow(QWidget):
         self._chat_file_panel_title = QLabel("첨부 파일")
         self._chat_file_panel_title.setObjectName("chatFilePanelTitle")
         _chat_file_panel_lay.addWidget(self._chat_file_panel_title)
-        self._chat_file_panel_hint = QLabel("이미지나 PDF를 드래그하거나 + 버튼으로 추가")
+        self._chat_file_panel_hint = QLabel("이미지를 드래그하거나 + 버튼으로 추가")
         self._chat_file_panel_hint.setObjectName("chatFilePanelHint")
         self._chat_file_panel_hint.setWordWrap(True)
         _chat_file_panel_lay.addWidget(self._chat_file_panel_hint)
@@ -3115,7 +3137,7 @@ class NovaAILiteWindow(QWidget):
         self._chat_attach_btn.setIcon(_material_icon(_MI_ADD, 26, QColor("#7c7f87")))
         self._chat_attach_btn.setIconSize(QSize(24, 24))
         self._chat_attach_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._chat_attach_btn.setToolTip("이미지 또는 PDF 업로드")
+        self._chat_attach_btn.setToolTip("이미지 업로드")
         self._chat_attach_btn.clicked.connect(self.on_upload_image)
         _chat_action_row.addWidget(self._chat_attach_btn)
         _chat_action_row.addStretch(1)
@@ -3421,7 +3443,9 @@ class NovaAILiteWindow(QWidget):
         """???????????? ?????????????????? + ???????????"""
         _tier_map = {
             "Free": "\uBB34\uB8CC", "free": "\uBB34\uB8CC",
-            "Standard": "Standard", "Plus": "PLUS",
+            "Go": "GO", "go": "GO",
+            "Standard": "PLUS", "standard": "PLUS",
+            "Plus": "PLUS", "plus": "PLUS",
             "Pro": "Ultra \uD50C\uB79C", "pro": "Ultra \uD50C\uB79C", "ultra": "Ultra \uD50C\uB79C",
         }
         if self.profile_uid:
@@ -3443,6 +3467,7 @@ class NovaAILiteWindow(QWidget):
             t_label = _tier_map.get(tier, tier)
             _tier_colors = {
                 "Free": "#6366f1", "free": "#6366f1",
+                "Go": "#0ea5e9", "go": "#0ea5e9",
                 "Standard": "#8b5cf6", "standard": "#8b5cf6",
                 "Plus": "#8b5cf6", "plus": "#8b5cf6",
                 "Pro": "#8b5cf6", "pro": "#8b5cf6", "ultra": "#8b5cf6",
@@ -3985,7 +4010,7 @@ class NovaAILiteWindow(QWidget):
             self,
             "\uC774\uBBF8\uC9C0 \uC120\uD0DD",
             "",
-            "Images (*.png *.jpg *.jpeg *.bmp *.gif *.webp *.pdf);;All Files (*)",
+            "Images (*.png *.jpg *.jpeg *.bmp *.gif *.webp);;All Files (*)",
         )
         if file_paths:
             self._add_selected_images(file_paths)
@@ -4116,6 +4141,44 @@ class NovaAILiteWindow(QWidget):
             self._chat_input.setPlaceholderText("AI가 편집 요청을 처리하는 중입니다...")
         else:
             self._chat_input.setPlaceholderText("예: y=f(x) 수식과 근의 공식을 삽입해줘")
+
+    @staticmethod
+    def _chat_edit_credit_cost() -> int:
+        return 1
+
+    def _ensure_chat_edit_credit_available(self) -> bool:
+        uid = (self.profile_uid or "").strip()
+        if not uid:
+            return False
+        tier = self.profile_plan or "Free"
+        amount = self._chat_edit_credit_cost()
+        if check_usage_limit(uid, tier, amount=amount):
+            return True
+        remaining = get_remaining_usage(uid, tier)
+        limit = get_plan_limit(tier)
+        QMessageBox.warning(
+            self,
+            "알림",
+            f"채팅 편집 명령을 실행하려면 {amount}크레딧이 필요합니다.\n"
+            f"(남음: {remaining}, 한도: {limit})",
+        )
+        self._update_chat_pipeline_status("남은 크레딧이 부족해 편집을 실행하지 못했습니다.", finished=True)
+        return False
+
+    def _consume_chat_edit_credit(self) -> None:
+        uid = (self.profile_uid or "").strip()
+        if not uid:
+            return
+        amount = self._chat_edit_credit_cost()
+        charged = increment_ai_usage(uid, amount=amount)
+        if charged:
+            try:
+                self._profile_usage = max(0, int(self._profile_usage or 0)) + amount
+            except Exception:
+                pass
+            self._update_user_status(refresh=False)
+            self._update_send_button_state()
+        self._schedule_profile_refresh(force=True)
 
     def _on_chat_send_clicked(self) -> None:
         message = self._chat_input.toPlainText().strip()
@@ -4441,8 +4504,9 @@ class NovaAILiteWindow(QWidget):
             pass
         super().closeEvent(event)
 
-    def _execute_chat_actions(self, actions: list[dict[str, str]]) -> list[str]:
+    def _execute_chat_actions(self, actions: list[dict[str, str]]) -> tuple[list[str], bool]:
         logs: list[str] = []
+        applied = False
         for action in actions:
             if not isinstance(action, dict):
                 continue
@@ -4453,12 +4517,13 @@ class NovaAILiteWindow(QWidget):
                     controller.connect()
                     controller.open_new_document()
                     logs.append("새 파일을 열었습니다.")
+                    applied = True
                     self._schedule_filename_update()
                 except Exception as exc:
                     logs.append(f"새 파일 열기에 실패했습니다: {exc}")
             elif name:
                 logs.append(f"지원하지 않는 편집 명령입니다: {name}")
-        return logs
+        return logs, applied
 
     def _on_chat_worker_finished(self, payload: object) -> None:
         self._chat_worker = None
@@ -4471,21 +4536,33 @@ class NovaAILiteWindow(QWidget):
             if isinstance(raw_actions, list):
                 actions = [a for a in raw_actions if isinstance(a, dict)]
             script = str(payload.get("script") or "").strip()
+        has_edit_intent = bool(actions or script)
+        if has_edit_intent and not self._ensure_chat_edit_credit_available():
+            self._chat_typing_pending = False
+            self._chat_pending_reply = ""
+            self._chat_edit_credit_pending = False
+            self._set_chat_busy(False)
+            self._drain_queued_chat_messages()
+            return
         if actions:
             self._update_chat_pipeline_status("적용하는 중...")
-        action_logs = self._execute_chat_actions(actions)
+        action_logs, action_applied = self._execute_chat_actions(actions)
         for log in action_logs:
             self._update_chat_pipeline_status(log)
+        if action_applied:
+            self._consume_chat_edit_credit()
         if script:
             self._ensure_typing_worker()
             self._chat_typing_pending = True
             self._chat_pending_reply = reply or ""
+            self._chat_edit_credit_pending = not action_applied
             queue_target = ""
             if not any(str(action.get("name") or "") == "open_new_file" for action in actions):
                 queue_target = self._current_detected_filename()
             self._update_chat_pipeline_status("감지된 한글 문서에 입력하는 중...")
             self._typing_worker.enqueue(-2, script, queue_target or None)
             return
+        self._chat_edit_credit_pending = False
         if not reply:
             reply = "처리를 완료했습니다."
         self._append_chat_message("assistant", reply)
@@ -4495,6 +4572,7 @@ class NovaAILiteWindow(QWidget):
     def _on_chat_worker_error(self, message: str) -> None:
         self._chat_typing_pending = False
         self._chat_pending_reply = ""
+        self._chat_edit_credit_pending = False
         self._set_chat_busy(False)
         self._chat_worker = None
         self._update_chat_pipeline_status("요청 처리 중 오류가 발생했습니다.", finished=True)
@@ -4549,6 +4627,7 @@ class NovaAILiteWindow(QWidget):
             self._image_mode_combo.setEnabled(False)
         if hasattr(self, "_image_mode_combo_compact"):
             self._image_mode_combo_compact.setEnabled(False)
+        self._cancel_pending_auto_type()
         self._auto_type_after_ai = auto_type
         self.generated_code = ""
         self.generated_codes = []
@@ -4677,6 +4756,15 @@ class NovaAILiteWindow(QWidget):
             # Defensive: keep arrays consistent.
             self._generated_codes_by_index.extend([""] * (idx + 1 - len(self._generated_codes_by_index)))
         self._generated_codes_by_index[idx] = (text or "").strip()
+        current_status = self._gen_statuses[idx] if idx < len(self._gen_statuses) else "대기중"
+        if self._generated_codes_by_index[idx] and current_status in (
+            "대기중",
+            "생성중...",
+            "이미지 생성중...",
+            "해설 그림 생성중...",
+        ):
+            self._gen_statuses[idx] = "코드 생성 완료"
+            self._refresh_order_status_items()
         if idx < len(self.generated_codes):
             self.generated_codes[idx] = self._generated_codes_by_index[idx]
         if idx == self._current_code_index:
@@ -4684,8 +4772,25 @@ class NovaAILiteWindow(QWidget):
                 self._set_code_view_text(self._generated_codes_by_index[idx])
             self._update_code_type_button_state()
         # Auto-typing: type incrementally in order as soon as possible.
-        if self._auto_type_after_ai:
+        if self._auto_type_after_ai and not self._auto_type_gap_timer.isActive():
             self._try_auto_type()
+
+    def _cancel_pending_auto_type(self) -> None:
+        if self._auto_type_gap_timer.isActive():
+            self._auto_type_gap_timer.stop()
+
+    def _schedule_next_auto_type(self) -> None:
+        if not self._auto_type_after_ai:
+            return
+        if self._auto_type_pending_idx is not None:
+            return
+        if self._next_auto_type_index >= len(self.selected_images):
+            self._auto_type_after_ai = False
+            self._set_typing_status("타이핑 완료")
+            return
+        self._cancel_pending_auto_type()
+        self._set_typing_status("다음 문항 입력 대기중...")
+        self._auto_type_gap_timer.start(self._auto_type_gap_ms)
 
     def _try_auto_type(self) -> None:
         """Type completed items in order while generation continues."""
@@ -4702,12 +4807,19 @@ class NovaAILiteWindow(QWidget):
             idx = self._next_auto_type_index
 
             status = self._gen_statuses[idx] if idx < len(self._gen_statuses) else "\uB300\uAE30\uC911"
-            # Not ready yet (still generating or not started).
-            if status in ("\uB300\uAE30\uC911", "\uC0DD\uC131\uC911..."):
+            code = (self._generated_codes_by_index[idx] or "").strip()
+            pending_statuses = {
+                "\uB300\uAE30\uC911",
+                "\uC0DD\uC131\uC911...",
+                "\uC774\uBBF8\uC9C0 \uC0DD\uC131\uC911...",
+                "\uD574\uC124 \uADF8\uB9BC \uC0DD\uC131\uC911...",
+            }
+            # Keep strict index order, but trust actual generated code even if the
+            # progress label update arrives slightly later than the item result.
+            if not code and status in pending_statuses:
                 self._set_typing_status("\uC0DD\uC131 \uC644\uB8CC \uB300\uAE30\uC911...")
                 return
 
-            code = (self._generated_codes_by_index[idx] or "").strip()
             # If generation failed/empty, skip and continue to the next item.
             if not code:
                 if idx not in self._skipped_indexes:
@@ -4758,7 +4870,8 @@ class NovaAILiteWindow(QWidget):
 
         # Ensure any remaining ready items are typed (in case signals arrived late).
         if self._auto_type_after_ai:
-            self._try_auto_type()
+            if not self._auto_type_gap_timer.isActive():
+                self._try_auto_type()
             if self._next_auto_type_index >= total and self._auto_type_pending_idx is None:
                 self._auto_type_after_ai = False
                 self._set_typing_status("")
@@ -4789,6 +4902,7 @@ class NovaAILiteWindow(QWidget):
         self._schedule_profile_refresh(force=True)
 
     def _on_ai_error(self, message: str) -> None:
+        self._cancel_pending_auto_type()
         self._render_order_list()
         QMessageBox.critical(self, "AI \uC624\uB958", message)
         self._auto_type_after_ai = False
@@ -5048,6 +5162,9 @@ class NovaAILiteWindow(QWidget):
     def _on_typing_item_finished(self, idx: int) -> None:
         if idx == -2 and self._chat_typing_pending:
             self._chat_typing_pending = False
+            if self._chat_edit_credit_pending:
+                self._consume_chat_edit_credit()
+                self._chat_edit_credit_pending = False
             reply = self._chat_pending_reply or ""
             self._chat_pending_reply = ""
             self._update_chat_pipeline_status("감지된 한글 문서에 요청하신 내용을 입력합니다.", finished=True)
@@ -5066,19 +5183,18 @@ class NovaAILiteWindow(QWidget):
             self._auto_type_has_inserted_any = True
             self._next_auto_type_index = idx + 1
             if self._auto_type_after_ai:
-                self._try_auto_type()
-            if self._next_auto_type_index >= len(self.selected_images):
-                self._auto_type_after_ai = False
-                self._set_typing_status("\uD0C0\uC774\uD551 \uC644\uB8CC")
+                self._schedule_next_auto_type()
                 return
         if not self._auto_type_after_ai and self._auto_type_pending_idx is None:
             self._set_typing_status("\uD0C0\uC774\uD551 \uC644\uB8CC")
 
     def _on_typing_cancelled(self) -> None:
         # Stop auto-type chain, keep generated code for manual re-run.
+        self._cancel_pending_auto_type()
         if self._chat_typing_pending:
             self._chat_typing_pending = False
             self._chat_pending_reply = ""
+            self._chat_edit_credit_pending = False
             self._set_chat_busy(False)
             self._update_chat_pipeline_status("\uD55C\uAE00 \uBB38\uC11C \uC785\uB825\uC774 \uCDE8\uC18C\uB418\uC5C8\uC2B5\uB2C8\uB2E4.", finished=True)
             self._drain_queued_chat_messages()
@@ -5092,10 +5208,12 @@ class NovaAILiteWindow(QWidget):
         QMessageBox.information(self, "\uC54C\uB9BC", "\uD0C0\uC774\uD551\uC774 \uCDE8\uC18C\uB418\uC5C8\uC2B5\uB2C8\uB2E4.")
 
     def _on_typing_error(self, message: str) -> None:
+        self._cancel_pending_auto_type()
         clean_message = _normalize_runtime_error_message(message)
         if self._chat_typing_pending:
             self._chat_typing_pending = False
             self._chat_pending_reply = ""
+            self._chat_edit_credit_pending = False
             self._set_chat_busy(False)
             self._update_chat_pipeline_status("\uD55C\uAE00 \uBB38\uC11C \uC785\uB825 \uC911 \uC624\uB958\uAC00 \uBC1C\uC0DD\uD588\uC2B5\uB2C8\uB2E4.", finished=True)
             self._append_chat_message(
@@ -5114,6 +5232,7 @@ class NovaAILiteWindow(QWidget):
         QMessageBox.critical(self, "\uD0C0\uC774\uD551 \uC624\uB958", clean_message)
 
     def _cancel_typing(self) -> None:
+        self._cancel_pending_auto_type()
         if self._typing_worker and self._typing_worker.isRunning():
             self._typing_worker.cancel()
 
@@ -5263,6 +5382,7 @@ class NovaAILiteWindow(QWidget):
             QMessageBox.information(self, "알림", "선택한 항목에 재생할 코드가 없습니다.")
             return
 
+        self._cancel_pending_auto_type()
         self._auto_type_after_ai = False
         self._auto_type_pending_idx = None
         self._set_typing_status("선택 코드 재생중...")
@@ -5394,12 +5514,11 @@ class NovaAILiteWindow(QWidget):
         self._update_replay_button_visibility()
 
     def _add_selected_images(self, file_paths: list[str]) -> None:
-        supported_exts = {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp", ".pdf"}
+        supported_exts = {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp"}
         next_images: list[UploadItem] = []
         seen: set[str] = set()
         warnings: list[str] = []
         previous_status = self.typing_status_label.text().strip()
-        processing_pdf = False
         try:
             for path in (file_paths or []):
                 normalized = str(path or "").strip()
@@ -5410,23 +5529,10 @@ class NovaAILiteWindow(QWidget):
                 ext = Path(normalized).suffix.lower()
                 if ext not in supported_exts:
                     continue
-                if ext == ".pdf":
-                    if not processing_pdf:
-                        processing_pdf = True
-                        self._set_typing_status("PDF 문제 분석중...")
-                        QApplication.processEvents()
-                    summary = split_pdf_into_problem_items(normalized)
-                    next_images.extend(summary.items)
-                    if summary.warnings:
-                        warnings.append(f"{os.path.basename(normalized)}: {' / '.join(summary.warnings)}")
-                    if not summary.items:
-                        warnings.append(f"{os.path.basename(normalized)}: 검출된 문제가 없어 추가하지 않았습니다.")
-                else:
-                    next_images.append(build_upload_item(normalized, source_kind="image"))
+                next_images.append(build_upload_item(normalized, source_kind="image"))
                 seen.add(normalized)
         finally:
-            if processing_pdf:
-                self._set_typing_status(previous_status)
+            self._set_typing_status(previous_status)
         self._set_selected_images(next_images)
         if warnings:
             QMessageBox.information(self, "PDF 분석 결과", "\n".join(dict.fromkeys(warnings)))
@@ -5566,6 +5672,7 @@ class NovaAILiteWindow(QWidget):
             QMessageBox.warning(self, "\uC54C\uB9BC", "\uD0C0\uC774\uD551\uD560 \uCF54\uB4DC\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.")
             return
         # Ensure only the selected item is typed.
+        self._cancel_pending_auto_type()
         self._auto_type_after_ai = False
         self._auto_type_pending_idx = None
         self._set_typing_status("\uC120\uD0DD \uCF54\uB4DC \uD0C0\uC774\uD551\uC911...")
@@ -5944,13 +6051,13 @@ class DropPlaceholder(QWidget):
         )
         icon_label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         icon_label.setStyleSheet("background: transparent; border: none;")
-        text_label = QLabel("\uD30C\uC77C\uC744 \uC5EC\uAE30\uC5D0 \uB04C\uC5B4\uB193\uAC70\uB098 \uD074\uB9AD\uD574 \uC5C5\uB85C\uB4DC\uD558\uC138\uC694")
+        text_label = QLabel("\uC774\uBBF8\uC9C0\uB97C \uC5EC\uAE30\uC5D0 \uB04C\uC5B4\uB193\uAC70\uB098 \uD074\uB9AD\uD574 \uC5C5\uB85C\uB4DC\uD558\uC138\uC694")
         text_label.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
         text_label.setStyleSheet(
             "color: #9ca3af; background-color: transparent; border: none;"
             "font-size: 13px;"
         )
-        hint_label = QLabel("PNG, JPG, PDF \uD30C\uC77C \uC9C0\uC6D0")
+        hint_label = QLabel(".png, .jpg, .jpeg, .bmp, .gif, .webp \uC9C0\uC6D0")
         hint_label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         hint_label.setStyleSheet(
             "color: #c4c8d4; background: transparent; border: none;"
@@ -6510,7 +6617,6 @@ def main() -> None:
     window.resize(460, 640)
     window.show()
     QTimer.singleShot(200, lambda: None if _show_startup_preflight(window) else app.quit())
-    QTimer.singleShot(800, lambda: _maybe_show_update_notice(window))
     sys.exit(app.exec())
 
 

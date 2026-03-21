@@ -2050,6 +2050,7 @@ class ChatWorker(QThread):
             "- insert_small_paragraph()\n"
             '- insert_equation("hwp_equation_syntax")\n'
             '- insert_template("header.hwp")\n'
+            '- insert_template("box.hwp")\n'
             '- focus_placeholder("@@@|###|&&&")\n'
             "- insert_box()\n"
             "- exit_box()\n"
