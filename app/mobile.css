@@ -785,11 +785,19 @@ body {
 
     /* Hero + process */
     .hero {
-        padding-top: calc(var(--navbar-height) + var(--home-event-strip-height) + 56px);
+        padding-top: calc(var(--navbar-height) + var(--home-event-strip-height) + 16px);
+    }
+
+    .hero-intro {
+        min-height: auto;
+        align-items: flex-start;
+        padding: 1rem 0 2.25rem;
     }
 
     .title.hero {
         font-size: 1.45rem;
+        padding-top: 0;
+        padding-bottom: 0.25rem;
     }
 
     .subtitle {
@@ -798,6 +806,10 @@ body {
 
     .primary-button {
         font-size: 0.8rem;
+    }
+
+    .hero-actions {
+        margin-bottom: 0.75rem;
     }
 
     .process-showcase-title {

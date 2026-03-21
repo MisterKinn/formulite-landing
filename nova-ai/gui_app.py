@@ -2440,7 +2440,7 @@ class NovaAILiteWindow(QWidget):
         self._voice_chunk_counter = 0
         self._voice_preview_text = ""
         self._voice_preview_status = ""
-        self._typing_text_font_name = "한컴 윤고딕 720"
+        self._typing_text_font_name = "HYhwpEQ"
         self._typing_text_font_size_pt = 8.0
         self._typing_eq_font_name = "HYhwpEQ"
         self._typing_eq_font_size_pt = 8.0
@@ -2579,10 +2579,9 @@ class NovaAILiteWindow(QWidget):
         self._typing_eq_font_combo = DownwardPopupComboBox()
         self._typing_eq_font_combo.setObjectName("typingFontCombo")
         self._typing_eq_font_combo.setEditable(False)
-        self._typing_eq_font_combo.addItems(["HYhwpEQ"])
-        self._typing_eq_font_combo.setCurrentText("HYhwpEQ")
+        self._typing_eq_font_combo.addItems(["HYhwpEQ", "HancomEQN"])
+        self._typing_eq_font_combo.setCurrentText(self._typing_eq_font_name)
         self._typing_eq_font_combo.setFixedWidth(140)
-        self._typing_eq_font_combo.setEnabled(False)
         _ts_lay.addWidget(self._typing_eq_font_combo)
 
         _eq_size_lbl = QLabel("\uD06C\uAE30")
@@ -2738,10 +2737,9 @@ class NovaAILiteWindow(QWidget):
         self._typing_eq_font_combo_compact = DownwardPopupComboBox()
         self._typing_eq_font_combo_compact.setObjectName("typingFontCombo")
         self._typing_eq_font_combo_compact.setEditable(False)
-        self._typing_eq_font_combo_compact.addItems(["HYhwpEQ"])
-        self._typing_eq_font_combo_compact.setCurrentText("HYhwpEQ")
+        self._typing_eq_font_combo_compact.addItems(["HYhwpEQ", "HancomEQN"])
+        self._typing_eq_font_combo_compact.setCurrentText(self._typing_eq_font_name)
         self._typing_eq_font_combo_compact.setMinimumWidth(96)
-        self._typing_eq_font_combo_compact.setEnabled(False)
         _tsc_row2.addWidget(self._typing_eq_font_combo_compact, 1)
         _tsc_eq_size_lbl = QLabel("\uD06C\uAE30")
         _tsc_eq_size_lbl.setObjectName("typingStyleLabel")

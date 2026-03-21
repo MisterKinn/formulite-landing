@@ -47,6 +47,7 @@ const plans: PricingPlan[] = [
         features: [
             "총 5회 AI 타이핑 생성",
             "기본 수식 자동화",
+            "자연어 기반 한글 문서 자동화 체험",
             "복수 계정 작업 불가능",
         ],
         cta: "무료로 시작하기",
@@ -62,6 +63,8 @@ const plans: PricingPlan[] = [
         features: [
             "월 100회+10회 AI 타이핑 생성",
             "고급 AI 모델",
+            "코드 저장 & 재사용",
+            "자연어 기반 한글 문서 자동화",
             "복수 계정 작업 불가능",
         ],
         cta: "Go 시작하기",
@@ -77,6 +80,8 @@ const plans: PricingPlan[] = [
         features: [
             "월 300회+30회 AI 타이핑 생성",
             "고급 AI 모델",
+            "코드 저장 & 재사용",
+            "우선 지원 서비스",
             "복수 계정 작업 불가능",
         ],
         cta: "Plus 시작하기",
@@ -92,8 +97,11 @@ const plans: PricingPlan[] = [
         },
         features: [
             "월 2000+200회 AI 타이핑 생성",
+            "고급 AI 모델",
+            "OCR 이미지 인식 및 크롭·삽입 자동화",
             "팀 협업 기능",
             "복수 계정 작업 가능",
+            "전담 지원 서비스",
         ],
         cta: "Ultra 시작하기",
         tier: "pro",
@@ -140,6 +148,8 @@ export default function Pricing() {
     };
 
     const billingLabel = "/월";
+    const formatTotalPriceLabel = (amount: number) =>
+        `총 ${amount.toLocaleString()}원 결제`;
 
     const handlePlanClick = async (
         event: MouseEvent<HTMLButtonElement>,
@@ -287,6 +297,15 @@ export default function Pricing() {
                                             </span>
                                         )}
                                     </div>
+                                    {billingCycle === "yearly" &&
+                                        plan.tier !== "free" && (
+                                            <p className="pricing-card-v2__price-total">
+                                                {formatTotalPriceLabel(
+                                                    paymentMetaByTier[plan.tier]
+                                                        .yearly.amount,
+                                                )}
+                                            </p>
+                                        )}
                                 </div>
 
                                 <div className="pricing-card-v2__cta-wrap">

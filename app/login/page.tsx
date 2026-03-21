@@ -297,7 +297,7 @@ function LoginContent() {
                             data.token,
                         );
                     }
-                    window.location.href = "/admin";
+                    window.location.href = "/";
                     return;
                 }
 

@@ -63,3 +63,5 @@ nova-ai-setup.zip
 *.md
 .vercel
 .env*.local
+_install_check/
+*firebase-adminsdk-*.json

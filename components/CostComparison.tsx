@@ -124,7 +124,7 @@ export default function CostComparison() {
                     ))}
                 </div>
 
-                <p className="cc-bottom-text">
+                <p className="cc-bottom-text cc-bottom-text--after-stats">
                     같은 업무량 기준, Nova AI는 조교 채용 대비 <strong>약 32배 저렴</strong>하며
                     <br />
                     <strong>오탈자 걱정이 전혀 없습니다.</strong>

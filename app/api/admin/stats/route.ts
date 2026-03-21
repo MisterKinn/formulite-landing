@@ -2,6 +2,7 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAdmin, admin } from "@/lib/adminAuth";
+import { resolveEffectiveUsagePlan } from "@/lib/aiUsage";
 
 const db = admin.firestore();
 
@@ -76,6 +77,35 @@ function getDateKey(date = new Date()) {
     return formatter.format(date);
 }
 
+function getSeoulStartOfDay(date = new Date()) {
+    return new Date(`${getDateKey(date)}T00:00:00+09:00`);
+}
+
+function getSeoulWeekStart(date = new Date()) {
+    const weekdayMap: Record<string, number> = {
+        Sun: 0,
+        Mon: 1,
+        Tue: 2,
+        Wed: 3,
+        Thu: 4,
+        Fri: 5,
+        Sat: 6,
+    };
+    const weekday = new Intl.DateTimeFormat("en-US", {
+        timeZone: "Asia/Seoul",
+        weekday: "short",
+    }).format(date);
+    const daysFromMonday = weekday === "Sun" ? 6 : (weekdayMap[weekday] ?? 1) - 1;
+    const startOfDay = getSeoulStartOfDay(date);
+    startOfDay.setUTCDate(startOfDay.getUTCDate() - daysFromMonday);
+    return startOfDay;
+}
+
+function getSeoulMonthStart(date = new Date()) {
+    const [year, month] = getDateKey(date).split("-");
+    return new Date(`${year}-${month}-01T00:00:00+09:00`);
+}
+
 async function getAuthUserCount(): Promise<number> {
     let pageToken: string | undefined = undefined;
     let total = 0;
@@ -118,6 +148,11 @@ function getEmptyStats() {
             payments: { count: 0, total: 0 },
             refunds: { count: 0, total: 0 },
         },
+        revenueSummary: {
+            today: 0,
+            thisWeek: 0,
+            thisMonth: 0,
+        },
     };
 }
 
@@ -137,7 +172,10 @@ export async function GET(request: NextRequest) {
 
     try {
         const usersRef = db.collection("users");
-        const todayKey = getDateKey();
+        const now = new Date();
+        const todayKey = getDateKey(now);
+        const weekStart = getSeoulWeekStart(now);
+        const monthStart = getSeoulMonthStart(now);
         const todayAnalyticsRef = db.collection("analyticsDaily").doc(todayKey);
 
         // Get all users
@@ -172,23 +210,24 @@ export async function GET(request: NextRequest) {
         usersSnapshot.forEach((doc) => {
             const data = doc.data();
             const subscription = data.subscription;
+            const effectivePlan = resolveEffectiveUsagePlan(
+                data as Record<string, unknown>,
+            );
+            const subscriptionStatus = String(
+                subscription?.status || "none",
+            ).toLowerCase();
 
-            if (
-                !subscription ||
-                subscription.plan === "free" ||
-                !subscription.plan
-            ) {
+            if (!subscription || effectivePlan === "free") {
                 freeUsers++;
                 planCounts.free++;
             } else {
-                planCounts[subscription.plan] =
-                    (planCounts[subscription.plan] || 0) + 1;
+                planCounts[effectivePlan] = (planCounts[effectivePlan] || 0) + 1;
 
-                if (subscription.status === "active") {
+                if (subscriptionStatus === "active") {
                     activeSubscriptions++;
-                } else if (subscription.status === "cancelled") {
+                } else if (subscriptionStatus === "cancelled") {
                     cancelledSubscriptions++;
-                } else if (subscription.status === "suspended") {
+                } else if (subscriptionStatus === "suspended") {
                     suspendedSubscriptions++;
                 }
             }
@@ -205,14 +244,19 @@ export async function GET(request: NextRequest) {
         }
 
         // Get recent payments (last 30 days)
-        const thirtyDaysAgo = new Date();
+        const thirtyDaysAgo = new Date(now);
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        const paymentsQueryStart = new Date(
+            Math.min(thirtyDaysAgo.getTime(), monthStart.getTime()),
+        );
 
         let recentPaymentsCount = 0;
         let recentPaymentsTotal = 0;
         let recentRefundsCount = 0;
         let recentRefundsTotal = 0;
         let todaySales = 0;
+        let thisWeekSales = 0;
+        let thisMonthSales = 0;
         const dailyRevenueMap: Record<
             string,
             { totalSales: number; paymentCount: number }
@@ -225,7 +269,7 @@ export async function GET(request: NextRequest) {
                 .doc(userDoc.id)
                 .collection("payments");
             const paymentsSnapshot = await paymentsRef
-                .where("approvedAt", ">=", thirtyDaysAgo.toISOString())
+                .where("approvedAt", ">=", paymentsQueryStart.toISOString())
                 .get();
 
             paymentsSnapshot.forEach((paymentDoc) => {
@@ -253,7 +297,13 @@ export async function GET(request: NextRequest) {
                         approvedAt && !Number.isNaN(approvedAt.getTime())
                             ? getDateKey(approvedAt)
                             : "";
-                    if (dateKey) {
+                    if (dateKey && approvedAt) {
+                        if (approvedAt >= weekStart) {
+                            thisWeekSales += amount;
+                        }
+                        if (approvedAt >= monthStart) {
+                            thisMonthSales += amount;
+                        }
                         const prev = dailyRevenueMap[dateKey] || {
                             totalSales: 0,
                             paymentCount: 0,
@@ -309,6 +359,11 @@ export async function GET(request: NextRequest) {
                     count: recentRefundsCount,
                     total: recentRefundsTotal,
                 },
+            },
+            revenueSummary: {
+                today: todaySales,
+                thisWeek: thisWeekSales,
+                thisMonth: thisMonthSales,
             },
         });
     } catch (error) {

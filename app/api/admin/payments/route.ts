@@ -184,6 +184,8 @@ export async function GET(request: NextRequest) {
         });
     } catch (error) {
         console.error("Admin payments error:", error);
+        const errorMessage =
+            error instanceof Error ? error.message : String(error);
         return NextResponse.json({
             payments: [],
             total: 0,
@@ -196,6 +198,7 @@ export async function GET(request: NextRequest) {
             },
             warning:
                 "firebase_admin_not_configured: check FIREBASE_ADMIN_CREDENTIALS and project settings",
+            error: errorMessage,
         });
     }
 }

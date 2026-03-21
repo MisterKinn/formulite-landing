@@ -39,6 +39,11 @@ interface Stats {
         yearlyRecurring: number;
         totalMRR: number;
     };
+    revenueSummary?: {
+        today: number;
+        thisWeek: number;
+        thisMonth: number;
+    };
     recentActivity: {
         payments: { count: number; total: number };
         refunds: { count: number; total: number };
@@ -92,6 +97,7 @@ interface UpdateManifestForm {
 
 const EDITABLE_PLANS = ["free", "go", "plus", "pro"] as const;
 type EditablePlan = (typeof EDITABLE_PLANS)[number];
+const USERS_PER_PAGE = 30;
 const PLAN_LABELS: Record<string, string> = {
     free: "FREE",
     go: "GO",
@@ -123,6 +129,7 @@ export default function AdminPage() {
     const [userSearch, setUserSearch] = useState("");
     const [userPlanFilter, setUserPlanFilter] = useState("");
     const [userStatusFilter, setUserStatusFilter] = useState("");
+    const [currentUsersPage, setCurrentUsersPage] = useState(1);
 
     // Payments state
     const [payments, setPayments] = useState<Payment[]>([]);
@@ -620,6 +627,13 @@ export default function AdminPage() {
         fetchStats();
     }, [authUser, adminSessionToken, getAdminAuthHeader]);
 
+    useEffect(() => {
+        const totalPages = Math.max(1, Math.ceil(usersTotal / USERS_PER_PAGE));
+        if (currentUsersPage > totalPages) {
+            setCurrentUsersPage(totalPages);
+        }
+    }, [currentUsersPage, usersTotal]);
+
     // Fetch users
     useEffect(() => {
         if (!authUser && !adminSessionToken) return;
@@ -630,6 +644,11 @@ export default function AdminPage() {
                 const authorization = await getAdminAuthHeader();
                 if (!authorization) return;
                 const params = new URLSearchParams();
+                params.set("limit", String(USERS_PER_PAGE));
+                params.set(
+                    "offset",
+                    String((currentUsersPage - 1) * USERS_PER_PAGE),
+                );
                 if (userSearch) params.set("search", userSearch);
                 if (userPlanFilter) params.set("plan", userPlanFilter);
                 if (userStatusFilter) params.set("status", userStatusFilter);
@@ -661,6 +680,7 @@ export default function AdminPage() {
         userSearch,
         userPlanFilter,
         userStatusFilter,
+        currentUsersPage,
     ]);
 
     // Fetch payments
@@ -805,6 +825,52 @@ export default function AdminPage() {
         }
         return "-";
     };
+
+    const getSubscriptionStatusLabel = (status: string) => {
+        const normalized = String(status || "none").toLowerCase();
+        if (normalized === "active") return "활성";
+        if (normalized === "cancelled") return "해지 예정";
+        if (normalized === "suspended") return "일시정지";
+        return "없음";
+    };
+
+    const getNextBillingDateLabel = (subscription: UserData["subscription"]) => {
+        if (subscription.status !== "active") return "-";
+        return formatOptionalDate(subscription.nextBillingDate);
+    };
+
+    const getCancellationEndDateLabel = (
+        subscription: UserData["subscription"],
+    ) => {
+        if (subscription.status !== "cancelled") return "-";
+        return formatOptionalDate(subscription.nextBillingDate);
+    };
+
+    const totalUsersPages = Math.max(1, Math.ceil(usersTotal / USERS_PER_PAGE));
+    const userPageNumbers = (() => {
+        if (totalUsersPages <= 7) {
+            return Array.from({ length: totalUsersPages }, (_, index) => index + 1);
+        }
+
+        const pages: Array<number | string> = [1];
+        const start = Math.max(2, currentUsersPage - 1);
+        const end = Math.min(totalUsersPages - 1, currentUsersPage + 1);
+
+        if (start > 2) {
+            pages.push("ellipsis-start");
+        }
+
+        for (let page = start; page <= end; page += 1) {
+            pages.push(page);
+        }
+
+        if (end < totalUsersPages - 1) {
+            pages.push("ellipsis-end");
+        }
+
+        pages.push(totalUsersPages);
+        return pages;
+    })();
 
     const navItems = [
         {
@@ -1045,31 +1111,30 @@ export default function AdminPage() {
                                             <h3>수익 요약</h3>
                                             <div className="admin-overview-list">
                                                 <div>
-                                                    <span>월간 반복 수익</span>
+                                                    <span>오늘 수익</span>
                                                     <strong>
                                                         {formatCurrency(
-                                                            stats.revenue.totalMRR,
+                                                            stats.revenueSummary
+                                                                ?.today ??
+                                                                stats.todaySales,
                                                         )}
                                                     </strong>
                                                 </div>
                                                 <div>
-                                                    <span>최근 30일 결제</span>
+                                                    <span>이번주 수익</span>
                                                     <strong>
                                                         {formatCurrency(
-                                                            stats.recentActivity
-                                                                .payments.total,
+                                                            stats.revenueSummary
+                                                                ?.thisWeek ?? 0,
                                                         )}
                                                     </strong>
                                                 </div>
                                                 <div>
-                                                    <span>최근 30일 환불</span>
-                                                    <strong className="negative">
-                                                        {stats.recentActivity
-                                                            .refunds.count}
-                                                        건 /{" "}
+                                                    <span>이번 달 수익</span>
+                                                    <strong>
                                                         {formatCurrency(
-                                                            stats.recentActivity
-                                                                .refunds.total,
+                                                            stats.revenueSummary
+                                                                ?.thisMonth ?? 0,
                                                         )}
                                                     </strong>
                                                 </div>
@@ -1201,16 +1266,18 @@ export default function AdminPage() {
                                     type="text"
                                     placeholder="이메일 검색..."
                                     value={userSearch}
-                                    onChange={(e) =>
-                                        setUserSearch(e.target.value)
-                                    }
+                                    onChange={(e) => {
+                                        setUserSearch(e.target.value);
+                                        setCurrentUsersPage(1);
+                                    }}
                                     className="admin-search"
                                 />
                                 <select
                                     value={userPlanFilter}
-                                    onChange={(e) =>
-                                        setUserPlanFilter(e.target.value)
-                                    }
+                                    onChange={(e) => {
+                                        setUserPlanFilter(e.target.value);
+                                        setCurrentUsersPage(1);
+                                    }}
                                     className="admin-select"
                                 >
                                     <option value="">모든 플랜</option>
@@ -1221,9 +1288,10 @@ export default function AdminPage() {
                                 </select>
                                 <select
                                     value={userStatusFilter}
-                                    onChange={(e) =>
-                                        setUserStatusFilter(e.target.value)
-                                    }
+                                    onChange={(e) => {
+                                        setUserStatusFilter(e.target.value);
+                                        setCurrentUsersPage(1);
+                                    }}
                                     className="admin-select"
                                 >
                                     <option value="">모든 상태</option>
@@ -1239,253 +1307,327 @@ export default function AdminPage() {
                                     <div className="admin-spinner" />
                                 </div>
                             ) : (
-                                <div className="admin-table-wrapper">
-                                    <table className="admin-table">
-                                        <thead>
-                                            <tr>
-                                                <th>이메일</th>
-                                                <th>가입일</th>
-                                                <th>플랜</th>
-                                                <th>구독 기간</th>
-                                                <th>월별 사용량</th>
-                                                <th>월별 남은 사용량</th>
-                                                <th>누적 금액</th>
-                                                <th>다음 결제일</th>
-                                                <th>실패 횟수</th>
-                                                <th>관리</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {users.map((user) => (
-                                                <tr key={user.uid}>
-                                                    <td>{user.email}</td>
-                                                    <td>
-                                                        {formatOptionalDate(
-                                                            user.createdAt,
-                                                        )}
-                                                    </td>
-                                                    <td>
-                                                        <span
-                                                            className={`admin-plan-badge ${user.subscription.plan}`}
-                                                        >
-                                                            {PLAN_LABELS[
-                                                                user.subscription
-                                                                    .plan
-                                                            ] ??
-                                                                user.subscription.plan.toUpperCase()}
-                                                        </span>
-                                                    </td>
-                                                    <td>
-                                                        <span className="admin-subscription-period">
-                                                            {formatPeriodLabel(
+                                <>
+                                    <div className="admin-table-wrapper">
+                                        <table className="admin-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>이메일</th>
+                                                    <th>가입일</th>
+                                                    <th>플랜</th>
+                                                    <th>상태</th>
+                                                    <th>구독 기간</th>
+                                                    <th>월별 사용량</th>
+                                                    <th>월별 남은 사용량</th>
+                                                    <th>누적 금액</th>
+                                                    <th>다음 결제일</th>
+                                                    <th>해지 예정일</th>
+                                                    <th>실패 횟수</th>
+                                                    <th>관리</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {users.map((user) => (
+                                                    <tr key={user.uid}>
+                                                        <td>{user.email}</td>
+                                                        <td>
+                                                            {formatOptionalDate(
+                                                                user.createdAt,
+                                                            )}
+                                                        </td>
+                                                        <td>
+                                                            <span
+                                                                className={`admin-plan-badge ${user.subscription.plan}`}
+                                                            >
+                                                                {PLAN_LABELS[
+                                                                    user.subscription
+                                                                        .plan
+                                                                ] ??
+                                                                    user.subscription.plan.toUpperCase()}
+                                                            </span>
+                                                        </td>
+                                                        <td>
+                                                            <span
+                                                                className={`admin-status-badge ${user.subscription.status}`}
+                                                            >
+                                                                {getSubscriptionStatusLabel(
+                                                                    user.subscription
+                                                                        .status,
+                                                                )}
+                                                            </span>
+                                                        </td>
+                                                        <td>
+                                                            <span className="admin-subscription-period">
+                                                                {formatPeriodLabel(
+                                                                    user.subscription,
+                                                                )}
+                                                            </span>
+                                                        </td>
+                                                        <td>
+                                                            {user.usage?.cycleUsed ??
+                                                                0}{" "}
+                                                            /{" "}
+                                                            {user.usage?.limit ?? 0}
+                                                        </td>
+                                                        <td>
+                                                            {user.usage
+                                                                ?.cycleRemaining ?? 0}
+                                                        </td>
+                                                        <td>
+                                                            {formatCurrency(
+                                                                user.cumulativeAmount ||
+                                                                    0,
+                                                            )}
+                                                        </td>
+                                                        <td>
+                                                            {getNextBillingDateLabel(
                                                                 user.subscription,
                                                             )}
-                                                        </span>
-                                                    </td>
-                                                    <td>
-                                                        {user.usage?.cycleUsed ?? 0} /{" "}
-                                                        {user.usage?.limit ?? 0}
-                                                    </td>
-                                                    <td>
-                                                        {user.usage?.cycleRemaining ??
-                                                            0}
-                                                    </td>
-                                                    <td>
-                                                        {formatCurrency(
-                                                            user.cumulativeAmount ||
-                                                                0,
-                                                        )}
-                                                    </td>
-                                                    <td>
-                                                        {user.subscription
-                                                            .nextBillingDate
-                                                            ? new Date(
-                                                                  user
-                                                                      .subscription
-                                                                      .nextBillingDate,
-                                                              ).toLocaleDateString(
-                                                                  "ko-KR",
-                                                              )
-                                                            : "-"}
-                                                    </td>
-                                                    <td>
-                                                        {user.subscription
-                                                            .failureCount > 0 ? (
-                                                            <span
-                                                                className="admin-failure-count"
-                                                                title={
-                                                                    user
-                                                                        .subscription
-                                                                        .lastFailureReason
-                                                                }
-                                                            >
-                                                                {
-                                                                    user
-                                                                        .subscription
-                                                                        .failureCount
-                                                                }
-                                                            </span>
-                                                        ) : (
-                                                            "-"
-                                                        )}
-                                                    </td>
-                                                    <td>
-                                                        <div className="admin-action-group">
-                                                            <div className="admin-plan-edit">
-                                                                <select
-                                                                    value={
-                                                                        planEditValues[
-                                                                            user
-                                                                                .uid
-                                                                        ] ||
-                                                                        (EDITABLE_PLANS.includes(
-                                                                            user
-                                                                                .subscription
-                                                                                .plan as EditablePlan,
-                                                                        )
-                                                                            ? (user
-                                                                                  .subscription
-                                                                                  .plan as EditablePlan)
-                                                                            : "free")
-                                                                    }
-                                                                    onChange={(
-                                                                        e,
-                                                                    ) => {
-                                                                        const selectedPlan =
-                                                                            e
-                                                                                .target
-                                                                                .value as EditablePlan;
-                                                                        setPlanEditValues(
-                                                                            (
-                                                                                prev,
-                                                                            ) => ({
-                                                                                ...prev,
-                                                                                [user.uid]:
-                                                                                    selectedPlan,
-                                                                            }),
-                                                                        );
-                                                                        void handleUpdatePlan(
-                                                                            user,
-                                                                            selectedPlan,
-                                                                        );
-                                                                    }}
-                                                                    className="admin-plan-select"
-                                                                >
-                                                                    <option value="free">
-                                                                        Free
-                                                                    </option>
-                                                                    <option value="go">
-                                                                        Go
-                                                                    </option>
-                                                                    <option value="plus">
-                                                                        Plus
-                                                                    </option>
-                                                                    <option value="pro">
-                                                                        Ultra
-                                                                    </option>
-                                                                </select>
-                                                            </div>
-                                                            <div className="admin-usage-edit">
-                                                                <input
-                                                                    type="number"
-                                                                    min={0}
-                                                                    max={
+                                                        </td>
+                                                        <td>
+                                                            {getCancellationEndDateLabel(
+                                                                user.subscription,
+                                                            )}
+                                                        </td>
+                                                        <td>
+                                                            {user.subscription
+                                                                .failureCount >
+                                                            0 ? (
+                                                                <span
+                                                                    className="admin-failure-count"
+                                                                    title={
                                                                         user
-                                                                            .usage
-                                                                            ?.limit ??
-                                                                        0
+                                                                            .subscription
+                                                                            .lastFailureReason
                                                                     }
-                                                                    step={1}
-                                                                    value={
-                                                                        usageEditValues[
-                                                                            user
-                                                                                .uid
-                                                                        ] ??
-                                                                        String(
+                                                                >
+                                                                    {
+                                                                        user
+                                                                            .subscription
+                                                                            .failureCount
+                                                                    }
+                                                                </span>
+                                                            ) : (
+                                                                "-"
+                                                            )}
+                                                        </td>
+                                                        <td>
+                                                            <div className="admin-action-group">
+                                                                <div className="admin-plan-edit">
+                                                                    <select
+                                                                        value={
+                                                                            planEditValues[
+                                                                                user
+                                                                                    .uid
+                                                                            ] ||
+                                                                            (EDITABLE_PLANS.includes(
+                                                                                user
+                                                                                    .subscription
+                                                                                    .plan as EditablePlan,
+                                                                            )
+                                                                                ? (user
+                                                                                      .subscription
+                                                                                      .plan as EditablePlan)
+                                                                                : "free")
+                                                                        }
+                                                                        onChange={(
+                                                                            e,
+                                                                        ) => {
+                                                                            const selectedPlan =
+                                                                                e
+                                                                                    .target
+                                                                                    .value as EditablePlan;
+                                                                            setPlanEditValues(
+                                                                                (
+                                                                                    prev,
+                                                                                ) => ({
+                                                                                    ...prev,
+                                                                                    [user.uid]:
+                                                                                        selectedPlan,
+                                                                                }),
+                                                                            );
+                                                                            void handleUpdatePlan(
+                                                                                user,
+                                                                                selectedPlan,
+                                                                            );
+                                                                        }}
+                                                                        className="admin-plan-select"
+                                                                    >
+                                                                        <option value="free">
+                                                                            Free
+                                                                        </option>
+                                                                        <option value="go">
+                                                                            Go
+                                                                        </option>
+                                                                        <option value="plus">
+                                                                            Plus
+                                                                        </option>
+                                                                        <option value="pro">
+                                                                            Ultra
+                                                                        </option>
+                                                                    </select>
+                                                                </div>
+                                                                <div className="admin-usage-edit">
+                                                                    <input
+                                                                        type="number"
+                                                                        min={0}
+                                                                        max={
                                                                             user
                                                                                 .usage
-                                                                                ?.cycleRemaining ??
-                                                                                0,
-                                                                        )
-                                                                    }
-                                                                    onChange={(
-                                                                        e,
-                                                                    ) =>
-                                                                        scheduleRemainingUsageAutoSave(
+                                                                                ?.limit ??
+                                                                            0
+                                                                        }
+                                                                        step={1}
+                                                                        value={
+                                                                            usageEditValues[
+                                                                                user
+                                                                                    .uid
+                                                                            ] ??
+                                                                            String(
+                                                                                user
+                                                                                    .usage
+                                                                                    ?.cycleRemaining ??
+                                                                                    0,
+                                                                            )
+                                                                        }
+                                                                        onChange={(
+                                                                            e,
+                                                                        ) =>
+                                                                            scheduleRemainingUsageAutoSave(
+                                                                                user,
+                                                                                e
+                                                                                    .target
+                                                                                    .value,
+                                                                            )
+                                                                        }
+                                                                        className="admin-usage-input"
+                                                                    />
+                                                                </div>
+                                                                {(updatingPlanUserId ===
+                                                                    user.uid ||
+                                                                    updatingUsageUserId ===
+                                                                        user.uid) && (
+                                                                    <span className="admin-inline-saving">
+                                                                        저장 중...
+                                                                    </span>
+                                                                )}
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() =>
+                                                                        handleCancelNextBilling(
                                                                             user,
-                                                                            e
-                                                                                .target
-                                                                                .value,
                                                                         )
                                                                     }
-                                                                    className="admin-usage-input"
-                                                                />
+                                                                    disabled={
+                                                                        cancellingBillingUserId ===
+                                                                            user.uid ||
+                                                                        user.subscription
+                                                                            .plan ===
+                                                                            "free" ||
+                                                                        user.subscription
+                                                                            .status !==
+                                                                            "active" ||
+                                                                        !user
+                                                                            .subscription
+                                                                            .nextBillingDate
+                                                                    }
+                                                                    className="admin-delete-btn"
+                                                                >
+                                                                    {cancellingBillingUserId ===
+                                                                    user.uid
+                                                                        ? "해지 중..."
+                                                                        : user
+                                                                                .subscription
+                                                                                .status ===
+                                                                              "cancelled"
+                                                                          ? "해지 예정"
+                                                                        : "다음 결제 해지"}
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() =>
+                                                                        handleDeleteUser(
+                                                                            user.uid,
+                                                                            user.email,
+                                                                        )
+                                                                    }
+                                                                    disabled={
+                                                                        deletingUserId ===
+                                                                            user.uid ||
+                                                                        (authUser
+                                                                            ? authUser.uid ===
+                                                                              user.uid
+                                                                            : false)
+                                                                    }
+                                                                    className="admin-delete-btn"
+                                                                >
+                                                                    {deletingUserId ===
+                                                                    user.uid
+                                                                        ? "삭제 중..."
+                                                                        : "사용자 삭제"}
+                                                                </button>
                                                             </div>
-                                                            {(updatingPlanUserId ===
-                                                                user.uid ||
-                                                                updatingUsageUserId ===
-                                                                    user.uid) && (
-                                                                <span className="admin-inline-saving">
-                                                                    저장 중...
-                                                                </span>
-                                                            )}
-                                                            <button
-                                                                type="button"
-                                                                onClick={() =>
-                                                                    handleCancelNextBilling(
-                                                                        user,
-                                                                    )
-                                                                }
-                                                                disabled={
-                                                                    cancellingBillingUserId ===
-                                                                        user.uid ||
-                                                                    user.subscription
-                                                                        .plan ===
-                                                                        "free" ||
-                                                                    user.subscription
-                                                                        .status !==
-                                                                        "active" ||
-                                                                    !user
-                                                                        .subscription
-                                                                        .nextBillingDate
-                                                                }
-                                                                className="admin-delete-btn"
-                                                            >
-                                                                {cancellingBillingUserId ===
-                                                                user.uid
-                                                                    ? "해지 중..."
-                                                                    : "다음 결제 해지"}
-                                                            </button>
-                                                            <button
-                                                                type="button"
-                                                                onClick={() =>
-                                                                    handleDeleteUser(
-                                                                        user.uid,
-                                                                        user.email,
-                                                                    )
-                                                                }
-                                                                disabled={
-                                                                    deletingUserId ===
-                                                                        user.uid ||
-                                                                    (authUser
-                                                                        ? authUser.uid ===
-                                                                          user.uid
-                                                                        : false)
-                                                                }
-                                                                className="admin-delete-btn"
-                                                            >
-                                                                {deletingUserId ===
-                                                                user.uid
-                                                                    ? "삭제 중..."
-                                                                    : "사용자 삭제"}
-                                                            </button>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    {usersTotal > 0 && (
+                                        <div className="admin-pagination">
+                                        <button
+                                            type="button"
+                                            className="admin-pagination-btn"
+                                            onClick={() =>
+                                                setCurrentUsersPage((prev) =>
+                                                    Math.max(1, prev - 1),
+                                                )
+                                            }
+                                            disabled={currentUsersPage === 1}
+                                        >
+                                            이전
+                                        </button>
+                                        {userPageNumbers.map((page) =>
+                                            typeof page === "number" ? (
+                                                <button
+                                                    key={page}
+                                                    type="button"
+                                                    className={`admin-pagination-btn ${currentUsersPage === page ? "active" : ""}`}
+                                                    onClick={() =>
+                                                        setCurrentUsersPage(page)
+                                                    }
+                                                >
+                                                    {page}
+                                                </button>
+                                            ) : (
+                                                <span
+                                                    key={page}
+                                                    className="admin-pagination-ellipsis"
+                                                >
+                                                    ...
+                                                </span>
+                                            ),
+                                        )}
+                                        <button
+                                            type="button"
+                                            className="admin-pagination-btn"
+                                            onClick={() =>
+                                                setCurrentUsersPage((prev) =>
+                                                    Math.min(
+                                                        totalUsersPages,
+                                                        prev + 1,
+                                                    ),
+                                                )
+                                            }
+                                            disabled={
+                                                currentUsersPage === totalUsersPages
+                                            }
+                                        >
+                                            다음
+                                        </button>
+                                        </div>
+                                    )}
+                                </>
                             )}
                         </div>
                     )}

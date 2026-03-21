@@ -4,6 +4,8 @@ import { useAuth } from "../context/AuthContext";
 import { getFirestore, doc, getDoc } from "firebase/firestore";
 import { getFirebaseAppOrNull } from "../firebaseConfig";
 import { inferPlanFromAmount } from "@/lib/userData";
+import { ENABLE_UPDATE_NOTICE } from "@/lib/featureFlags";
+import { ADMIN_EMAILS, ADMIN_SESSION_STORAGE_KEY } from "@/lib/adminPortal";
 
 export function Navbar() {
     const { isAuthenticated, avatar, logout, user } = useAuth();
@@ -12,6 +14,7 @@ export function Navbar() {
     const [displayName, setDisplayName] = useState<string | null>(null);
     const [userPlan, setUserPlan] = useState<string | null>(null);
     const [planResolved, setPlanResolved] = useState(false);
+    const [hasAdminSession, setHasAdminSession] = useState(false);
 
     const normalizePlan = (
         value?: unknown,
@@ -64,6 +67,17 @@ export function Navbar() {
 
         return inferPlanFromOrderName(data?.subscription?.orderName);
     };
+
+    useEffect(() => {
+        const syncAdminSession = () => {
+            const token = sessionStorage.getItem(ADMIN_SESSION_STORAGE_KEY);
+            setHasAdminSession(Boolean(token));
+        };
+
+        syncAdminSession();
+        window.addEventListener("storage", syncAdminSession);
+        return () => window.removeEventListener("storage", syncAdminSession);
+    }, []);
 
     useEffect(() => {
         let mounted = true;
@@ -201,6 +215,10 @@ export function Navbar() {
         return () => window.removeEventListener("scroll", handleScroll);
     }, []);
 
+    const isAdminUser =
+        (!!user?.email && ADMIN_EMAILS.includes(user.email.toLowerCase())) ||
+        hasAdminSession;
+
     useEffect(() => {
         const element = navRef.current;
         if (!element) return;
@@ -252,12 +270,24 @@ export function Navbar() {
                     <a href="/download" className="nav-link">
                         {"\uB2E4\uC6B4\uB85C\uB4DC"}
                     </a>
-                    <a href="/notices" className="nav-link">
-                        {"\uACF5\uC9C0\uC0AC\uD56D"}
-                    </a>
+                    {ENABLE_UPDATE_NOTICE && (
+                        <a href="/notices" className="nav-link">
+                            {"\uACF5\uC9C0\uC0AC\uD56D"}
+                        </a>
+                    )}
+                    {isAdminUser && (
+                        <a href="/admin" className="nav-link">
+                            관리자 페이지
+                        </a>
+                    )}
                 </div>
 
                 <div className="nav-actions-group">
+                    {isAdminUser && (
+                        <a href="/admin" className="nav-download-btn">
+                            관리자 페이지
+                        </a>
+                    )}
                     {isAuthenticated ? (
                         <div className="nav-profile-menu-wrapper" ref={menuRef}>
                             <button
@@ -371,7 +401,7 @@ export function Navbar() {
                                 </div>
                             )}
                         </div>
-                    ) : (
+                    ) : !hasAdminSession ? (
                         <>
                             <a href="/login" className="nav-login-btn">
                                 {"\uB85C\uADF8\uC778"}
@@ -380,7 +410,7 @@ export function Navbar() {
                                 {"\uD68C\uC6D0\uAC00\uC785"}
                             </a>
                         </>
-                    )}
+                    ) : null}
                 </div>
             </div>
         </nav>

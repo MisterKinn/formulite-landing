@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import getFirebaseAdmin from "@/lib/firebaseAdmin";
 import { isRefundable, updatePaymentRecord } from "@/lib/paymentHistory";
+import { removeRecentPurchaseFeedItem } from "@/lib/recentPurchaseFeed";
 
 /**
  * 환불 요청 API
@@ -97,6 +98,7 @@ export async function POST(request: NextRequest) {
             refundReason: reason || "고객 요청에 의한 환불",
             updatedAt: new Date().toISOString(),
         });
+        await removeRecentPurchaseFeedItem(paymentKey);
 
         // Update subscription status if this was the last payment
         const userRef = db.collection("users").doc(userId);

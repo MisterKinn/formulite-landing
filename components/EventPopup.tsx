@@ -1,11 +1,11 @@
 "use client";
 import { useEffect, useState, type MouseEvent } from "react";
-import { useRouter } from "next/navigation";
+import { ENABLE_UPDATE_NOTICE } from "@/lib/featureFlags";
+import updatePopupImage from "../nova-ai/2.1.1.png";
 
 export default function EventPopup() {
     const [visible, setVisible] = useState(false);
     const [isScrollHidden, setIsScrollHidden] = useState(false);
-    const router = useRouter();
 
     useEffect(() => {
         try {
@@ -61,11 +61,7 @@ export default function EventPopup() {
         }
     };
 
-    const handleImageClick = () => {
-        setVisible(false);
-        router.push("/notices/1");
-    };
-
+    if (!ENABLE_UPDATE_NOTICE) return null;
     if (!visible) return null;
 
     return (
@@ -74,10 +70,9 @@ export default function EventPopup() {
         >
             <div className="event-popup-container" onClick={(e) => e.stopPropagation()}>
                 <img
-                    src="/event.png"
+                    src={updatePopupImage.src}
                     alt="결제 및 업데이트 공지"
                     className="event-popup-image"
-                    onClick={handleImageClick}
                 />
                 <div className="event-popup-bottom">
                     <button className="event-popup-today-btn" onClick={handleTodayClose}>

@@ -1113,45 +1113,10 @@ class HwpController:
 
     def set_table_border_white(self) -> None:
         """
-        Set current table borders to white (borderless look).
-        Best-effort for different HWP versions.
+        Table border styling is disabled.
+        Keep this as a no-op for backward compatibility with older scripts.
         """
-        hwp = self._ensure_connected()
-        color = 0xFFFFFF
-        try:
-            action = hwp.HAction
-            param_sets = hwp.HParameterSet
-            candidates = [
-                ("TableCellBorderFill", "HTableCellBorderFill"),
-                ("CellBorderFill", "HCellBorderFill"),
-            ]
-            for action_name, param_name in candidates:
-                if not hasattr(param_sets, param_name):
-                    continue
-                param = getattr(param_sets, param_name)
-                action.GetDefault(action_name, param.HSet)
-                for attr in (
-                    "BorderColor",
-                    "BorderColorLeft",
-                    "BorderColorRight",
-                    "BorderColorTop",
-                    "BorderColorBottom",
-                ):
-                    if hasattr(param, attr):
-                        setattr(param, attr, color)
-                for attr in (
-                    "BorderType",
-                    "BorderTypeLeft",
-                    "BorderTypeRight",
-                    "BorderTypeTop",
-                    "BorderTypeBottom",
-                ):
-                    if hasattr(param, attr):
-                        setattr(param, attr, 1)
-                action.Execute(action_name, param.HSet)
-                return
-        except Exception as exc:
-            raise HwpControllerError(f"???뚮몢由??됱긽 ?ㅼ젙 ?ㅽ뙣: {exc}") from exc
+        return
 
     def _apply_selected_cell_border_fill(self, style_params: dict[str, Any]) -> None:
         if not isinstance(style_params, dict) or not style_params:
@@ -2455,7 +2420,9 @@ class HwpController:
         Specialized handler for ### placeholders.
         For `header.hwp`, ### lives in row 2 of the <보기> table body.
         """
-        candidates = ["###", "# # #"]
+        # Some `header.hwp` variants keep one literal space before the marker.
+        # Match both forms so the leftover leading space is removed with `###`.
+        candidates = [" ###", " # # #", "###", "# # #"]
         original_pos = self._capture_cursor_pos()
 
         if self._repeat_find_retry(candidates, directions=(0, 1, 2)):
@@ -2654,7 +2621,7 @@ class HwpController:
         """
         Move into row 2 of `header.hwp`, where the ### placeholder lives.
         """
-        candidates = ["###", "# # #"]
+        candidates = [" ###", " # # #", "###", "# # #"]
 
         def _move_to_second_row_body_cell() -> bool:
             if not self._is_in_table_context():
@@ -2748,6 +2715,12 @@ class HwpController:
             self._line_start = False
             if not self._first_line_written:
                 self._first_line_written = True
+
+            # Disable default visible table borders.
+            try:
+                self._set_current_table_border_none()
+            except Exception:
+                pass
 
             # Best-effort: minimize table cell padding/margins.
             try:
@@ -2992,15 +2965,8 @@ class HwpController:
                 self._run_action_best_effort("Cancel")
 
             def _extract_style_params(spec: dict[str, Any]) -> dict[str, Any]:
-                if not isinstance(spec, dict):
-                    return {}
-                params: dict[str, Any] = {}
-                fill_color = self._normalize_hwp_color(
-                    spec.get("fill_color", spec.get("background_color", spec.get("bg_color")))
-                )
-                if fill_color is not None:
-                    params["FillAttr"] = {"Type": 1, "WinBrushFaceColor": fill_color}
-                return params
+                # Table background fill and border styling are intentionally disabled.
+                return {}
 
             def _extract_diagonal_params(spec: dict[str, Any]) -> dict[str, Any]:
                 if not isinstance(spec, dict):

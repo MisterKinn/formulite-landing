@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import getFirebaseAdmin from "@/lib/firebaseAdmin";
 import { sendSubscriptionCancelledEmail } from "@/lib/email";
+import {
+    buildUserRootPatch,
+    normalizePlanLike,
+    sanitizeForFirestore,
+} from "@/lib/userData";
+import { resolveSubscriptionPeriodEnd } from "@/lib/aiUsage";
 
 /**
  * 구독 취소 API
@@ -10,16 +16,37 @@ import { sendSubscriptionCancelledEmail } from "@/lib/email";
  */
 export async function POST(request: NextRequest) {
     try {
-        const { userId } = await request.json();
-
-        if (!userId) {
+        const authHeader = request.headers.get("Authorization");
+        if (!authHeader || !authHeader.startsWith("Bearer ")) {
             return NextResponse.json(
-                { success: false, error: "userId가 필요합니다" },
-                { status: 400 },
+                { success: false, error: "인증 정보가 필요합니다" },
+                { status: 401 },
             );
         }
 
         const admin = getFirebaseAdmin();
+        const token = authHeader.split("Bearer ")[1];
+        let decodedToken;
+        try {
+            decodedToken = await admin.auth().verifyIdToken(token);
+        } catch {
+            return NextResponse.json(
+                { success: false, error: "유효하지 않은 인증 정보입니다" },
+                { status: 401 },
+            );
+        }
+        const requestBody = await request.json().catch(() => ({}));
+        const requestedUserId =
+            typeof requestBody?.userId === "string" ? requestBody.userId : undefined;
+        const userId = decodedToken.uid;
+
+        if (requestedUserId && requestedUserId !== userId) {
+            return NextResponse.json(
+                { success: false, error: "본인 구독만 해지할 수 있습니다" },
+                { status: 403 },
+            );
+        }
+
         const db = admin.firestore();
 
         // Get user subscription data
@@ -75,14 +102,35 @@ export async function POST(request: NextRequest) {
             // Continue anyway - we still want to update our database
         }
 
-        // Update Firestore - mark subscription as cancelled and remove billing key
         const cancelledAt = new Date().toISOString();
-        await userRef.update({
-            "subscription.status": "cancelled",
-            "subscription.billingKey": null,
-            "subscription.cancelledAt": cancelledAt,
-            "subscription.isRecurring": false,
+        const previousPlan = normalizePlanLike(
+            subscription.plan || userData?.plan || "free",
+            "free",
+        );
+        const effectiveUntil =
+            resolveSubscriptionPeriodEnd({
+                ...((userData || {}) as Record<string, unknown>),
+                subscription,
+            }) || undefined;
+        const cancelledSubscription = sanitizeForFirestore({
+            ...subscription,
+            status: "cancelled",
+            billingKey: null,
+            customerKey: null,
+            cancelledAt,
+            isRecurring: false,
+            nextBillingDate: effectiveUntil || subscription.nextBillingDate || null,
+            updatedAt: cancelledAt,
         });
+
+        await userRef.set(
+            buildUserRootPatch({
+                existingUser: (userData || {}) as Record<string, unknown>,
+                subscription: cancelledSubscription as Record<string, unknown>,
+                plan: previousPlan,
+            }),
+            { merge: true },
+        );
 
         // Get user email for cancellation notification
         let userEmail: string | undefined;
@@ -98,9 +146,9 @@ export async function POST(request: NextRequest) {
 
         // Send cancellation email
         sendSubscriptionCancelledEmail(userId, {
-            plan: subscription.plan || "unknown",
+            plan: previousPlan,
             cancelledAt,
-            effectiveUntil: subscription.nextBillingDate || null,
+            effectiveUntil,
             email: userEmail,
         }).catch((err) =>
             console.error("Failed to send cancellation email:", err),
@@ -109,7 +157,9 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({
             success: true,
             message:
-                "구독이 취소되었습니다. 다음 결제일까지 서비스를 이용할 수 있습니다.",
+                "다음 정기결제가 해지되었습니다. 만료일까지는 현재 플랜을 이용할 수 있습니다.",
+            subscription: cancelledSubscription,
+            effectiveUntil,
         });
     } catch (error: any) {
         console.error("Subscription cancellation error:", error);

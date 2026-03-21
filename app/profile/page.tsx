@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getAuth } from "firebase/auth";
 import { getFirebaseAppOrNull } from "../../firebaseConfig";
@@ -178,6 +178,7 @@ const plansData: PlanData[] = [
         icon: <CrownIcon />,
         features: [
             { text: "월 2000+200회 AI 타이핑 생성", included: true },
+            { text: "고급 AI 모델", included: true },
             { text: "팀 협업 기능", included: true },
             { text: "API 액세스", included: true },
             { text: "전담 지원 서비스", included: true },
@@ -269,6 +270,7 @@ function ProfileContent() {
     const [deleting, setDeleting] = useState<boolean>(false);
     const [subscription, setSubscription] = useState<any>(null);
     const [loadingSubscription, setLoadingSubscription] = useState(true);
+    const [accountPlan, setAccountPlan] = useState<string | null>(null);
     const [aiUsage, setAiUsage] = useState<{
         currentUsage: number;
         limit: number;
@@ -279,6 +281,39 @@ function ProfileContent() {
 
     // Refresh key for forcing data reload
     const [refreshKey, setRefreshKey] = useState(0);
+
+    const loadAccountProfile = useCallback(async () => {
+        if (!authUser) {
+            setEmail("");
+            setAccountPlan(null);
+            return;
+        }
+
+        setEmail(authUser.email || "");
+
+        try {
+            const firebaseApp = getFirebaseAppOrNull();
+            if (!firebaseApp) return;
+            const db = getFirestore(firebaseApp);
+            const docRef = doc(db, "users", authUser.uid);
+            const snap = await getDoc(docRef);
+            if (snap.exists()) {
+                const data = snap.data() as any;
+                if (data?.email) setEmail(data.email);
+                if (typeof data?.plan === "string") {
+                    setAccountPlan(data.plan);
+                } else if (typeof data?.tier === "string") {
+                    setAccountPlan(data.tier);
+                } else {
+                    setAccountPlan(null);
+                }
+            } else {
+                setAccountPlan(null);
+            }
+        } catch (err) {
+            console.warn("Failed to load profile from Firestore", err);
+        }
+    }, [authUser]);
 
     // Load subscription data
     useEffect(() => {
@@ -453,28 +488,16 @@ function ProfileContent() {
     }, [searchParams]);
 
     useEffect(() => {
-        if (authUser) {
-            setEmail(authUser.email || "");
+        void loadAccountProfile();
+    }, [loadAccountProfile, refreshKey]);
 
-            (async () => {
-                try {
-                    const firebaseApp = getFirebaseAppOrNull();
-                    if (!firebaseApp) return;
-                    const db = getFirestore(firebaseApp);
-                    const docRef = doc(db, "users", authUser.uid);
-                    const snap = await getDoc(docRef);
-                    if (snap.exists()) {
-                        const data = snap.data() as any;
-                        if (data?.email) setEmail(data.email);
-                    }
-                } catch (err) {
-                    console.warn("Failed to load profile from Firestore", err);
-                }
-            })();
-        } else {
-            setEmail("");
-        }
-    }, [authUser]);
+    useEffect(() => {
+        if (!authUser) return;
+        const timer = window.setInterval(() => {
+            void loadAccountProfile();
+        }, 15000);
+        return () => window.clearInterval(timer);
+    }, [authUser, loadAccountProfile]);
 
     // 가격 포맷팅
     const formatPrice = (price: number) => {
@@ -541,21 +564,7 @@ function ProfileContent() {
         return "free";
     };
 
-    const getEffectivePlanId = () => {
-        const fromSubscription = normalizePlan(subscription?.plan);
-        if (fromSubscription !== "free") return fromSubscription;
-
-        const fromUsage = normalizePlan(aiUsage?.plan);
-        if (fromUsage !== "free") return fromUsage;
-
-        const latestPaid = paymentHistory.find((payment) => {
-            const status = String(payment?.status || "").toUpperCase();
-            return status === "DONE";
-        });
-        return inferPlanFromOrderName(latestPaid?.orderName);
-    };
-
-    const getPlanExpiryDate = () => {
+    const resolveSubscriptionEndDate = () => {
         const directDateCandidate =
             subscription?.expiresAt ||
             subscription?.expireAt ||
@@ -570,10 +579,10 @@ function ProfileContent() {
         }
 
         const startDateCandidate =
+            subscription?.lastPaymentDate ||
             subscription?.billingStartDate ||
             subscription?.startDate ||
-            subscription?.registeredAt ||
-            subscription?.lastPaymentDate;
+            subscription?.registeredAt;
 
         if (startDateCandidate) {
             const startedAt = new Date(startDateCandidate);
@@ -592,7 +601,8 @@ function ProfileContent() {
 
         const latestPaid = paymentHistory.find((payment) => {
             const status = String(payment?.status || "").toUpperCase();
-            return status === "DONE";
+            const amount = Number(payment?.amount || 0);
+            return status === "DONE" && amount > 0;
         });
         if (latestPaid?.approvedAt) {
             const approvedAt = new Date(latestPaid.approvedAt);
@@ -607,6 +617,73 @@ function ProfileContent() {
         }
 
         return null;
+    };
+
+    const isCancelledSubscriptionEnded = () => {
+        const subscriptionStatus = String(subscription?.status || "").toLowerCase();
+        if (subscriptionStatus === "expired") {
+            return true;
+        }
+        if (subscriptionStatus !== "cancelled") {
+            return false;
+        }
+
+        const endDate = resolveSubscriptionEndDate();
+        return !!endDate && endDate.getTime() <= Date.now();
+    };
+
+    const getEffectivePlanId = () => {
+        const subscriptionStatus = String(subscription?.status || "").toLowerCase();
+        const fromSubscription = normalizePlan(subscription?.plan);
+        if (fromSubscription !== "free" && !isCancelledSubscriptionEnded()) {
+            return fromSubscription;
+        }
+
+        const accountPlanId = normalizePlan(accountPlan);
+        if (typeof accountPlan === "string" && accountPlanId !== "free") {
+            return accountPlanId;
+        }
+
+        const fromUsage = normalizePlan(aiUsage?.plan);
+        if (fromUsage !== "free") return fromUsage;
+
+        const hasExplicitFreePlan =
+            (typeof accountPlan === "string" && accountPlanId === "free") ||
+            (!!subscription &&
+                (normalizePlan(subscription?.plan) === "free" ||
+                    subscriptionStatus === "expired" ||
+                    isCancelledSubscriptionEnded()));
+
+        if (hasExplicitFreePlan) return "free";
+
+        const latestPaid = paymentHistory.find((payment) => {
+            const status = String(payment?.status || "").toUpperCase();
+            const amount = Number(payment?.amount || 0);
+            return status === "DONE" && amount > 0;
+        });
+        return inferPlanFromOrderName(latestPaid?.orderName);
+    };
+
+    const getPlanExpiryDate = () => {
+        if (
+            typeof accountPlan === "string" &&
+            normalizePlan(accountPlan) === "free" &&
+            normalizePlan(subscription?.plan) === "free"
+        ) {
+            return null;
+        }
+
+        const subscriptionStatus = String(subscription?.status || "").toLowerCase();
+        if (
+            subscription &&
+            (normalizePlan(subscription?.plan) === "free" ||
+                subscriptionStatus === "expired" ||
+                isCancelledSubscriptionEnded())
+        ) {
+            return null;
+        }
+
+        return resolveSubscriptionEndDate();
     };
 
     const isPlanResolving = loadingSubscription || loadingPayments;
@@ -654,14 +731,17 @@ function ProfileContent() {
         subscription?.billingStartDate || subscription?.startDate || null;
     const completedPayments = paymentHistory.filter((payment) => {
         const paymentStatus = String(payment?.status || "").toUpperCase();
-        return paymentStatus === "DONE";
+        return paymentStatus === "DONE" && Number(payment?.amount || 0) > 0;
     });
     const totalPaidAmount = completedPayments.reduce(
         (sum, payment) => sum + Number(payment?.amount || 0),
         0,
     );
-    const subscriptionStatus = String(
-        subscription?.status || (effectivePlanId === "free" ? "free" : "active"),
+    const rawSubscriptionStatus = String(subscription?.status || "").toLowerCase();
+    const subscriptionStatus = (
+        effectivePlanId === "free"
+            ? "free"
+            : rawSubscriptionStatus || "active"
     ).toLowerCase();
     const subscriptionStatusLabel =
         subscriptionStatus === "cancelled"
@@ -834,17 +914,27 @@ function ProfileContent() {
 
         if (
             !confirm(
-                "구독을 취소하시겠습니까? 다음 결제일까지 서비스를 이용할 수 있습니다.",
+                "다음 정기결제를 해지하시겠습니까? 현재 플랜은 만료일까지 계속 이용할 수 있습니다.",
             )
         ) {
             return;
         }
 
         try {
+            const auth = getAuth();
+            const currentUser = auth.currentUser;
+            if (!currentUser) {
+                throw new Error("사용자 인증 실패");
+            }
+            const token = await currentUser.getIdToken();
+
             // Call API to cancel billing key with TossPayments and update Firestore
             const response = await fetch("/api/billing/cancel", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                },
                 body: JSON.stringify({ userId: authUser.uid }),
             });
 
@@ -858,10 +948,16 @@ function ProfileContent() {
                 ...subscription,
                 status: "cancelled",
                 billingKey: null,
+                customerKey: null,
                 isRecurring: false,
+                cancelledAt:
+                    result?.subscription?.cancelledAt ||
+                    new Date().toISOString(),
             });
 
-            setStatus("구독이 취소되었습니다.");
+            setStatus(
+                "다음 정기결제가 해지되었습니다. 만료일까지는 현재 플랜을 이용할 수 있습니다.",
+            );
             setRefreshKey((k) => k + 1); // Refresh data
         } catch (error: any) {
             console.error("Failed to cancel subscription:", error);
@@ -1588,7 +1684,9 @@ function ProfileContent() {
                                                 누적 결제액
                                             </span>
                                             <strong>
-                                                {formatCurrency(totalPaidAmount)}
+                                                {totalPaidAmount > 0
+                                                    ? formatCurrency(totalPaidAmount)
+                                                    : "없음"}
                                             </strong>
                                         </div>
                                         <div className="profile-info-item compact">
@@ -1679,12 +1777,16 @@ function ProfileContent() {
                                                                         : ""
                                                                 }`}
                                                             >
-                                                                {formatCurrency(
-                                                                    Number(
-                                                                        payment.amount ||
-                                                                            0,
-                                                                    ),
-                                                                )}
+                                                                {Number(
+                                                                    payment.amount || 0,
+                                                                ) > 0
+                                                                    ? formatCurrency(
+                                                                          Number(
+                                                                              payment.amount ||
+                                                                                  0,
+                                                                          ),
+                                                                      )
+                                                                    : "없음"}
                                                             </strong>
                                                         </div>
                                                     </article>

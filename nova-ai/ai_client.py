@@ -73,9 +73,6 @@ instead of inserting the table as an image. You may use structured cell objects 
 - {"equation": "x ^{2} + x + 1 = 0", "align": "center"}
 - {"content": ["조건 ", {"type": "equation", "value": "x ^{2} + x + 1"}, " 을 만족한다."], "align": "left"}
 - {"lines": [{"type": "equation", "value": "H_2 O_2 + 색소 -> 색 변화"}, "설명"], "align": "center"}
-- {"text": "람다", "fill_color": "#ffa24a", "align": "center"}
-- {"text": "구분", "fill_color": "연회색", "align": "center"}
-- {"text": "합계", "fill_color": "#fff2cc"}
 - {"text": "", "diagonal": "\\"}
 - {"text": "", "diagonal": "/"}
 - {"text": "", "diagonal": "x"}
@@ -88,12 +85,11 @@ For table-cell math:
 - `{"text": "EQ:..."}` is still allowed for simple equation-only cells
 If a printed rectangular block is actually a single bordered cell containing text/equations,
 preserve it as `insert_table(1, 1, ...)` rather than flattening the content into plain lines.
-Generate the final table structure and cell styles in a SINGLE pass.
-Do not leave table styling for a later pass or a follow-up correction step.
-If a table is present, include visible `fill_color` and `diagonal` style information
-in the first response whenever the image provides enough evidence.
-When a whole header row has the same fill, repeat that `fill_color` on each visible cell in that row.
-When only one colored cell is visible, apply style ONLY to that cell object.
+Generate the final table structure in a SINGLE pass.
+Do not leave table structure for a later pass or a follow-up correction step.
+Ignore visible table background colors and border styling.
+Do not emit `fill_color`, `background_color`, `bg_color`, `border`, `border_color`,
+`border_type`, or `border_width` for table cells.
 If a cell visibly contains a diagonal line or X mark, include `diagonal: "\\"`, `diagonal: "/"`, or `diagonal: "x"`.
 Do NOT use text color functions or `color=...` for text runs; ignore visible font color differences and type the text normally.
 If a text run combines multiple styles at once, prefer one

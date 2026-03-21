@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { AuthProvider } from "../context/AuthContext";
 import { Analytics } from "@vercel/analytics/next";
+import KakaoInquiryButton from "../components/KakaoInquiryButton";
 // Global styles
 import "./style.css";
 import "./mobile.css";
@@ -56,7 +57,10 @@ export default function RootLayout({
             </head>
             <body className="antialiased" style={{ padding: 0, margin: 0 }}>
                 <AuthProvider>
-                    <div className="app-shell">{children}</div>
+                    <div className="app-shell">
+                        {children}
+                        <KakaoInquiryButton />
+                    </div>
                 </AuthProvider>
                 <Analytics />
             </body>

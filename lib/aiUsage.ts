@@ -13,26 +13,122 @@ function normalizePlan(value: unknown): PlanTier {
     return "free";
 }
 
+function hasExplicitFreePlan(value: unknown): boolean {
+    return typeof value === "string" && normalizePlan(value) === "free";
+}
+
+function addBillingCycle(date: Date, billingCycle: unknown): Date {
+    const next = new Date(date);
+    if (billingCycle === "yearly") {
+        next.setFullYear(next.getFullYear() + 1);
+        return next;
+    }
+    if (billingCycle === "test") {
+        next.setTime(next.getTime() + 60 * 1000);
+        return next;
+    }
+    next.setMonth(next.getMonth() + 1);
+    return next;
+}
+
+export function resolveSubscriptionPeriodEnd(userData: PlainObject): string | null {
+    const nextBillingDate = parseDate(userData.subscription?.nextBillingDate);
+    if (nextBillingDate) return nextBillingDate.toISOString();
+
+    const lastPaymentDate = parseDate(userData.subscription?.lastPaymentDate);
+    if (lastPaymentDate) {
+        return addBillingCycle(
+            lastPaymentDate,
+            userData.subscription?.billingCycle,
+        ).toISOString();
+    }
+
+    const registeredAt = parseDate(userData.subscription?.registeredAt);
+    if (registeredAt) {
+        return addBillingCycle(
+            registeredAt,
+            userData.subscription?.billingCycle,
+        ).toISOString();
+    }
+
+    const startDate = parseDate(userData.subscription?.startDate);
+    if (startDate) {
+        return addBillingCycle(
+            startDate,
+            userData.subscription?.billingCycle,
+        ).toISOString();
+    }
+
+    return null;
+}
+
+export function isSubscriptionPeriodEnded(
+    userData: PlainObject,
+    now = new Date(),
+): boolean {
+    const subscriptionStatus = String(
+        userData.subscription?.status || "",
+    ).toLowerCase();
+
+    if (subscriptionStatus === "expired") {
+        return true;
+    }
+
+    if (subscriptionStatus !== "cancelled") {
+        return false;
+    }
+
+    const periodEnd = resolveSubscriptionPeriodEnd(userData);
+    if (!periodEnd) {
+        return false;
+    }
+
+    return new Date(periodEnd).getTime() <= now.getTime();
+}
+
 export function resolveEffectiveUsagePlan(userData: PlainObject): PlanTier {
     const rootPlan = normalizePlan(userData.plan);
     const subscriptionPlan = normalizePlan(userData.subscription?.plan);
     const tierPlan = normalizePlan(userData.tier);
+    const subscriptionStatus = String(userData.subscription?.status || "").toLowerCase();
+    const subscriptionEnded = isSubscriptionPeriodEnded(userData);
 
-    if (rootPlan === "pro" || subscriptionPlan === "pro" || tierPlan === "pro") {
+    if (subscriptionEnded) {
+        return "free";
+    }
+
+    if (subscriptionStatus === "cancelled" && subscriptionPlan === "pro") {
         return "pro";
     }
 
-    if (
-        rootPlan === "plus" ||
-        subscriptionPlan === "plus" ||
-        tierPlan === "plus"
-    ) {
+    if (subscriptionStatus === "cancelled" && subscriptionPlan === "plus") {
         return "plus";
     }
 
-    if (rootPlan === "go" || subscriptionPlan === "go" || tierPlan === "go") {
+    if (subscriptionStatus === "cancelled" && subscriptionPlan === "go") {
         return "go";
     }
+
+    if (subscriptionPlan === "pro") return "pro";
+    if (subscriptionPlan === "plus") return "plus";
+    if (subscriptionPlan === "go") return "go";
+
+    if (rootPlan === "pro") return "pro";
+    if (rootPlan === "plus") return "plus";
+    if (rootPlan === "go") return "go";
+
+    if (
+        hasExplicitFreePlan(userData.plan) ||
+        hasExplicitFreePlan(userData.tier) ||
+        subscriptionPlan === "free" ||
+        subscriptionStatus === "expired"
+    ) {
+        return "free";
+    }
+
+    if (tierPlan === "pro") return "pro";
+    if (tierPlan === "plus") return "plus";
+    if (tierPlan === "go") return "go";
 
     const amountRaw = userData.subscription?.amount;
     const amount =

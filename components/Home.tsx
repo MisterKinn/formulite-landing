@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState } from "react";
 import processImage1 from "../int1 (2).png";
 import processImage2 from "../int2.png";
 import processImage3 from "../int3.png";
+import HighlightStats from "./HighlightStats";
 
 type OSIconMap = {
     [key: string]: React.ReactNode;
@@ -363,18 +364,11 @@ export default function Home() {
                             <span className="typing-cursor"></span>
                             에게 맡기세요
                         </h1>
-                        <p className="subtitle hero-subtitle-emphasis">
-                            더 이상 내신 기출문제집 타이핑에 시간쓰지 마세요.
-                            <br />
-                            Nova AI가 압도적인 타이핑을 보여드리겠습니다.
-                        </p>
 
-                        <div className="hero-actions">
-                            <a
-                                href="https://storage.googleapis.com/physics2/NovaAI_Setup_2.0.0.exe"
-                                download
-                                style={{ textDecoration: "none" }}
-                            >
+                        <HighlightStats className="hero-highlight-stats" />
+
+                        <div className="hero-actions hero-actions--below-stats">
+                            <a href="/api/download/windows" style={{ textDecoration: "none" }}>
                                 <button className="primary-button hero-download-button">
                                     <svg
                                         width="18"

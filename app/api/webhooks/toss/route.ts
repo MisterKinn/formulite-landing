@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import getFirebaseAdmin from "@/lib/firebaseAdmin";
 import { FieldValue } from "firebase-admin/firestore";
+import {
+    removeRecentPurchaseFeedItem,
+    saveRecentPurchaseFeedItem,
+} from "@/lib/recentPurchaseFeed";
 
 // Get Firebase Admin instance (uses centralized initialization)
 const admin = getFirebaseAdmin();
@@ -143,6 +147,15 @@ async function handlePaymentDone(userId: string, data: any) {
                 createdAt: new Date().toISOString(),
             });
 
+        await saveRecentPurchaseFeedItem({
+            userId,
+            paymentKey,
+            orderName: orderName || "",
+            amount: Number(totalAmount || 0),
+            status: "DONE",
+            approvedAt: approvedAt || new Date().toISOString(),
+        });
+
         const userDoc = await adminDb.collection("users").doc(userId).get();
         const userData = userDoc.data();
 
@@ -188,6 +201,8 @@ async function handlePaymentCanceled(userId: string, data: any) {
                 canceledAt: new Date().toISOString(),
             });
         }
+
+        await removeRecentPurchaseFeedItem(paymentKey);
 
         const userDoc = await adminDb.collection("users").doc(userId).get();
         const userData = userDoc.data();

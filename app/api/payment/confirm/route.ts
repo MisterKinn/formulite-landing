@@ -10,6 +10,7 @@ import {
     normalizePlanLike,
 } from "@/lib/userData";
 import { savePaymentRecord } from "@/lib/paymentHistory";
+import { saveRecentPurchaseFeedItem } from "@/lib/recentPurchaseFeed";
 import getFirebaseAdmin from "@/lib/firebaseAdmin";
 
 function extractUserIdFromCustomerKey(customerKey?: string | null): string | null {
@@ -186,6 +187,14 @@ export async function POST(request: NextRequest) {
                             approvedAt: new Date().toISOString(),
                             card: null,
                         });
+                        await saveRecentPurchaseFeedItem({
+                            userId: resolvedUserId,
+                            paymentKey,
+                            orderName: "",
+                            amount: numericAmount,
+                            status: "DONE",
+                            approvedAt: new Date().toISOString(),
+                        });
                     } catch (recoveryErr) {
                         console.error(
                             "Failed to recover already-processed payment data:",
@@ -277,6 +286,15 @@ export async function POST(request: NextRequest) {
                               number: data.card.number || null,
                           }
                         : null,
+                });
+                await saveRecentPurchaseFeedItem({
+                    userId: resolvedUserId,
+                    paymentKey: data?.paymentKey || paymentKey,
+                    orderName: data?.orderName || "",
+                    amount: totalAmount,
+                    status: "DONE",
+                    approvedAt:
+                        data?.approvedAt || data?.requestedAt || new Date().toISOString(),
                 });
             }
         } catch (err) {

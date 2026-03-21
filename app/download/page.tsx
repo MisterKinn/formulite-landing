@@ -35,7 +35,7 @@ export default function DownloadContent() {
         {
             name: "Windows",
             img: "/windows.png",
-            link: "https://storage.googleapis.com/physics2/NovaAI_Setup_2.0.0.exe",
+            link: "/api/download/windows",
             desc: "Windows 10 이상",
             size: "104 MB",
         },
@@ -215,7 +215,6 @@ export default function DownloadContent() {
                             <div className="download-card-actions">
                                 <a
                                     href={p.link}
-                                    download
                                     className="download-card-button"
                                     onClick={(e) => {
                                         e.stopPropagation();

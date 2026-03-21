@@ -12,6 +12,7 @@ import CostComparison from "../../components/CostComparison";
 import Pricing from "../../components/Pricing";
 import FAQ from "../../components/FAQ";
 import CTA from "../../components/CTA";
+import EventPopup from "../../components/EventPopup";
 import { Navbar } from "../../components/Navbar";
 import Footer from "../../components/Footer";
 
@@ -117,6 +118,7 @@ function FormuLiteContent() {
     return (
         <div>
             <Navbar />
+            <EventPopup />
 
             <Home />
             <ExamTyping />

@@ -68,11 +68,7 @@ export default function CTA() {
                 </p>
 
                 <div className="cta-buttons">
-                    <a
-                        href="https://storage.googleapis.com/physics2/NovaAI_Setup_2.0.0.exe"
-                        download
-                        style={{ textDecoration: "none" }}
-                    >
+                    <a href="/api/download/windows" style={{ textDecoration: "none" }}>
                         <button className="primary-button">
                             <svg
                                 width="18"

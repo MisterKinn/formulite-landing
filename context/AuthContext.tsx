@@ -95,6 +95,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const initialAuthCheckedRef = useRef(false);
     const prevUserRef = useRef<User | null>(null);
 
+    const normalizeEmailValue = (value: unknown): string | null => {
+        if (typeof value !== "string") return null;
+        const normalized = value.trim().toLowerCase();
+        return normalized || null;
+    };
+
     useEffect(() => {
         const firebaseApp = getFirebaseAppOrNull();
         if (!firebaseApp) {
@@ -151,7 +157,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                         (firebaseUser.photoURL as string) || null;
                     const displayNameFromAuth =
                         firebaseUser.displayName || null;
-                    const emailFromAuth = firebaseUser.email || null;
+                    const emailFromAuth = normalizeEmailValue(firebaseUser.email);
 
                     // Try to read the user doc, with a short retry loop to account for eventual consistency
                     // when the server has just written the profile during the OAuth callback.
@@ -204,7 +210,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     const updates: any = {};
                     if (!data?.displayName && displayNameFromAuth)
                         updates.displayName = displayNameFromAuth;
-                    if (!data?.email && emailFromAuth)
+                    if (
+                        emailFromAuth &&
+                        normalizeEmailValue(data?.email) !== emailFromAuth
+                    )
                         updates.email = emailFromAuth;
                     if (!data?.avatar && avatarFromAuth)
                         updates.avatar = avatarFromAuth;
@@ -298,6 +307,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const firebaseApp = getFirebaseAppOrNull();
         if (!firebaseApp) throw new Error("firebase_not_configured");
         const auth = getAuth(firebaseApp);
+        const submittedEmail = normalizeEmailValue(email);
         try {
             const cred = await signInWithEmailAndPassword(
                 auth,
@@ -305,6 +315,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 password,
             );
             setUser(cred.user);
+            const authEmail = normalizeEmailValue(cred.user.email);
+            const canonicalEmail = submittedEmail || authEmail;
 
             // Ensure Firestore user doc has basic profile fields (displayName/email/avatar)
             try {
@@ -318,7 +330,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                         {
                             avatar: avatarFromAuth,
                             displayName: cred.user.displayName || null,
-                            email: cred.user.email || null,
+                            email: canonicalEmail,
                             createdAt: nowIsoString(),
                             updatedAt: nowIsoString(),
                             plan: "free",
@@ -328,6 +340,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     );
                     setAvatar(avatarFromAuth);
                 } else {
+                    const data = snap.data() as any;
+                    const updates: Record<string, unknown> = {};
+                    if (
+                        canonicalEmail &&
+                        normalizeEmailValue(data?.email) !== canonicalEmail
+                    ) {
+                        updates.email = canonicalEmail;
+                    }
+                    if (!data?.displayName && cred.user.displayName) {
+                        updates.displayName = cred.user.displayName;
+                    }
+                    if (!data?.avatar && avatarFromAuth) {
+                        updates.avatar = avatarFromAuth;
+                    }
+                    if (Object.keys(updates).length > 0) {
+                        updates.updatedAt = nowIsoString();
+                        await setDoc(docRef, updates, { merge: true });
+                    }
                     setAvatar((snap.data() as any).avatar ?? avatarFromAuth);
                 }
             } catch (err) {
@@ -367,6 +397,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const firebaseApp = getFirebaseAppOrNull();
         if (!firebaseApp) throw new Error("firebase_not_configured");
         const auth = getAuth(firebaseApp);
+        const submittedEmail = normalizeEmailValue(email);
         const cred = await createUserWithEmailAndPassword(
             auth,
             email,
@@ -385,7 +416,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 {
                     avatar: null,
                     displayName: displayName || cred.user.displayName || null,
-                    email: cred.user.email || null,
+                    email: submittedEmail || normalizeEmailValue(cred.user.email),
                     createdAt: nowIsoString(),
                     updatedAt: nowIsoString(),
                     plan: "free",
@@ -645,7 +676,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     {
                         avatar: cred.user.photoURL || null,
                         displayName: cred.user.displayName || null,
-                        email: cred.user.email || null,
+                        email: normalizeEmailValue(cred.user.email),
                         createdAt: nowIsoString(),
                         updatedAt: nowIsoString(),
                         plan: "free",
@@ -655,6 +686,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 );
                 setAvatar(cred.user.photoURL || null);
             } else {
+                const data = snap.data() as any;
+                const normalizedEmail = normalizeEmailValue(cred.user.email);
+                const updates: Record<string, unknown> = {};
+                if (
+                    normalizedEmail &&
+                    normalizeEmailValue(data?.email) !== normalizedEmail
+                ) {
+                    updates.email = normalizedEmail;
+                }
+                if (!data?.displayName && cred.user.displayName) {
+                    updates.displayName = cred.user.displayName;
+                }
+                if (!data?.avatar && cred.user.photoURL) {
+                    updates.avatar = cred.user.photoURL;
+                }
+                if (Object.keys(updates).length > 0) {
+                    updates.updatedAt = nowIsoString();
+                    await setDoc(docRef, updates, { merge: true });
+                }
                 setAvatar(
                     (snap.data() as any).avatar ?? cred.user.photoURL ?? null,
                 );
@@ -765,7 +815,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     {
                         avatar: profile?.profile_image || null,
                         displayName: profile?.name || profile?.nickname || null,
-                        email: profile?.email || null,
+                        email: normalizeEmailValue(profile?.email),
                         createdAt: nowIsoString(),
                         updatedAt: nowIsoString(),
                         plan: "free",
@@ -860,7 +910,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     {
                         avatar: profile?.profile_image || null,
                         displayName: profile?.name || profile?.nickname || null,
-                        email: profile?.email || null,
+                        email: normalizeEmailValue(profile?.email),
                         createdAt: nowIsoString(),
                         updatedAt: nowIsoString(),
                         plan: "free",
@@ -939,7 +989,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     {
                         avatar,
                         displayName: cred.user.displayName || null,
-                        email: cred.user.email || null,
+                        email: normalizeEmailValue(cred.user.email),
                         createdAt: nowIsoString(),
                         updatedAt: nowIsoString(),
                         plan: "free",
@@ -1116,7 +1166,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                         {
                             avatar: kakaoAvatar,
                             displayName: kakaoDisplayName,
-                            email: kakaoEmail,
+                            email: normalizeEmailValue(kakaoEmail),
                             createdAt: nowIsoString(),
                             updatedAt: nowIsoString(),
                             plan: "free",
