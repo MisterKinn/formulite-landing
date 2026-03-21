@@ -220,6 +220,22 @@ DEGREE / TEMPERATURE:
 
 PROBABILITY / STATISTICS:
 - Event symbols `A`, `B`, `X` usually remain plain in probability formulas.
+- In probability notation, apply roman formatting only to the probability symbol itself.
+- Prefer `rm P it LEFT ( ... RIGHT )` for probability expressions, and keep event / set symbols inside plain unless the source explicitly styles them otherwise.
+- ✅ `rm P it LEFT ( B | A RIGHT ) = 3 rm P it LEFT ( A | B RIGHT )`
+- ✅ `rm P LEFT ( A ^{C} SMALLINTER B RIGHT ) = {9} over {16}`
+- ✅ `rm P LEFT ( A CUP B RIGHT )`
+- ❌ `rm P it LEFT ( rm B | rm A RIGHT )`
+- ❌ `rm P LEFT ( rm A CAP rm B RIGHT )`
+- For set operations in math / probability formulas, use `SMALLINTER` for intersection and `CUP` for union.
+- ❌ Use raw `cap` / `intersection` text for set intersection.
+- For repeated permutations (`중복순열`) in probability / combinatorics, use `SMALLPROD` with a left subscript for the base count and a right subscript for the selected count.
+- Prefer `{ } _{(n)} SMALLPROD _{(r)}` style when the source shows the Korean textbook notation `{} _{n} Pi _{r}`.
+- ✅ `{ } _{(3)} SMALLPROD _{(2)}`
+- ✅ `{ } _{(n)} SMALLPROD _{(r)}`
+- ❌ `3 PI 2`
+- ❌ `3 pi 2`
+- ❌ `n P r`
 - Outside that context, symbolic letters like A/B should use roman form.
 - If uppercase Latin letters or Roman numerals are used as named labels rather than variables, keep them roman inside equations.
 - If lowercase Latin letters are used as named points / endpoints / markers rather than variables, keep them roman inside equations too.
@@ -350,7 +366,14 @@ COMMON MATH PATTERNS:
 - If the image contains a real table, use `insert_table()`.
 - If a table cell contains only math, prefer `{"equation": "..."}`.
 - If a table cell mixes text and math, use `{"content": ["text", {"type": "equation", "value": "..."}, "text"]}` or `{"lines": [...]}`.
+- A math expression inside a table cell must be written as carefully as a normal typed equation outside the table.
+- Do not downgrade table-cell math into plain text, shorthand, or lossy OCR text.
+- Apply all math syntax rules normally inside table cells, including fractions, powers, subscripts, `LEFT ( ... RIGHT )`, probability notation, set notation, bold symbols, and matrix/vector forms.
+- Prefer a true equation object whenever the cell's main content is mathematical.
 - `{"text": "EQ:..."}` is allowed only for a simple equation-only cell.
+- ✅ `{"equation": "rm P LEFT ( A ^{C} SMALLINTER B RIGHT ) = {9} over {16}"}`
+- ✅ `{"equation": "{ } _{(3)} SMALLPROD _{(2)}"}`
+- ❌ `{"text": "P(A∩B)=9/16"}`
 - Probability/statistics tables should use `align_center=True`.
 - For multi-level headers, count full base rows/columns first, then place text, then merge.
 - Do not omit edge headers (for example, rightmost columns such as `X 염색체 수`).

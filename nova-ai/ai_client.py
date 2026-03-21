@@ -53,6 +53,7 @@ Use ONLY the following functions:
 - exit_box()
 - insert_view_box()
 - insert_table(rows, cols, cell_data=[...], merged_cells=[...], align_center=False, exit_after=True)
+- IMPORTANT: only `rows` and `cols` may be positional; `cell_data`, `merged_cells`, `align_center`, and `exit_after` must be passed by keyword
 - insert_styled_text("text", bold=True, underline=True, italic=True, strike=True)
 - set_italic(True/False)
 - set_strike(True/False)

@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass
 from typing import Literal, Optional, Tuple
+
 from image_path_utils import load_cv2_image, load_pil_image
 
 
@@ -54,7 +55,7 @@ def detect_container(image_path: str) -> ContainerDetection:
 
     has_view_text, view_bbox = _detect_view_text_bbox(image_path)
     _debug(f"View text detected: {has_view_text}, bbox: {view_bbox}")
-    
+
     rect, border_score = _detect_best_rectangle(image_path)
     _debug(f"Rectangle detected: {rect}, border_score: {border_score:.3f}")
 
@@ -189,26 +190,32 @@ def _detect_view_text_bbox(image_path: str) -> tuple[bool, Optional[Tuple[int, i
 
 
 def _detect_best_rectangle(image_path: str) -> tuple[Optional[Tuple[int, int, int, int]], float]:
-    """
-    Detect the most likely container rectangle and return (rect, border_score).
-    rect is (x, y, w, h) in original image coords.
-    border_score is 0..1 edge density along perimeter.
-    """
+    candidates = _detect_rectangle_candidates(image_path)
+    if not candidates:
+        return None, 0.0
+    x, y, w, h, score = candidates[0]
+    return (x, y, w, h), score
 
+
+def _detect_rectangle_candidates(image_path: str) -> list[Tuple[int, int, int, int, float]]:
+    """
+    Detect plausible printed rectangular containers.
+
+    Returns candidates sorted by (area, border_score) descending.
+    """
     try:
         import cv2  # type: ignore[import-not-found]
         import numpy as np  # type: ignore[import-not-found]
     except Exception:
-        return None, 0.0
+        return []
 
     img = load_cv2_image(image_path)
     if img is None:
-        return None, 0.0
+        return []
     h, w = img.shape[:2]
     if h < 10 or w < 10:
-        return None, 0.0
+        return []
 
-    # 이미지가 너무 크면 리사이즈해서 처리
     max_dim = 2000
     scale = 1.0
     if max(h, w) > max_dim:
@@ -220,12 +227,10 @@ def _detect_best_rectangle(image_path: str) -> tuple[Optional[Tuple[int, int, in
 
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-    # Line-based detection (more robust when borders are broken by '<보기>' header).
     try:
         bw = cv2.adaptiveThreshold(
             gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 21, 10
         )
-        # Extract long horizontal/vertical strokes.
         hk = max(30, w // 25)
         vk = max(30, h // 25)
         h_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (hk, 1))
@@ -236,16 +241,16 @@ def _detect_best_rectangle(image_path: str) -> tuple[Optional[Tuple[int, int, in
         vertical = cv2.dilate(vertical, v_kernel, iterations=1)
         grid = cv2.add(horizontal, vertical)
         grid = cv2.dilate(grid, np.ones((3, 3), np.uint8), iterations=1)
-        contours, _ = cv2.findContours(grid, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(grid, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
         edge_map = grid
         _debug(f"Grid-based contours found: {len(contours)}")
-    except Exception as e:
-        _debug(f"Grid method failed: {e}, using Canny fallback")
-        # Edge fallback
+    except Exception as exc:
+        _debug(f"Grid method failed: {exc}, using Canny fallback")
         edges = cv2.Canny(gray, 40, 140)
         edges = cv2.dilate(edges, np.ones((3, 3), np.uint8), iterations=1)
-        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(edges, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
         edge_map = edges
+
     candidates: list[Tuple[int, int, int, int, float]] = []
     img_area = float(w * h)
     _debug(f"Image size: {w}x{h}, area: {img_area}")
@@ -253,44 +258,39 @@ def _detect_best_rectangle(image_path: str) -> tuple[Optional[Tuple[int, int, in
     for cnt in contours:
         x, y, ww, hh = cv2.boundingRect(cnt)
         area = float(ww * hh)
-        if area < img_area * 0.02:
+        if area < img_area * 0.01:
             continue
-        if area > img_area * 0.90:
+        if area > img_area * 0.95:
             continue
         if ww < 40 or hh < 20:
             continue
         aspect = ww / max(1.0, float(hh))
-        # Accept both wide view-boxes and tall reading-passage boxes.
         if aspect < 0.45 or aspect > 30:
             continue
-        # Exclude near full-page frames and very near borders (likely page edge)
-        margin = int(min(w, h) * 0.02)
-        if x <= margin and y <= margin:
-            continue
-        if (x + ww) >= (w - margin) and (y + hh) >= (h - margin):
+        margin = int(min(w, h) * 0.01)
+        if x <= margin and y <= margin and (x + ww) >= (w - margin) and (y + hh) >= (h - margin):
             continue
 
         score = _border_score_on_rect(edge_map, (x, y, ww, hh))
+        if score < 0.08:
+            continue
+        if scale < 1.0:
+            x = int(x / scale)
+            y = int(y / scale)
+            ww = int(ww / scale)
+            hh = int(hh / scale)
         _debug(f"Candidate: ({x},{y},{ww},{hh}) aspect={aspect:.2f} score={score:.3f}")
-        candidates.append((x, y, ww, hh, score))
+        candidates.append((int(x), int(y), int(ww), int(hh), float(score)))
 
-    _debug(f"Total candidates after filtering: {len(candidates)}")
-    if not candidates:
-        return None, 0.0
-
-    # Choose the best: prioritize larger area, then stronger border.
-    candidates.sort(key=lambda t: (t[2] * t[3], t[4]), reverse=True)
-    x, y, ww, hh, score = candidates[0]
-    
-    # 리사이즈한 경우 원래 좌표로 복원
-    if scale < 1.0:
-        x = int(x / scale)
-        y = int(y / scale)
-        ww = int(ww / scale)
-        hh = int(hh / scale)
-        _debug(f"Restored coordinates to original scale: ({x},{y},{ww},{hh})")
-    
-    return (int(x), int(y), int(ww), int(hh)), float(score)
+    candidates.sort(key=lambda item: (item[2] * item[3], item[4]), reverse=True)
+    deduped: list[Tuple[int, int, int, int, float]] = []
+    for candidate in candidates:
+        rect = candidate[:4]
+        if any(_rect_iou(rect, kept[:4]) >= 0.88 for kept in deduped):
+            continue
+        deduped.append(candidate)
+    _debug(f"Total candidates after filtering: {len(deduped)}")
+    return deduped
 
 
 def _border_score_on_rect(edges, rect: Tuple[int, int, int, int]) -> float:
@@ -317,6 +317,337 @@ def _border_score_on_rect(edges, rect: Tuple[int, int, int, int]) -> float:
         return 0.0
     edge_pixels = float(np.count_nonzero(top) + np.count_nonzero(bottom) + np.count_nonzero(left) + np.count_nonzero(right))
     return max(0.0, min(1.0, edge_pixels / total_pixels))
+
+
+def _rect_sort_key(rect: Tuple[int, int, int, int]) -> tuple[int, int, int]:
+    x, y, w, h = rect
+    return (y, x, -(w * h))
+
+
+def _rect_contains(outer: Tuple[int, int, int, int], inner: Tuple[int, int, int, int], *, pad: int = 6) -> bool:
+    ox, oy, ow, oh = outer
+    ix, iy, iw, ih = inner
+    return (
+        ix >= ox - pad
+        and iy >= oy - pad
+        and (ix + iw) <= (ox + ow + pad)
+        and (iy + ih) <= (oy + oh + pad)
+    )
+
+
+def _rect_iou(a: Tuple[int, int, int, int], b: Tuple[int, int, int, int]) -> float:
+    ax, ay, aw, ah = a
+    bx, by, bw, bh = b
+    ax2, ay2 = ax + aw, ay + ah
+    bx2, by2 = bx + bw, by + bh
+    ix1 = max(ax, bx)
+    iy1 = max(ay, by)
+    ix2 = min(ax2, bx2)
+    iy2 = min(ay2, by2)
+    if ix2 <= ix1 or iy2 <= iy1:
+        return 0.0
+    inter = float((ix2 - ix1) * (iy2 - iy1))
+    union = float((aw * ah) + (bw * bh) - inter)
+    if union <= 0:
+        return 0.0
+    return inter / union
+
+
+def _rect_center(bbox: Tuple[int, int, int, int]) -> tuple[float, float]:
+    x, y, w, h = bbox
+    return (x + (w / 2.0), y + (h / 2.0))
+
+
+def _cluster_axis_positions(values: list[float], tolerance: float) -> int:
+    if not values:
+        return 0
+    ordered = sorted(values)
+    clusters = 1
+    anchor = ordered[0]
+    for value in ordered[1:]:
+        if abs(value - anchor) > tolerance:
+            clusters += 1
+            anchor = value
+    return clusters
+
+
+def _normalize_view_text(text: str) -> str:
+    normalized = "".join((text or "").split())
+    normalized = normalized.replace("〈", "<").replace("〉", ">").replace("《", "<").replace("》", ">")
+    normalized = normalized.replace("＜", "<").replace("＞", ">")
+    return normalized
+
+
+def _infer_view_bbox_from_lines(ocr_lines: list[OcrLine]) -> Optional[Tuple[int, int, int, int]]:
+    candidates: list[Tuple[int, int, int, int]] = []
+    for line in ocr_lines:
+        normalized = _normalize_view_text(line.text)
+        if "보기" not in normalized:
+            continue
+        candidates.append(line.bbox)
+    if not candidates:
+        return None
+    candidates.sort(key=lambda bbox: (bbox[1], bbox[0]))
+    return candidates[0]
+
+
+def _point_in_rect(point: tuple[float, float], rect: Tuple[int, int, int, int], *, pad: int = 0) -> bool:
+    px, py = point
+    x, y, w, h = rect
+    return (x - pad) <= px <= (x + w + pad) and (y - pad) <= py <= (y + h + pad)
+
+
+def _build_box_candidates(
+    candidates: list[Tuple[int, int, int, int, float]],
+    view_bbox: Optional[Tuple[int, int, int, int]],
+    ocr_lines: list[OcrLine],
+) -> list[_BoxCandidate]:
+    out: list[_BoxCandidate] = []
+    for x, y, w, h, score in candidates:
+        bbox = (x, y, w, h)
+        header_bbox = view_bbox if _view_text_matches_rect(view_bbox, bbox) else None
+        template: ContainerTemplate = "header.hwp" if header_bbox is not None else "box.hwp"
+        if template == "box.hwp" and _looks_like_table_candidate(bbox, candidates, ocr_lines):
+            _debug(f"Skipping table-like rectangle candidate: {bbox}")
+            continue
+        out.append(
+            _BoxCandidate(
+                bbox=bbox,
+                border_score=float(score),
+                template=template,
+                header_bbox=header_bbox,
+            )
+        )
+    return out
+
+
+def _build_box_parent_map(candidates: list[_BoxCandidate]) -> dict[int, int | None]:
+    parent_map: dict[int, int | None] = {}
+    for idx, candidate in enumerate(candidates):
+        rect = candidate.bbox
+        area = rect[2] * rect[3]
+        parent_idx: int | None = None
+        parent_area: int | None = None
+        for other_idx, other in enumerate(candidates):
+            if other_idx == idx:
+                continue
+            other_rect = other.bbox
+            other_area = other_rect[2] * other_rect[3]
+            if other_area <= area:
+                continue
+            if not _rect_contains(other_rect, rect, pad=8):
+                continue
+            if parent_area is None or other_area < parent_area:
+                parent_idx = other_idx
+                parent_area = other_area
+        parent_map[idx] = parent_idx
+    return parent_map
+
+
+def _looks_like_table_candidate(
+    bbox: Tuple[int, int, int, int],
+    candidates: list[Tuple[int, int, int, int, float]],
+    ocr_lines: list[OcrLine],
+) -> bool:
+    bx, by, bw, bh = bbox
+    bbox_area = max(1, bw * bh)
+    inner_rects: list[Tuple[int, int, int, int]] = []
+    for ox, oy, ow, oh, _score in candidates:
+        other = (ox, oy, ow, oh)
+        if other == bbox:
+            continue
+        if ow < 18 or oh < 12:
+            continue
+        if _rect_iou(bbox, other) >= 0.85:
+            continue
+        if not _rect_contains(bbox, other, pad=4):
+            continue
+        if (ow * oh) < bbox_area * 0.004:
+            continue
+        inner_rects.append(other)
+
+    if len(inner_rects) >= 4:
+        x_centers = [rect[0] + (rect[2] / 2.0) for rect in inner_rects]
+        y_centers = [rect[1] + (rect[3] / 2.0) for rect in inner_rects]
+        col_count = _cluster_axis_positions(x_centers, max(18.0, bw * 0.16))
+        row_count = _cluster_axis_positions(y_centers, max(14.0, bh * 0.12))
+        if row_count >= 2 and col_count >= 2:
+            return True
+
+    lines_inside = [
+        line
+        for line in ocr_lines
+        if _point_in_rect(_rect_center(line.bbox), bbox, pad=2)
+    ]
+    if len(lines_inside) >= 6:
+        x_centers = [line.bbox[0] + (line.bbox[2] / 2.0) for line in lines_inside]
+        y_centers = [line.bbox[1] + (line.bbox[3] / 2.0) for line in lines_inside]
+        col_count = _cluster_axis_positions(x_centers, max(24.0, bw * 0.18))
+        row_count = _cluster_axis_positions(y_centers, max(14.0, bh * 0.10))
+        if row_count >= 2 and col_count >= 2 and len(inner_rects) >= 2:
+            return True
+    return False
+
+
+def _detect_visual_regions(
+    image_path: str,
+    ocr_lines: list[OcrLine],
+    box_candidates: list[_BoxCandidate],
+) -> list[LayoutRegion]:
+    try:
+        import cv2  # type: ignore[import-not-found]
+        import numpy as np  # type: ignore[import-not-found]
+    except Exception:
+        return []
+
+    img = load_cv2_image(image_path)
+    if img is None:
+        return []
+    img_h, img_w = img.shape[:2]
+    if img_h < 10 or img_w < 10:
+        return []
+
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    blurred = cv2.GaussianBlur(gray, (3, 3), 0)
+    try:
+        _, otsu = cv2.threshold(
+            blurred,
+            0,
+            255,
+            cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU,
+        )
+    except Exception:
+        otsu = cv2.threshold(blurred, 200, 255, cv2.THRESH_BINARY_INV)[1]
+    adaptive = cv2.adaptiveThreshold(
+        blurred,
+        255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY_INV,
+        31,
+        11,
+    )
+    edges = cv2.Canny(blurred, 50, 150)
+    mask = cv2.bitwise_or(otsu, adaptive)
+    mask = cv2.bitwise_or(mask, edges)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8), iterations=1)
+
+    for line in ocr_lines:
+        lx, ly, lw, lh = line.bbox
+        pad_x = max(4, int(lw * 0.08))
+        pad_y = max(3, int(lh * 0.2))
+        x0 = max(0, lx - pad_x)
+        y0 = max(0, ly - pad_y)
+        x1 = min(img_w, lx + lw + pad_x)
+        y1 = min(img_h, ly + lh + pad_y)
+        mask[y0:y1, x0:x1] = 0
+
+    for candidate in box_candidates:
+        bx, by, bw, bh = candidate.bbox
+        x0 = max(0, bx - 2)
+        y0 = max(0, by - 2)
+        x1 = min(img_w, bx + bw + 2)
+        y1 = min(img_h, by + bh + 2)
+        mask[y0:y1, x0:x1] = 0
+
+    mask = _filter_small_components(mask)
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
+    out: list[LayoutRegion] = []
+    image_area = float(max(1, img_w * img_h))
+    seen: list[Tuple[int, int, int, int]] = []
+    for label in range(1, num_labels):
+        x, y, w, h, area = stats[label]
+        if area < image_area * 0.003:
+            continue
+        if w < max(30, int(img_w * 0.10)) or h < max(24, int(img_h * 0.08)):
+            continue
+        bbox = (int(x), int(y), int(w), int(h))
+        refined = refine_content_rect(image_path, bbox, min_padding=6)
+        if refined is not None:
+            bbox = refined
+        if any(_rect_iou(bbox, prior) >= 0.8 for prior in seen):
+            continue
+        seen.append(bbox)
+        out.append(LayoutRegion(kind="image", bbox=bbox))
+    out.sort(key=lambda region: _rect_sort_key(region.bbox))
+    return out
+
+
+def _find_deepest_box_owner(
+    bbox: Tuple[int, int, int, int],
+    candidates: list[_BoxCandidate],
+) -> int | None:
+    center = _rect_center(bbox)
+    owner_idx: int | None = None
+    owner_area: int | None = None
+    for idx, candidate in enumerate(candidates):
+        if not _point_in_rect(center, candidate.bbox, pad=4):
+            continue
+        area = candidate.bbox[2] * candidate.bbox[3]
+        if owner_area is None or area < owner_area:
+            owner_idx = idx
+            owner_area = area
+    return owner_idx
+
+
+def _group_lines_into_regions(lines: list[OcrLine]) -> list[LayoutRegion]:
+    if not lines:
+        return []
+    ordered = sorted(lines, key=lambda line: _rect_sort_key(line.bbox))
+    groups: list[list[OcrLine]] = []
+    current: list[OcrLine] = []
+    for line in ordered:
+        if not current:
+            current = [line]
+            continue
+        prev = current[-1]
+        prev_x, prev_y, prev_w, prev_h = prev.bbox
+        line_x, line_y, _line_w, line_h = line.bbox
+        vertical_gap = line_y - (prev_y + prev_h)
+        left_shift = abs(line_x - prev_x)
+        if vertical_gap <= max(14, int(max(prev_h, line_h) * 1.8)) and left_shift <= 120:
+            current.append(line)
+        else:
+            groups.append(current)
+            current = [line]
+    if current:
+        groups.append(current)
+
+    regions: list[LayoutRegion] = []
+    for group in groups:
+        xs = [line.bbox[0] for line in group]
+        ys = [line.bbox[1] for line in group]
+        x2s = [line.bbox[0] + line.bbox[2] for line in group]
+        y2s = [line.bbox[1] + line.bbox[3] for line in group]
+        text_hint = "\n".join(line.text for line in group if line.text.strip()).strip()
+        if not text_hint:
+            continue
+        regions.append(
+            LayoutRegion(
+                kind="text",
+                bbox=(min(xs), min(ys), max(x2s) - min(xs), max(y2s) - min(ys)),
+                text_hint=text_hint,
+            )
+        )
+    return regions
+
+
+def _should_skip_line_in_box(
+    line: OcrLine,
+    owner_bbox: Optional[Tuple[int, int, int, int]],
+    template: Optional[ContainerTemplate],
+) -> bool:
+    if owner_bbox is None or template != "header.hwp":
+        return False
+    normalized = "".join((line.text or "").split())
+    normalized = normalized.replace("〈", "<").replace("〉", ">").replace("《", "<").replace("》", ">")
+    normalized = normalized.replace("＜", "<").replace("＞", ">")
+    if "보기" not in normalized:
+        return False
+    _x, y, _w, h = line.bbox
+    box_x, box_y, box_w, box_h = owner_bbox
+    line_center_y = y + (h / 2.0)
+    header_bottom = box_y + max(22.0, box_h * 0.22)
+    return box_x <= (_x + (_w / 2.0)) <= (box_x + box_w) and line_center_y <= header_bottom
 
 
 def _view_text_matches_rect(

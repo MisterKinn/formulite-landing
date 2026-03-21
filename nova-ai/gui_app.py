@@ -896,6 +896,456 @@ Preserve semantics and layout, but normalize rendering to clean exam-print style
         processed = self._apply_python_figure_pipeline(idx, processed, log_fn)
         return self._apply_local_figure_pipeline(idx, processed, log_fn), image_credit_cost
 
+    @staticmethod
+    def _crop_absolute_bbox_to_file(
+        source_image_path: str,
+        bbox: tuple[int, int, int, int],
+        *,
+        idx: int,
+        label: str,
+    ) -> str:
+        from PIL import Image  # type: ignore[import-not-found]
+
+        x, y, w, h = bbox
+        img = load_pil_image(source_image_path, mode="RGB")
+        img_w, img_h = img.size
+        x = max(0, min(int(x), img_w - 1))
+        y = max(0, min(int(y), img_h - 1))
+        w = max(1, min(int(w), img_w - x))
+        h = max(1, min(int(h), img_h - y))
+        refined = refine_content_rect(
+            source_image_path,
+            (x, y, w, h),
+            min_padding=6,
+        )
+        if refined is not None:
+            rx, ry, rw, rh = refined
+            crop = img.crop((rx, ry, rx + rw, ry + rh))
+        else:
+            crop = img.crop((x, y, x + w, y + h))
+        tmp_dir = Path(tempfile.gettempdir()) / "nova_ai" / "region_crops"
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        safe_label = re.sub(r"[^a-z0-9_-]+", "_", label.lower()).strip("_") or "region"
+        out_path = tmp_dir / f"{safe_label}_{os.getpid()}_{idx}_{uuid.uuid4().hex[:8]}.png"
+        crop.save(out_path, format="PNG")
+        return str(out_path)
+
+    def _crop_box_body_to_file(
+        self,
+        source_image_path: str,
+        region: LayoutRegion,
+        *,
+        idx: int,
+        label: str,
+    ) -> str:
+        img = load_pil_image(source_image_path, mode="RGB")
+        x, y, w, h = region.bbox
+        inner_rect = refine_content_rect(
+            source_image_path,
+            (x + 4, y + 4, max(1, w - 8), max(1, h - 8)),
+            min_padding=4,
+        )
+        if inner_rect is None:
+            inner_rect = (x + 4, y + 4, max(1, w - 8), max(1, h - 8))
+
+        if region.kind == "view_box" and region.header_bbox is not None:
+            hx, hy, hw, hh = region.header_bbox
+            header_bottom = hy + hh + max(4, int(hh * 0.35))
+            ix, iy, iw, ih = inner_rect
+            body_top = max(iy, min(y + h - 1, header_bottom))
+            body_bottom = max(body_top + 1, min(y + h, iy + ih))
+            narrowed = (ix, body_top, iw, max(1, body_bottom - body_top))
+            refined_body_rect = refine_content_rect(
+                source_image_path,
+                narrowed,
+                min_padding=4,
+            )
+            if refined_body_rect is not None:
+                inner_rect = refined_body_rect
+            else:
+                inner_rect = narrowed
+
+        ix, iy, iw, ih = inner_rect
+        crop = img.crop((ix, iy, ix + iw, iy + ih))
+
+        tmp_dir = Path(tempfile.gettempdir()) / "nova_ai" / "region_crops"
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        safe_label = re.sub(r"[^a-z0-9_-]+", "_", label.lower()).strip("_") or "region"
+        out_path = tmp_dir / f"{safe_label}_{os.getpid()}_{idx}_{uuid.uuid4().hex[:8]}.png"
+        crop.save(out_path, format="PNG")
+        return str(out_path)
+
+    @staticmethod
+    def _layout_region_gap_lines(prev_region: LayoutRegion | None, next_region: LayoutRegion) -> list[str]:
+        if prev_region is None:
+            return []
+        prev_bottom = prev_region.bbox[1] + prev_region.bbox[3]
+        next_top = next_region.bbox[1]
+        gap = max(0, next_top - prev_bottom)
+        if gap >= 42:
+            return ["insert_enter()", "insert_enter()"]
+        if gap >= 12:
+            return ["insert_enter()"]
+        return []
+
+    @staticmethod
+    def _trim_script(text: str) -> str:
+        return "\n".join(line.rstrip() for line in str(text or "").splitlines() if line.strip()).strip()
+
+    @staticmethod
+    def _strip_region_level_directives(script: str) -> str:
+        kept: list[str] = []
+        for line in str(script or "").splitlines():
+            stripped = line.strip()
+            if stripped.startswith("SUBJECT ="):
+                continue
+            if stripped.startswith("FORMAT_TYPE ="):
+                continue
+            if stripped.startswith("MATH_CHOICES_EQUATION ="):
+                continue
+            kept.append(line)
+        return "\n".join(kept).strip()
+
+    @staticmethod
+    def _bbox_to_crop_percentages(
+        image_size: tuple[int, int],
+        bbox: tuple[int, int, int, int],
+    ) -> tuple[float, float, float, float]:
+        img_w, img_h = image_size
+        if img_w <= 0 or img_h <= 0:
+            return (0.0, 0.0, 1.0, 1.0)
+        x, y, w, h = bbox
+        x1 = max(0.0, min(1.0, x / img_w))
+        y1 = max(0.0, min(1.0, y / img_h))
+        x2 = max(0.0, min(1.0, (x + w) / img_w))
+        y2 = max(0.0, min(1.0, (y + h) / img_h))
+        return (x1, y1, x2, y2)
+
+    @staticmethod
+    def _looks_incomplete_region_layout(doc: LayoutDocument) -> bool:
+        if not doc.regions:
+            return True
+        kinds = [region.kind for region in doc.regions]
+        if len(doc.regions) == 1 and kinds[0] in {"box", "view_box"}:
+            return True
+        has_text = any(kind == "text" for kind in kinds)
+        has_image = any(kind == "image" for kind in kinds)
+        has_box = any(kind in {"box", "view_box"} for kind in kinds)
+        if has_box and not has_text and not has_image:
+            return True
+        return False
+
+    def _extract_region_ocr_hint(
+        self,
+        source_image_path: str,
+        bbox: tuple[int, int, int, int],
+        *,
+        max_chars: int = 1200,
+    ) -> str:
+        try:
+            crop_path = self._crop_absolute_bbox_to_file(
+                source_image_path,
+                bbox,
+                idx=0,
+                label="ocr_hint",
+            )
+            hint = extract_text(crop_path).strip()
+        except Exception:
+            hint = ""
+        compact = " ".join(hint.split()).strip()
+        if len(compact) <= max_chars:
+            return compact
+        return compact[: max_chars - 3].rstrip() + "..."
+
+    def _call_region_ai(
+        self,
+        *,
+        client: AIClient,
+        image_path: str,
+        description: str,
+        ocr_hint: str,
+        idx: int,
+        log_fn,
+        label: str,
+    ) -> str:
+        _log_label = f"[{idx}] {label}"
+        log_fn(f"{_log_label} AI region generation start")
+        raw = client.generate_script_for_image(
+            image_path,
+            description=description,
+            ocr_text=ocr_hint,
+        ) or ""
+        log_fn(f"{_log_label} AI region response length: {len(raw)}")
+        return self._trim_script(self._extract_code(raw))
+
+    def _generate_script_for_region(
+        self,
+        *,
+        client: AIClient,
+        source_image_path: str,
+        region: LayoutRegion,
+        idx: int,
+        log_fn,
+        depth: int = 0,
+        inside_template: str | None = None,
+    ) -> str:
+        label = f"region_{depth}_{region.kind}"
+        crop_path = self._crop_absolute_bbox_to_file(
+            source_image_path,
+            region.bbox,
+            idx=idx,
+            label=label,
+        )
+
+        if region.kind == "text":
+            ocr_hint = region.text_hint.strip()
+            if inside_template:
+                description = (
+                    "Generate minimal HWP automation code for ONLY this cropped text region. "
+                    f"This region belongs inside the already-opened `###` body of `{inside_template}`. "
+                    "Do not insert any outer template. "
+                    "Do not call `focus_placeholder(...)` or `exit_box()`. "
+                    "Preserve the visible top-to-bottom reading order inside the current box body only."
+                )
+            else:
+                description = (
+                    "Generate minimal HWP automation code for ONLY this cropped text region. "
+                    "This region is outside any box template. "
+                    "Do not insert `header.hwp`, `box.hwp`, `insert_box()`, `insert_view_box()`, "
+                    "`focus_placeholder(...)`, or `exit_box()`. "
+                    "Preserve the visible top-to-bottom reading order of this region only."
+                )
+            script = self._call_region_ai(
+                client=client,
+                image_path=crop_path,
+                description=description,
+                ocr_hint=ocr_hint,
+                idx=idx,
+                log_fn=log_fn,
+                label=label,
+            )
+            if inside_template:
+                script = self._strip_region_level_directives(script)
+            return script
+
+        if region.kind == "image":
+            img = load_pil_image(source_image_path, mode="RGB")
+            x1, y1, x2, y2 = self._bbox_to_crop_percentages(img.size, region.bbox)
+            return f"insert_cropped_image({x1:.6f}, {y1:.6f}, {x2:.6f}, {y2:.6f})"
+
+        if region.kind in {"box", "view_box"}:
+            template_name = "header.hwp" if region.kind == "view_box" else "box.hwp"
+            if region.children:
+                child_scripts: list[str] = []
+                prev_child: LayoutRegion | None = None
+                for child in region.children:
+                    child_script = self._generate_script_for_region(
+                        client=client,
+                        source_image_path=source_image_path,
+                        region=child,
+                        idx=idx,
+                        log_fn=log_fn,
+                        depth=depth + 1,
+                        inside_template=template_name,
+                    )
+                    child_script = self._trim_script(child_script)
+                    if not child_script:
+                        continue
+                    child_scripts.extend(self._layout_region_gap_lines(prev_child, child))
+                    child_scripts.append(child_script)
+                    prev_child = child
+                body_script = self._trim_script("\n".join(child_scripts))
+            else:
+                crop_path = self._crop_box_body_to_file(
+                    source_image_path,
+                    region,
+                    idx=idx,
+                    label=f"{label}_body",
+                )
+                try:
+                    ocr_hint = extract_text(crop_path).strip()
+                except Exception:
+                    ocr_hint = ""
+                compact_hint = " ".join(ocr_hint.split()).strip()
+                if len(compact_hint) > 1200:
+                    compact_hint = compact_hint[:1197].rstrip() + "..."
+                description = (
+                    "Generate HWP automation code for ONLY the content inside this cropped box body. "
+                    f"The caller already inserted `{template_name}` and already focused `###`. "
+                    "Do not insert the outer template again. "
+                    "Do not call `focus_placeholder('###')` or `exit_box()` for the outer box. "
+                    "Preserve the visible reading order inside this crop. "
+                    "If the crop contains a table, use `insert_table(...)`. "
+                    "If the crop contains a non-text visual region, use `insert_cropped_image(...)` only for that visual part."
+                )
+                body_script = self._call_region_ai(
+                    client=client,
+                    image_path=crop_path,
+                    description=description,
+                    ocr_hint=compact_hint,
+                    idx=idx,
+                    log_fn=log_fn,
+                    label=label,
+                )
+                body_script = self._strip_region_level_directives(body_script)
+            body_script = self._trim_script(body_script)
+            if not body_script:
+                return ""
+            return self._trim_script(
+                "\n".join(
+                    [
+                        f"insert_template('{template_name}')",
+                        "focus_placeholder('###')",
+                        body_script,
+                        "exit_box()",
+                    ]
+                )
+            )
+        return ""
+
+    def _generate_problem_code_via_regions(
+        self,
+        *,
+        idx: int,
+        image_path: str,
+        client: AIClient,
+        ocr_text_full: str,
+        log_fn,
+    ) -> str:
+        doc = analyze_layout(image_path)
+        log_fn(f"[{idx}] Region analysis complete: {len(doc.regions)} top-level region(s)")
+        for region_idx, region in enumerate(doc.regions, start=1):
+            log_fn(
+                f"[{idx}] Region {region_idx}: kind={region.kind}, bbox={region.bbox}, children={len(region.children)}"
+            )
+        if self._looks_incomplete_region_layout(doc):
+            log_fn(f"[{idx}] Region layout looks incomplete; fallback requested")
+            return ""
+        if not doc.regions:
+            return ""
+
+        scripts: list[str] = []
+        prev_region: LayoutRegion | None = None
+        for region in doc.regions:
+            script = self._generate_script_for_region(
+                client=client,
+                source_image_path=image_path,
+                region=region,
+                idx=idx,
+                log_fn=log_fn,
+                inside_template=None,
+            )
+            script = self._trim_script(script)
+            if not script:
+                continue
+            scripts.extend(self._layout_region_gap_lines(prev_region, region))
+            scripts.append(script)
+            prev_region = region
+        return self._trim_script("\n".join(scripts))
+
+    def _generate_problem_code_single_pass(
+        self,
+        *,
+        idx: int,
+        image_path: str,
+        client: AIClient,
+        ocr_text_full: str,
+        log_fn,
+    ) -> str:
+        log_fn(f"[{idx}] Detecting container...")
+        det = detect_container(image_path)
+        log_fn(f"[{idx}] Container detected: template={det.template}, rect={det.rect}")
+        generation_description = ""
+        inside_box_ocr_hint = ""
+        if det.template and det.rect:
+            generation_description = (
+                "Generate the FULL HWP automation code for the ENTIRE problem in ONE pass. "
+                f"A container was detected and the most likely template is '{det.template}'. "
+                "If the visible layout matches, use the correct template and placeholder flow in the final script. "
+                "Return one complete script covering the problem statement, box content, score, and answer choices "
+                "together in natural reading order. Do NOT return partial scripts split into outside text, box body, "
+                "and choices."
+            )
+            try:
+                inside_img = crop_inside_rect(image_path, det.rect)
+                if inside_img is not None:
+                    inside_ocr = extract_text_from_pil_image(inside_img).strip()
+                    compact_inside_ocr = " ".join(inside_ocr.split()).strip()
+                    if compact_inside_ocr:
+                        inside_box_ocr_hint = compact_inside_ocr[:1200]
+                        if len(compact_inside_ocr) > 1200:
+                            inside_box_ocr_hint += "..."
+                    if len(compact_inside_ocr) >= 20:
+                        generation_description += (
+                            " The detected box/body contains readable text. "
+                            "Type the readable text inside the box using insert_text(...) and insert_equation(...). "
+                            "If the box also contains a figure, crop ONLY the actual non-text figure region. "
+                            "Never replace a text-heavy box body with one large cropped image."
+                        )
+                        log_fn(
+                            f"[{idx}] Inside-box OCR hint length: {len(compact_inside_ocr)}"
+                        )
+            except Exception as exc:
+                log_fn(f"[{idx}] Inside-box OCR hint skipped: {exc}")
+            log_fn(f"[{idx}] Container hint enabled for single-pass generation")
+        elif det.rect:
+            generation_description = (
+                "Generate the FULL HWP automation code for the ENTIRE problem in ONE pass. "
+                "A bordered rectangular region was detected in the source. "
+                "If that region is a real printed box containing text, a table, or an image, "
+                "prefer the `insert_template('box.hwp')` -> `focus_placeholder('###')` workflow "
+                "and place the boxed content inside that placeholder. "
+                "Use `header.hwp` only when literal '<보기>' text is visibly present."
+            )
+            try:
+                inside_img = crop_inside_rect(image_path, det.rect)
+                if inside_img is not None:
+                    inside_ocr = extract_text_from_pil_image(inside_img).strip()
+                    compact_inside_ocr = " ".join(inside_ocr.split()).strip()
+                    if compact_inside_ocr:
+                        inside_box_ocr_hint = compact_inside_ocr[:1200]
+                        if len(compact_inside_ocr) > 1200:
+                            inside_box_ocr_hint += "..."
+                        generation_description += (
+                            " The bordered region contains readable content; type that content inside the box placeholder "
+                            "in the original reading order and preserve any inner table or image that also belongs inside the box."
+                        )
+                        log_fn(
+                            f"[{idx}] Generic bordered-region OCR hint length: {len(compact_inside_ocr)}"
+                        )
+            except Exception as exc:
+                log_fn(f"[{idx}] Generic bordered-region OCR hint skipped: {exc}")
+            log_fn(f"[{idx}] Generic bordered-region hint enabled for single-pass generation")
+        elif det.template:
+            generation_description = (
+                "Generate the FULL HWP automation code for the ENTIRE problem in ONE pass. "
+                f"A container/header pattern was detected and the most likely template is '{det.template}'. "
+                "If the visible layout matches, use the correct template and placeholder flow in the final script. "
+                "Return one complete script for the whole problem, not partial scripts for separate regions."
+            )
+            log_fn(f"[{idx}] Template hint enabled for single-pass generation")
+        else:
+            log_fn(f"[{idx}] No container detected, calling AI once for full problem...")
+
+        raw_result = client.generate_script_for_image(
+            image_path,
+            description=(generation_description or ""),
+            ocr_text=(
+                ocr_text_full
+                + (
+                    "\n\nOCR hint from inside the detected box/body "
+                    "(use this only as a hint and verify with the image):\n"
+                    + inside_box_ocr_hint
+                    if inside_box_ocr_hint
+                    else ""
+                )
+            ),
+        ) or ""
+        log_fn(f"[{idx}] AI response length: {len(raw_result)}")
+        if not raw_result.strip():
+            log_fn(f"[{idx}] WARNING: Empty AI response!")
+        return self._extract_code(raw_result)
+
     def run(self) -> None:  # type: ignore[override]
         import sys
         def _log(msg: str) -> None:
@@ -1005,101 +1455,13 @@ Preserve semantics and layout, but normalize rendering to clean exam-print style
                         increment_ai_usage(uid, amount=total_usage_cost)
                     return final_code
 
-                # 2) Detect container and provide a layout hint, but keep
-                # the problem generation in a single AI call.
-                _log(f"[{idx}] Detecting container...")
-                det = detect_container(image_path)
-                _log(f"[{idx}] Container detected: template={det.template}, rect={det.rect}")
-                generation_description = ""
-                inside_box_ocr_hint = ""
-                if det.template and det.rect:
-                    generation_description = (
-                        "Generate the FULL HWP automation code for the ENTIRE problem in ONE pass. "
-                        f"A container was detected and the most likely template is '{det.template}'. "
-                        "If the visible layout matches, use the correct template and placeholder flow in the final script. "
-                        "Return one complete script covering the problem statement, box content, score, and answer choices "
-                        "together in natural reading order. Do NOT return partial scripts split into outside text, box body, "
-                        "and choices."
-                    )
-                    try:
-                        inside_img = crop_inside_rect(image_path, det.rect)
-                        if inside_img is not None:
-                            inside_ocr = extract_text_from_pil_image(inside_img).strip()
-                            compact_inside_ocr = " ".join(inside_ocr.split()).strip()
-                            if compact_inside_ocr:
-                                inside_box_ocr_hint = compact_inside_ocr[:1200]
-                                if len(compact_inside_ocr) > 1200:
-                                    inside_box_ocr_hint += "..."
-                            if len(compact_inside_ocr) >= 20:
-                                generation_description += (
-                                    " The detected box/body contains readable text. "
-                                    "Type the readable text inside the box using insert_text(...) and insert_equation(...). "
-                                    "If the box also contains a figure, crop ONLY the actual non-text figure region. "
-                                    "Never replace a text-heavy box body with one large cropped image."
-                                )
-                                _log(
-                                    f"[{idx}] Inside-box OCR hint length: {len(compact_inside_ocr)}"
-                                )
-                    except Exception as exc:
-                        _log(f"[{idx}] Inside-box OCR hint skipped: {exc}")
-                    _log(f"[{idx}] Container hint enabled for single-pass generation")
-                elif det.rect:
-                    generation_description = (
-                        "Generate the FULL HWP automation code for the ENTIRE problem in ONE pass. "
-                        "A bordered rectangular region was detected in the source. "
-                        "If that region is a real printed box containing text, a table, or an image, "
-                        "prefer the `insert_template('box.hwp')` -> `focus_placeholder('###')` workflow "
-                        "and place the boxed content inside that placeholder. "
-                        "Use `header.hwp` only when literal '<보기>' text is visibly present."
-                    )
-                    try:
-                        inside_img = crop_inside_rect(image_path, det.rect)
-                        if inside_img is not None:
-                            inside_ocr = extract_text_from_pil_image(inside_img).strip()
-                            compact_inside_ocr = " ".join(inside_ocr.split()).strip()
-                            if compact_inside_ocr:
-                                inside_box_ocr_hint = compact_inside_ocr[:1200]
-                                if len(compact_inside_ocr) > 1200:
-                                    inside_box_ocr_hint += "..."
-                                generation_description += (
-                                    " The bordered region contains readable content; type that content inside the box placeholder "
-                                    "in the original reading order and preserve any inner table or image that also belongs inside the box."
-                                )
-                                _log(
-                                    f"[{idx}] Generic bordered-region OCR hint length: {len(compact_inside_ocr)}"
-                                )
-                    except Exception as exc:
-                        _log(f"[{idx}] Generic bordered-region OCR hint skipped: {exc}")
-                    _log(f"[{idx}] Generic bordered-region hint enabled for single-pass generation")
-                elif det.template:
-                    generation_description = (
-                        "Generate the FULL HWP automation code for the ENTIRE problem in ONE pass. "
-                        f"A container/header pattern was detected and the most likely template is '{det.template}'. "
-                        "If the visible layout matches, use the correct template and placeholder flow in the final script. "
-                        "Return one complete script for the whole problem, not partial scripts for separate regions."
-                    )
-                    _log(f"[{idx}] Template hint enabled for single-pass generation")
-                else:
-                    _log(f"[{idx}] No container detected, calling AI once for full problem...")
-
-                raw_result = client.generate_script_for_image(
-                    image_path,
-                    description=(generation_description or ""),
-                    ocr_text=(
-                        ocr_text_full
-                        + (
-                            "\n\nOCR hint from inside the detected box/body "
-                            "(use this only as a hint and verify with the image):\n"
-                            + inside_box_ocr_hint
-                            if inside_box_ocr_hint
-                            else ""
-                        )
-                    ),
-                ) or ""
-                _log(f"[{idx}] AI response length: {len(raw_result)}")
-                if not raw_result.strip():
-                    _log(f"[{idx}] WARNING: Empty AI response!")
-                final_code = self._extract_code(raw_result)
+                final_code = self._generate_problem_code_single_pass(
+                    idx=idx,
+                    image_path=image_path,
+                    client=client,
+                    ocr_text_full=ocr_text_full,
+                    log_fn=_log,
+                )
                 final_code = _append_explanation_if_needed(final_code)
                 final_code, image_credit_cost = self._apply_image_mode_pipeline(
                     idx, image_path, final_code, _log

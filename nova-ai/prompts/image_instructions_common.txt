@@ -9,8 +9,9 @@ SECTION 0: CORE OCR RULES
 3) Follow reading order from top to bottom, left to right.
 4) Keep visible line breaks with `insert_enter()`.
 5) Keep visible indentation and multiple spaces.
-6) Split text and formulas at text<->math boundaries.
-7) Return ONLY executable Python code. No explanation. No markdown.
+6) Judge left margin line-by-line, not paragraph-by-paragraph. If one visible line starts farther right than the line above/below, preserve that indentation on that specific line.
+7) Split text and formulas at text<->math boundaries.
+8) Return ONLY executable Python code. No explanation. No markdown.
 
 HANDWRITING / ANNOTATION FILTER (CRITICAL):
 - Ignore handwritten notes, pencil traces, pen marks, check marks, circles, crosses, underlines, arrows, and rough margin doodles added after printing.
@@ -100,6 +101,9 @@ DO:
 - use `insert_text()` for text and `insert_equation()` for math
 - preserve visible line breaks with `insert_enter()`
 - preserve indentation with literal spaces
+- preserve per-line left margin exactly; do not normalize all wrapped lines to the far-left margin
+- if a continuation line is visibly indented in the source, add leading spaces on that line
+- if a continuation line is flush left in the source, do not invent indentation
 - preserve blank lines with repeated `insert_enter()`
 - follow the math syntax rules exactly when formulas appear
 
@@ -161,13 +165,39 @@ INDENTATION / SPACING:
 - Preserve visible indentation and multiple spaces.
 - For a single visible space, use `insert_space()`.
 - For multiple spaces, use `insert_text('  ')` etc.
+- Decide indentation separately for each visible line.
+- Do not force all stem lines to start at the same left position.
+- If the source uses hanging-indent style, preserve that hanging indent on the affected lines only.
+- If a line is visibly flush left in the source image, keep it flush left.
+- If a line is visibly indented in the source image, reproduce that indent with leading spaces.
+- Do not auto-remove indentation from wrapped lines, and do not auto-add indentation to lines that are not visibly indented.
+- Stem indentation examples:
+  - If the source shows continuation lines slightly indented, keep that indentation on those lines:
+    `insert_text('  어느 도서관 회원들의 도서 연체 일수는 표준편차가 2일인 정')`
+    `insert_enter()`
+    `insert_text('  규분포를 따른다고 한다. 이 도서관 회원 중에서 n명을 임의추')`
+    `insert_enter()`
+    `insert_text('  출하여 도서 연체 일수를 조사하였더니 평균이 5일이었다.')`
+  - If the source shows continuation lines flush left, keep them flush left:
+    `insert_text('어느 도서관 회원들의 도서 연체 일수는 표준편차가 2일인 정')`
+    `insert_enter()`
+    `insert_text('규분포를 따른다고 한다. 이 도서관 회원 중에서 n명을 임의추')`
+    `insert_enter()`
+    `insert_text('출하여 도서 연체 일수를 조사하였더니 평균이 5일이었다.')`
+  - Wrong behavior: copying one line's indent to all lines, or removing all indentation from a visibly indented stem.
 - For math subjects only: if an indented formula line is visibly tabbed, use one tab before the equation.
 - Do not use tab for normal text lines.
 
 PROBLEM NUMBER:
 - If a problem number like `30.` is visible, bold only that part.
 - Do not use `insert_equation()` for problem numbers.
-- For text immediately below a problem number line, start with two leading spaces if the source shows that exam indentation.
+- If typing the problem stem on the line immediately below a problem number, start that next line with exactly two leading spaces.
+- Example:
+  `set_bold(True)`
+  `insert_text('6.')`
+  `set_bold(False)`
+  `insert_enter()`
+  `insert_text('  어느 도서관 회원들의 도서 연체 일수는 표준편차가 2일인 정')`
 
 SCORE:
 - If a score like `[2점]`, `[3점]`, `[4점]` is visible at line end or bottom-right, right-align only that line when appropriate.
@@ -176,14 +206,16 @@ SCORE:
 
 CHOICES:
 - Default exam behavior: all 5 choices on one line if the source visually shows one line.
+- Start each choice line with exactly two leading spaces.
+- If all choices are on one visual line, begin that line with two leading spaces before `①`.
 - Type ①②③④⑤ as plain text, not equations.
 - Always keep one space after each choice number before its content.
 - After each choice number, write the choice content immediately after one plain space.
 - Do not insert `/`, `\`, `|`, or any OCR separator mark between the choice number and the content.
 - Examples:
-  - `① 0`
-  - `② 1`
-  - `③ -1`
+  - `  ① 0`
+  - `  ② 1`
+  - `  ③ -1`
 - Wrong examples:
   - `①/0`
   - `②\\1`
@@ -220,6 +252,7 @@ For `header.hwp`:
 1) `insert_template('header.hwp')`
 2) immediately `focus_placeholder('###')`
 3) type only the box body
+3.5) Start each ordinary content line with exactly one leading space inside the box.
 4) `exit_box()`
 5) continue outside the box
 
@@ -227,6 +260,7 @@ For `box.hwp`:
 1) `insert_template('box.hwp')`
 2) immediately `focus_placeholder('###')`
 3) type or insert ONLY the content that belongs inside the detected box
+3.5) Start each ordinary content line with exactly one leading space inside the box.
 4) `exit_box()`
 
 Do NOT:
@@ -237,6 +271,12 @@ Do NOT:
 Inside template boxes:
 - use justify alignment for passage/box text when the source is paragraph-like
 - keep spacing natural; do not invent extra double spaces
+- After `focus_placeholder('###')`, ordinary text/equation lines inside `header.hwp` or `box.hwp` should begin with exactly one leading space.
+- If a choice line is typed inside a box, that choice line should begin with exactly two leading spaces.
+- Wrong: `insert_text('조건은 다음과 같다.')`
+- Correct: `insert_text(' 조건은 다음과 같다.')`
+- Wrong: `insert_text('  조건은 다음과 같다.')`
+- Correct choice line: `insert_text('  ① 보기 내용')`
 - If a box contains both readable text and a picture/diagram, type the readable text inside the box and crop ONLY the actual picture/diagram region.
 - Do NOT replace a text-heavy box body with one large `insert_cropped_image(...)` call.
 - If most of the boxed area is text, the box body should be primarily `insert_text(...)` / `insert_equation(...)`, with image cropping used only for the non-text visual subregion.

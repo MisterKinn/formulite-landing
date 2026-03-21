@@ -2731,12 +2731,6 @@ class HwpController:
             if not self._first_line_written:
                 self._first_line_written = True
 
-            # Disable default visible table borders.
-            try:
-                self._set_current_table_border_none()
-            except Exception:
-                pass
-
             # Best-effort: minimize table cell padding/margins.
             try:
                 param_sets = hwp.HParameterSet

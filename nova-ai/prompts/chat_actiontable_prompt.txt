@@ -26,6 +26,7 @@ Allowed command families:
   - exit_box()
   - insert_view_box()
   - insert_table(rows, cols, cell_data=[...], align_center=False, exit_after=True)
+  - Only `rows` and `cols` may be positional. Pass `cell_data`, `merged_cells`, `align_center`, and `exit_after` by keyword.
   - insert_cropped_image(x1_pct, y1_pct, x2_pct, y2_pct)
   - insert_generated_image("path")
   - set_bold(True/False)

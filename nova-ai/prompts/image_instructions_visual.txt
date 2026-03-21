@@ -47,10 +47,18 @@ TABLE RECONSTRUCTION (CRITICAL):
 - Use structured cell objects for merge/style when needed.
 - A visibly bordered single-cell block is still a real table. If the source shows one rectangular cell containing text/equations, preserve it with `insert_table(1, 1, ...)` instead of flattening the content into normal paragraphs.
 - Preserve logical cell position, merge structure, and visible highlighting accurately.
+- Use this reconstruction algorithm in order:
+  1) Calculate the maximum base grid first by mentally splitting all merged areas and determining the full `rows x cols` table.
+  2) Read and place ALL visible content into that base grid before merging anything.
+  3) Apply merges only after the full grid has been populated.
+- When calling `insert_table(...)`, pass only `rows` and `cols` positionally. Pass `cell_data`, `merged_cells`, `align_center`, and `exit_after` by keyword only.
 - Before generating code, count the base grid first after mentally splitting merged cells.
 - Determine exact `rows` and `cols` before writing `insert_table(rows, cols, ...)`.
-- Fill all visible texts (including far-right headers and top-level headers) before final merge decisions.
-- Then apply merge metadata (`rowspan`/`colspan` or `merged_cells`) so merged structure matches the source.
+- Fill all visible texts (including far-right headers, top-level headers, and corner labels) before final merge decisions.
+- If one visible merged label spans multiple rows, place that content in the leftmost cell of that merged region first.
+- If one visible merged label spans multiple columns, place that content in the topmost cell of that merged region first.
+- If one visible merged label spans both rows and columns, place that content in the top-left anchor cell of that merged region first.
+- Only after every visible label/value is placed in the correct anchor position, apply merge metadata (`rowspan`/`colspan` or `merged_cells`) so merged structure matches the source.
 - Re-check by scanning each row and each column once more; no header/body label may disappear.
 - Finish both the table structure and any visible cell styling in this first response.
 - Do NOT assume a later refinement pass will add `fill_color` or `diagonal`.
@@ -61,7 +69,15 @@ TABLE RECONSTRUCTION (CRITICAL):
 - Do NOT add border-related keys such as `border_color`, `border_type`, `border_width`, or side-specific border overrides.
 - If a table cell contains only math, prefer `{"equation": "..."}`.
 - If a table cell mixes text and math on one line or across multiple lines, use `{"content": [...]}` or `{"lines": [...]}` so text/equation boundaries stay explicit.
+- Render equations inside table cells with the same quality/precision as normal typed equations outside tables.
+- Do NOT simplify a table-cell equation into plain text or a weakened approximation just because it is inside a table.
+- Apply the same subject math syntax rules inside table cells as you would for a normal `insert_equation(...)` call.
+- Keep fractions, superscripts, subscripts, `LEFT ( ... RIGHT )`, bold symbols, set operators, and matrix/vector notation fully preserved inside table cells.
+- If a table cell is equation-only, prefer a real equation cell object over plain text.
 - `{"text": "EQ:..."}` is allowed only for simple one-equation cells.
+- ✅ `{"equation": "{x ^{2} over a ^{2}} + {y ^{2} over b ^{2}} = 1"}`
+- ✅ `{"content": ["조건 ", {"type": "equation", "value": "rm P LEFT ( A CUP B RIGHT )"}, " 만족"]}`
+- ❌ `{"text": "x^2/a^2 + y^2/b^2 = 1"}`
 - Do not invent invisible colors or fills.
 - Use `insert_table(...)` ONLY for real tables with actual cell/grid structure.
 - Do NOT use `insert_table(...)` for borderless alignment layouts, multi-column choices, or header-like labels that are merely positioned on the page.

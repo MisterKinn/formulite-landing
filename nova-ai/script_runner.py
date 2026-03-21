@@ -3,7 +3,7 @@ from __future__ import annotations
 import textwrap
 import traceback
 import re
-from typing import Callable, Dict, List
+from typing import Any, Callable, Dict, List
 import ast
 
 from figure_code_runner import FigureCodeRenderError, render_python_figure_code
@@ -56,6 +56,32 @@ class ScriptRunner:
             "insert_python_figure(...)가 실행 전에 PNG로 치환되지 않았습니다. "
             "python figure pipeline을 먼저 적용해야 합니다."
         )
+
+    @staticmethod
+    def _normalize_insert_table_call(
+        args: list[Any], kwargs: dict[str, Any]
+    ) -> tuple[list[Any], dict[str, Any]]:
+        normalized_args = list(args)
+        normalized_kwargs = dict(kwargs)
+        if len(normalized_args) <= 2:
+            return normalized_args, normalized_kwargs
+
+        base_args = normalized_args[:2]
+        extras = normalized_args[2:]
+
+        if extras and "cell_data" not in normalized_kwargs:
+            normalized_kwargs["cell_data"] = extras.pop(0)
+
+        for extra in extras:
+            if isinstance(extra, list) and "merged_cells" not in normalized_kwargs:
+                normalized_kwargs["merged_cells"] = extra
+            elif isinstance(extra, bool):
+                if "align_center" not in normalized_kwargs:
+                    normalized_kwargs["align_center"] = extra
+                elif "exit_after" not in normalized_kwargs:
+                    normalized_kwargs["exit_after"] = extra
+
+        return base_args, normalized_kwargs
 
     def _looks_like_hwpeq_text(self, text: str) -> bool:
         s = (text or "").strip()
@@ -1791,6 +1817,7 @@ class ScriptRunner:
                         if isinstance(call, ast.Call):
                             eval_args = [ast.literal_eval(a) for a in call.args]
                             eval_kwargs = {kw.arg: ast.literal_eval(kw.value) for kw in call.keywords if kw.arg}
+                            eval_args, eval_kwargs = self._normalize_insert_table_call(eval_args, eval_kwargs)
                             self._controller.insert_table(*eval_args, **eval_kwargs)
                     except Exception:
                         pass
@@ -1946,7 +1973,8 @@ class ScriptRunner:
             def _inner(*args, **kwargs) -> None:  # type: ignore[no-untyped-def]
                 if cancel_check and cancel_check():
                     raise ScriptCancelled("cancelled")
-                return fn(*args, **kwargs)
+                normalized_args, normalized_kwargs = self._normalize_insert_table_call(list(args), dict(kwargs))
+                return fn(*normalized_args, **normalized_kwargs)
 
             return _inner
 
