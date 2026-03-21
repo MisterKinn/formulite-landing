@@ -2,11 +2,17 @@
 chcp 65001 >nul
 setlocal enabledelayedexpansion
 
+pushd "%~dp0"
+
+set "APP_VERSION=2.1.1"
 set "DIST_DIR=dist\Nova AI"
 set "DIST_EXE=dist\Nova AI\Nova AI.exe"
 set "PORTABLE_DIR=output\Nova AI-portable"
-set "SETUP_EXE=output\NovaAI_Setup_1.0.0.exe"
+set "SETUP_EXE=output\NovaAI_Setup_%APP_VERSION%.exe"
 set "RELEASE_ENV=release\.env.runtime"
+set "SPEC_FILE=NovaAI.spec"
+set "PYTHON_EXE=python"
+if exist ".venv\Scripts\python.exe" set "PYTHON_EXE=.venv\Scripts\python.exe"
 
 echo ============================================
 echo   Nova AI installer build
@@ -22,13 +28,14 @@ if exist "%SETUP_EXE%" del /f /q "%SETUP_EXE%"
 echo.
 
 echo [2/4] Preparing release runtime config...
-python "prepare_release_runtime.py"
+if not exist "%SPEC_FILE%" goto :spec_missing
+"%PYTHON_EXE%" "prepare_release_runtime.py"
 if errorlevel 1 goto :release_config_failed
 if not exist "%RELEASE_ENV%" goto :release_env_missing
 echo.
 
 echo [3/4] Building PyInstaller bundle...
-python -m PyInstaller "NovaAI.spec" --noconfirm
+"%PYTHON_EXE%" -m PyInstaller "%SPEC_FILE%" --noconfirm
 if errorlevel 1 goto :pyinstaller_failed
 if not exist "%DIST_EXE%" goto :dist_missing
 
@@ -64,7 +71,13 @@ echo Setup exe : %SETUP_EXE%
 echo Portable  : %PORTABLE_DIR%
 echo.
 pause
+popd
 exit /b 0
+
+:spec_missing
+echo.
+echo ERROR: PyInstaller spec file was not found: %SPEC_FILE%
+goto :fail
 
 :release_config_failed
 echo.
@@ -122,4 +135,5 @@ goto :fail
 :fail
 echo.
 pause
+popd
 exit /b 1
