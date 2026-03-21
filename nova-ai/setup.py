@@ -44,7 +44,7 @@ long_description = _read_text(ROOT / "README.md", default=description)
 
 setup(
     name="nova-ai",
-    version="1.0.0",
+    version="2.1.1",
     description=description,
     long_description=long_description,
     long_description_content_type="text/markdown",

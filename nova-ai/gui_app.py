@@ -2248,7 +2248,7 @@ class SidebarWidget(QFrame):
         lay.addWidget(self._login_btn)
         lay.addWidget(self._logout_btn)
 
-        ver = QLabel("Nova AI v1.0")
+        ver = QLabel("Nova AI v2.1.1")
         ver.setAlignment(Qt.AlignmentFlag.AlignCenter)
         ver.setStyleSheet("color: #c4c4c4; font-size: 10px; padding: 12px; background: transparent;")
         lay.addWidget(ver)
@@ -3773,7 +3773,7 @@ class NovaAILiteWindow(QWidget):
         QMessageBox.about(
             self,
             "Nova AI \uC18C\uAC1C",
-            "Nova AI v1.0\n\n"
+            "Nova AI v2.1.1\n\n"
             "\uC218\uB2A5 \uD615\uC2DD \uD0C0\uC774\uD551 AI\n\n"
             "https://nova-ai.work",
         )
@@ -6385,7 +6385,7 @@ def _maybe_show_update_notice(parent: QWidget) -> None:
     if enabled in {"0", "false", "off", "no"}:
         return
 
-    current_version = str(os.getenv("NOVA_APP_VERSION") or "1.0.0").strip() or "1.0.0"
+    current_version = str(os.getenv("NOVA_APP_VERSION") or "2.1.1").strip() or "2.1.1"
     manifest_url = str(os.getenv("NOVA_UPDATE_MANIFEST_URL") or "").strip()
     latest_version = ""
     min_supported_version = ""

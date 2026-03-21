@@ -7,7 +7,7 @@
 ;   또는: iscc installer.iss
 
 #define MyAppName "Nova AI"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "2.1.1"
 #define MyAppPublisher "Nova AI"
 #define MyAppURL "https://github.com/nova-ai"
 #define MyAppExeName "Nova AI.exe"
