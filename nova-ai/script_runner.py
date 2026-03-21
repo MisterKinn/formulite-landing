@@ -1205,6 +1205,68 @@ class ScriptRunner:
 
         return out
 
+    def _collapse_header_box_double_spaces(self, lines: List[str]) -> List[str]:
+        """
+        Inside `header.hwp`'s ### body, collapse invented repeated plain spaces.
+        Keep leading indentation intact, but normalize accidental double spaces
+        between visible characters and duplicate insert_space() calls.
+        """
+        out: List[str] = []
+        pending_header_box = False
+        in_header_body = False
+        text_re = re.compile(
+            r"^(?P<indent>\s*)insert_text\(\s*(?P<quote>['\"])(?P<body>.*?)(?P=quote)\s*\)\s*$"
+        )
+
+        for line in lines:
+            stripped = line.strip()
+            lowered = stripped.lower()
+
+            if stripped.startswith("insert_template("):
+                pending_header_box = "header.hwp" in lowered
+                in_header_body = False
+                out.append(line)
+                continue
+
+            if stripped in ("focus_placeholder('###')", 'focus_placeholder("###")'):
+                in_header_body = pending_header_box
+                out.append(line)
+                continue
+
+            if stripped in (
+                "focus_placeholder('@@@')",
+                'focus_placeholder("@@@")',
+                "focus_placeholder('&&&')",
+                'focus_placeholder("&&&")',
+                "exit_box()",
+            ):
+                in_header_body = False
+                if stripped == "exit_box()":
+                    pending_header_box = False
+                out.append(line)
+                continue
+
+            if in_header_body and stripped == "insert_space()":
+                if out and out[-1].strip() == "insert_space()":
+                    continue
+                out.append(line)
+                continue
+
+            if in_header_body:
+                match = text_re.match(line)
+                if match:
+                    body = match.group("body")
+                    normalized_body = re.sub(r"(?<=\S) {2,}(?=\S)", " ", body)
+                    if normalized_body != body:
+                        out.append(
+                            f"{match.group('indent')}insert_text({match.group('quote')}{normalized_body}{match.group('quote')})"
+                        )
+                        continue
+
+            out.append(line)
+
+        return out
+
     def _drop_enter_after_exit_box(self, lines: List[str]) -> List[str]:
         """
         Avoid extra blank lines caused by exit_box() followed by insert_enter().
@@ -1917,6 +1979,7 @@ class ScriptRunner:
         expanded_lines = self._rewrite_box_template_flow(expanded_lines)
         expanded_lines = self._normalize_placeholders(expanded_lines)
         expanded_lines = self._normalize_box_paragraphs(expanded_lines)
+        expanded_lines = self._collapse_header_box_double_spaces(expanded_lines)
         expanded_lines = self._normalize_box_template_order(expanded_lines)
         expanded_lines = self._ensure_exit_after_plain_box(expanded_lines)
         expanded_lines = self._drop_enter_after_exit_box(expanded_lines)

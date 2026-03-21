@@ -52,20 +52,30 @@ TABLE RECONSTRUCTION (CRITICAL):
   2) Read and place ALL visible content into that base grid before merging anything.
   3) Apply merges only after the full grid has been populated.
 - When calling `insert_table(...)`, pass only `rows` and `cols` positionally. Pass `cell_data`, `merged_cells`, `align_center`, and `exit_after` by keyword only.
+- Keep vertical whitespace above and below inserted tables as tight as possible; do not add blank lines before/after a table unless the source visibly shows that gap.
 - Before generating code, count the base grid first after mentally splitting merged cells.
 - Determine exact `rows` and `cols` before writing `insert_table(rows, cols, ...)`.
 - Fill all visible texts (including far-right headers, top-level headers, and corner labels) before final merge decisions.
 - If one visible merged label spans multiple rows, place that content in the leftmost cell of that merged region first.
 - If one visible merged label spans multiple columns, place that content in the topmost cell of that merged region first.
 - If one visible merged label spans both rows and columns, place that content in the top-left anchor cell of that merged region first.
+- For merged cells, keep content only in the top-left anchor cell of the merged region.
 - Only after every visible label/value is placed in the correct anchor position, apply merge metadata (`rowspan`/`colspan` or `merged_cells`) so merged structure matches the source.
 - Re-check by scanning each row and each column once more; no header/body label may disappear.
 - Finish both the table structure and any visible cell styling in this first response.
 - Do NOT assume a later refinement pass will add `fill_color` or `diagonal`.
 - If a row has cells covered by vertical merges from previous rows, do not shift subsequent cells.
+- Each row must use exactly one row-expression mode:
+  - compact mode: covered cells are omitted
+  - explicit mode: base-grid cells are fully written and covered cells are `None`
+- Do NOT mix compact mode and explicit mode inside the same row.
+- If using explicit mode for a row, that row must describe the full base-grid column count.
 - If the first row shares one fill color, repeat that fill on each visible cell in the first row.
 - If only one cell is colored, apply style only to that cell.
 - If a cell has a visible diagonal slash, backslash, or X mark, add `diagonal: "/"`, `diagonal: "\\"`, or `diagonal: "x"` to that cell object.
+- If a diagonal cell has labels in separate triangular areas, prefer `diagonal_labels`.
+- ✅ `{"diagonal": "\\", "diagonal_labels": {"top_right": "물질", "bottom_left": "과정"}}`
+- ✅ `{"diagonal": "/", "diagonal_labels": {"top_left": "과정", "bottom_right": "물질"}}`
 - Do NOT add border-related keys such as `border_color`, `border_type`, `border_width`, or side-specific border overrides.
 - If a table cell contains only math, prefer `{"equation": "..."}`.
 - If a table cell mixes text and math on one line or across multiple lines, use `{"content": [...]}` or `{"lines": [...]}` so text/equation boundaries stay explicit.
@@ -76,12 +86,14 @@ TABLE RECONSTRUCTION (CRITICAL):
 - If a table cell is equation-only, prefer a real equation cell object over plain text.
 - `{"text": "EQ:..."}` is allowed only for simple one-equation cells.
 - ✅ `{"equation": "{x ^{2} over a ^{2}} + {y ^{2} over b ^{2}} = 1"}`
-- ✅ `{"content": ["조건 ", {"type": "equation", "value": "rm P LEFT ( A CUP B RIGHT )"}, " 만족"]}`
+- ✅ `{"content": ["조건 ", {"type": "equation", "value": "{rm P} LEFT ( A CUP B RIGHT )"}, " 만족"]}`
 - ❌ `{"text": "x^2/a^2 + y^2/b^2 = 1"}`
 - Do not invent invisible colors or fills.
 - Use `insert_table(...)` ONLY for real tables with actual cell/grid structure.
 - Do NOT use `insert_table(...)` for borderless alignment layouts, multi-column choices, or header-like labels that are merely positioned on the page.
 - If the source looks like "two columns of choices under text headers" but has no real table borders, reproduce it with plain typing and spacing, not a table.
+- For these borderless column layouts, align headers/items by computed spaces, not by rough visual guessing.
+- Use the spacing heuristic `visible character = width 2`, `plain space = width 1` when deciding how many spaces are needed to place headers like `A`, `B`, `C` over their intended columns.
 - If a boxed reaction, formula summary, result note, or short paragraph is enclosed by an actual printed border, treat that bordered region as a 1x1 table unless it is clearly the special `<보기>` template box.
 
 Compact table examples:
@@ -150,15 +162,14 @@ Crop API:
 insert_cropped_image(x1_pct, y1_pct, x2_pct, y2_pct)
 
 Crop rules:
-1) Estimate a bounding box around the visual object.
-2) Include a small margin, but avoid swallowing surrounding text.
-3) Keep labels inside the figure crop if they belong to the figure.
-4) If there are multiple figures, crop them separately.
-5) Coordinates must be decimal ratios between `0.0` and `1.0`.
-6) Make the crop as tight as possible around the actual figure/diagram, while still keeping essential labels/arrows.
-6.5) When uncertain, prefer a slightly generous box that fully contains the figure; the app will auto-tighten extra whitespace afterward.
-7) Do NOT include nearby stem text, question text, choice lines, score labels, or large blank margins unless they truly belong to the figure.
-8) If the figure sits inside a larger box/container, crop the figure itself, not the whole surrounding box.
+1) `insert_cropped_image(...)` is for the main visual figure/diagram itself, not for whole text blocks.
+2) Output one rough-but-reasonable bounding box around the figure; the app will refine it again using CV/OCR.
+3) Keep figure-owned labels inside the crop: axis text, legends, arrows, markers, region labels, and captions that are visually part of the figure.
+4) Do NOT include nearby stem text, question text, choice lines, score labels, or ordinary paragraph text unless they truly belong to the figure.
+5) If a figure sits inside a larger box/container, crop only the figure region, not the whole surrounding box.
+6) If there are multiple independent figures, crop them separately instead of one oversized box.
+7) Coordinates must be decimal ratios between `0.0` and `1.0`.
+8) When uncertain, prefer a slightly generous figure box that fully contains the visual object; the app will auto-tighten whitespace and text contamination afterward.
 
 Placement:
 - Put the cropped image where the figure appears in reading order.

@@ -88,6 +88,9 @@ Fractions:
 - If the numerator is a symbolic product such as coefficient × pi, brace the whole product:
   ✅ `{2 pi} over {5}`
   ✅ `{13 pi} over {20}`
+- If Korean words appear inside the numerator or denominator, replace visible word spaces with `~` inside that fraction block.
+- ✅ `{응축~속도} over {증발~속도}`
+- ❌ `{응축 속도} over {증발 속도}`
 - Parenthesized denominators/numerators must remain inside the fraction braces:
   ✅ `{r over {LEFT ( 1 - r RIGHT ) ^{2}}}`
   ✅ `{1 over {LEFT ( 1 + x RIGHT ) ^{3}}}`
@@ -200,6 +203,13 @@ GEOMETRY / POINT / FIGURE NOTATION:
 - Point letters in geometry use roman letter tokens.
 - Example point notation: `{rmA}`, `{rmB}`, `{rmC}`, `{rmP}`, `{rmQ}`, `{rmR}`, `{rmp}`, `{rmq}`, `{rmr}`, `{rms}`
 - Triangle ABC: `rm ABC`
+- Perpendicular / right-angle relation `⊥` (ㅗ-shaped symbol) uses `BOT`.
+- ✅ `a BOT b`
+- ✅ `l BOT m`
+- Congruence in geometry uses `==`.
+- ✅ `TRIANGLE ABC == TRIANGLE DEF`
+- Similarity uses `sim`.
+- ✅ `TRIANGLE ABC sim TRIANGLE DEF`
 - Rectangle marker `□ABCD` must be split:
   `insert_text('□')`
   `insert_equation('rm ABCD')`
@@ -221,14 +231,29 @@ DEGREE / TEMPERATURE:
 PROBABILITY / STATISTICS:
 - Event symbols `A`, `B`, `X` usually remain plain in probability formulas.
 - In probability notation, apply roman formatting only to the probability symbol itself.
-- Prefer `rm P it LEFT ( ... RIGHT )` for probability expressions, and keep event / set symbols inside plain unless the source explicitly styles them otherwise.
-- ✅ `rm P it LEFT ( B | A RIGHT ) = 3 rm P it LEFT ( A | B RIGHT )`
-- ✅ `rm P LEFT ( A ^{C} SMALLINTER B RIGHT ) = {9} over {16}`
-- ✅ `rm P LEFT ( A CUP B RIGHT )`
-- ❌ `rm P it LEFT ( rm B | rm A RIGHT )`
-- ❌ `rm P LEFT ( rm A CAP rm B RIGHT )`
+- Prefer wrapped roman form `{rm P} LEFT ( ... RIGHT )` for probability expressions, and keep event / set symbols inside plain unless the source explicitly styles them otherwise.
+- ✅ `{rm P} LEFT ( B | A RIGHT ) = 3 {rm P} LEFT ( A | B RIGHT )`
+- ✅ `{rm P} LEFT ( A ^{C} SMALLINTER B RIGHT ) = {9} over {16}`
+- ✅ `{rm P} LEFT ( A CUP B RIGHT )`
+- ❌ `rm P it LEFT ( B | A RIGHT )`
+- ❌ `rm P LEFT ( A CUP B RIGHT )`
+- ❌ `{rm P} LEFT ( rm B | rm A RIGHT )`
+- ❌ `{rm P} LEFT ( rm A CAP rm B RIGHT )`
 - For set operations in math / probability formulas, use `SMALLINTER` for intersection and `CUP` for union.
 - ❌ Use raw `cap` / `intersection` text for set intersection.
+- Basic set symbols:
+  - membership `∈` -> `in`
+  - subset `⊂` -> `subset`
+  - union `∪` -> `CUP`
+  - intersection `∩` -> `SMALLINTER`
+  - empty set `∅` -> `empty`
+  - infinity `∞` -> `inf`
+- ✅ `a in A`
+- ✅ `A subset B`
+- ✅ `A CUP B`
+- ✅ `A SMALLINTER B`
+- ✅ `empty`
+- ✅ `inf`
 - For repeated permutations (`중복순열`) in probability / combinatorics, use `SMALLPROD` with a left subscript for the base count and a right subscript for the selected count.
 - Prefer `{ } _{(n)} SMALLPROD _{(r)}` style when the source shows the Korean textbook notation `{} _{n} Pi _{r}`.
 - ✅ `{ } _{(3)} SMALLPROD _{(2)}`
@@ -274,7 +299,9 @@ ABSOLUTE VALUE / NORM:
 - ✅ `LEFT | x RIGHT |`
 - If bars wrap a structured expression such as a fraction, keep the full structure in `LEFT | ... RIGHT |`.
 - Double norm:
-  `vert vert \`X\`\`vert vert`
+  if there are two bars on each side (`||`), write it as `vert vert ... vert vert`
+  ✅ `vert vert \`X\`\`vert vert`
+  ✅ `vert vert `{rmboldu}``vert vert = 2`
 - Curvature-style norm example:
   `kappa LEFT ( t RIGHT ) = {vert vert \`{rm boldr} prime LEFT ( t RIGHT ) TIMES {rm boldr} prime prime LEFT ( t RIGHT )\`\`vert vert} over {vert vert \`{rm boldr} prime LEFT ( t RIGHT )\`\`vert vert ^{3}}`
 
@@ -371,7 +398,7 @@ COMMON MATH PATTERNS:
 - Apply all math syntax rules normally inside table cells, including fractions, powers, subscripts, `LEFT ( ... RIGHT )`, probability notation, set notation, bold symbols, and matrix/vector forms.
 - Prefer a true equation object whenever the cell's main content is mathematical.
 - `{"text": "EQ:..."}` is allowed only for a simple equation-only cell.
-- ✅ `{"equation": "rm P LEFT ( A ^{C} SMALLINTER B RIGHT ) = {9} over {16}"}`
+- ✅ `{"equation": "{rm P} LEFT ( A ^{C} SMALLINTER B RIGHT ) = {9} over {16}"}`
 - ✅ `{"equation": "{ } _{(3)} SMALLPROD _{(2)}"}`
 - ❌ `{"text": "P(A∩B)=9/16"}`
 - Probability/statistics tables should use `align_center=True`.
@@ -423,15 +450,157 @@ UNITS / QUANTITIES:
 PHYSICS:
 - Keep formulas like `F = ma`, `V = IR`, `v = f LAMBDA`, `P = IV`.
 - Circuit values and scientific units stay as equations when visually formula-like.
+- In nuclear fusion / nuclear reaction notation, atomic symbols such as hydrogen / helium must use wrapped roman element symbols.
+- Prefer isotope notation like:
+  - `{} _{1} ^{2} {rm H}`
+  - `{} _{1} ^{3} {rm H}`
+  - `{} _{2} ^{4} {rm He}`
+- Do NOT romanize ordinary scalar variables such as force `F`, speed/voltage `V`, speed `v`, resistance `R`, acceleration `a`, period `T`, height `h`, height `H`, quantum number `n`, mass `m`, energy `E`, current `I`, magnetic-field strength `B`, heat `Q`, gravitational acceleration `g`, light speed `c`, length `L`, length `l`, distance variable `d`, or position variable `x`.
+- If a plain physical quantity uses a named-label subscript, keep the quantity plain and romanize only the subscript label.
+- ✅ `F _{rm P}`
+- ✅ `v _{rm A}`
+- ✅ `T _{rm B}`
+- ✅ `V`
+- ✅ `R`
+- ✅ `a`
+- ✅ `l`
+- ✅ `T`
+- ✅ `h`
+- ✅ `H`
+- ✅ `n`
+- ✅ `m`
+- ✅ `E`
+- ✅ `v`
+- ✅ `I`
+- ✅ `B`
+- ✅ `Q`
+- ✅ `g`
+- ✅ `0.7c`
+- ✅ `x = d`
+- For time units, use roman unit text:
+  - `T LEFT ( {rm s} RIGHT )`
+  - `t = 3 {rm s}`
+- For scientific units such as wavelength / distance / frequency / energy / force units, romanize the unit token:
+  - `{rm nm}`, `{rm m}`, `{rm Hz}`, `{rm kHz}`, `{rm eV}`, `{rm N}`, `{rm V}`
+- ✅ `lambda = 500 {rm nm}`
+- ✅ `f = 52 {rm kHz}`
+- ✅ `E = 2.1 {rm eV}`
+- ✅ `F = 3 {rm N}`
+- ✅ `12 {rm V}`
+- For stopping potential, prefer:
+  - `V _{rm S}`
+- Named objects / media / observers / particles / conductors / processes / regions should use roman labels when they are names, not variables.
+- This includes labels such as:
+  - object or particle labels: `{rm A}`, `{rm B}`, `{rm C}`, `{rm X}`
+  - capacitor labels: `{rm A}`, `{rm B}`
+  - wire / conductor names: `{rm A}`, `{rm B}`, `{rm C}`
+  - metal rod labels: `{rm X}`, `{rm Y}`, `{rm Z}`
+  - observer / medium labels: `{rm A}`, `{rm B}`, `{rm C}`
+  - region labels: `{rm I}`, `{rm II}`, `{rm III}`, `{rm IV}`
+  - process labels in thermodynamics: `{rm A}`, `{rm B}`, `{rm C}`, `{rm D}`
+- If thermodynamic processes are connected by arrows, use:
+  - `{rm A} rarrow {rm B}`
+  - `{rm B} rarrow {rm C}`
+- Point labels and named endpoints should use roman form:
+  - `{rm P}`, `{rm Q}`, `{rm R}`, `{rm S}`, `{rm p}`, `{rm q}`, `{rm r}`
+- Named wave/source/switch points such as `S1`, `S2` should also be romanized:
+  - `{rm S _{1}}`
+  - `{rm S _{2}}`
+- LED/device names such as `D1`, `D2` should be romanized.
+- ✅ `{rm D _{1}}`
+- ✅ `{rm D _{2}}`
+- Unknown semiconductor labels such as `X` should be romanized when they are material names.
+- ✅ `{rm X}`
+- Context matters for `A`, `P`, and `V`:
+  - cross-sectional area `A` stays plain: `A`
+  - named capacitor / object / conductor label `A` uses roman: `{rm A}`
+  - power `P` stays plain: `P`
+  - point label `P` uses roman: `{rm P}`
+  - voltage / speed variable `V` stays plain: `V`
+  - voltage unit uses roman: `{rm V}`
+- Examples:
+  - ✅ `A = l ^{2}`
+  - ✅ `P = IV`
+  - ✅ `V = IR`
+  - ✅ `12 {rm V}`
+  - ✅ `축전기 {rm A},` `축전기 {rm B}`
+- If the source says `a에 연결`, `b에 연결`, or names transition targets / terminals / cases with lowercase letters, romanize those named labels.
+- ✅ `{rm a}`
+- ✅ `{rm b}`
+- For electron-transition labels `a`, `b`, `c`, `d`, treat them as roman named labels:
+  - `{rm a}`, `{rm b}`, `{rm c}`, `{rm d}`
+- For light frequencies with named subscripts, romanize the subscript label only:
+  - `f _{rm a}`
+  - `f _{rm b}`
+  - `f _{rm c}`
+- For direction / axis notation, keep plain math symbols without romanization.
+- ✅ `+x`
+- ✅ `-x`
+- ✅ `+y`
+- ✅ `xy`평면
+- For diode notation, romanize named `p`, `n`, and `p-n` labels when they refer to diode type / semiconductor side:
+  - `{rm p}`
+  - `{rm n}`
+  - `{rm p-n}`
+- Context matters for `p` and `I`:
+  - momentum / impulse symbols stay plain: `p`, `I`
+  - named points / lines / diode sides / labels use roman: `{rm p}`, `{rm q}`, `{rm p-n}`
+- Examples:
+  - ✅ `p = mv`
+  - ✅ `I = DELTA p`
+  - ✅ `{rm p}`점, `{rm q}`점
+  - ✅ `{rm p-n}` 접합
 
 CHEMISTRY (CRITICAL):
-- Element and molecule tokens should use roman quoted tokens when needed to avoid bad auto-conversion.
-- ✅ `rm "H" _{2} "O"`
-- ✅ `rm "C" "O" _{2}`
-- ✅ `rm "Ni"("CO") _{4}`
+- In boxed chemistry experiment/data blocks, preserve bracketed section labels such as `[자료]`, `[실험 과정]`, `[실험 결과]` exactly as shown.
+- If a later bracketed section label starts a new subsection inside the same box, insert one blank line above it.
+- Typical pattern inside one box:
+  - first label at top: `[자료]` (no extra blank line above)
+  - later labels: `[실험 과정]`, `[실험 결과]` (one empty line above each when visible)
+- Example boxed flow:
+  `insert_text('[자료]')`
+  `insert_enter()`
+  `insert_text('○ 화학 반응식 :')`
+  `insert_enter()`
+  `insert_enter()`
+  `insert_text('[실험 과정]')`
+  `insert_enter()`
+  `insert_text('(가) ...')`
+  `insert_enter()`
+  `insert_enter()`
+  `insert_text('[실험 결과]')`
+- Chemical substances / ions / compounds / elements / atoms should use wrapped roman form.
+- ✅ `{rm H _{2} O}`
+- ✅ `{rm C O _{2}}`
+- ✅ `{rm Ni LEFT ( CO RIGHT ) _{4}}`
 - Ion examples:
-  `rm "Na" ^{+}`
-  `rm "Cl" ^{-}`
+  `{rm Na} ^{+}`
+  `{rm Cl} ^{-}`
+- For chemical phase/state labels inside parentheses, do NOT romanize the state token itself.
+- Use plain `aq`, `g`, `s`, `l` inside `LEFT ( ... RIGHT )`.
+- ✅ `{rm H _{2} O} LEFT ( l RIGHT )`
+- ✅ `{rm NaCl} LEFT ( aq RIGHT )`
+- ❌ `{rm H _{2} O} LEFT ( {rm l} RIGHT )`
+- For standalone measurement units, use roman units.
+- ✅ `x {rm g}`
+- ✅ `x {rm mL}`
+- ✅ `x {rm M}`
+- ✅ `x {rm mol}`
+- If the Korean source says `x몰`, write it as `x {rm M}`.
+- Temperature values/temperature notation should NOT be romanized beyond the normal temperature syntax rules.
+- Keep temperature plain except for the existing `DEG` / `CENTIGRADE` syntax itself.
+- `pH` should be roman.
+- ✅ `{rm pH}`
+- In chemistry context, named labels such as students/species/unknowns/atoms/ions/compounds using uppercase Latin letters should be romanized.
+- ✅ `{rm A}`, `{rm B}`, `{rm C}`, `{rm X}`, `{rm Y}`, `{rm Z}`
+- Use this especially for labels such as 학생 A/B/C, 이온 X/Y, 화합물 A/B/C, 원소 X/Y, 원자 A/B, 홀전자수 비교 대상 A/B, 오비탈수 비교 대상 X/Y.
+- Orbital symbols such as `s`, `p`, `d`, `f` are NOT romanized; keep them plain.
+- ✅ `2p`
+- ✅ `3s`
+- ❌ `{rm p}`
+- Reaction coefficients / unknown coefficients such as `a`, `b`, `c` remain plain variables, not roman.
+- ✅ `a {rm A} + b {rm B} -> c {rm C}`
+- ❌ `{rm a} {rm A}`
 - Reaction arrows:
   - one-way: prefer `->`
   - equilibrium: `REL EXARROW {} {}`
@@ -443,10 +612,93 @@ CHEMISTRY (CRITICAL):
 BIOLOGY:
 - Genotype notation like `Aa`, `AaBb` does not use `rm`.
 - Keep genotype crosses by splitting text and equation as needed.
+- However, standalone allele labels such as `A`, `a`, `B`, `b`, `D`, `d` should be romanized when they are used as named allele symbols.
+- ✅ `{rm A}`, `{rm a}`, `{rm B}`, `{rm b}`, `{rm D}`, `{rm d}`
+- ❌ leave standalone allele labels as plain italic variables
 - Inhibitor `In` must be:
   `rm "In"`
+- Biological abbreviations such as `ATP`, `DNA`, blood `TSH`, and `HIV` should be typed as plain text, not equations.
+- ✅ `insert_text('ATP')`
+- ✅ `insert_text('DNA')`
+- ✅ `insert_text('TSH')`
+- ✅ `insert_text('HIV')`
 - DNA base sequences and codons are usually text, not equations.
+- Named labels for species / individuals / populations / cells / conditions / regions / nerves / chromosomes / hormones should use roman form when they are symbolic labels rather than ordinary Korean words.
+- This includes examples such as:
+  - animal/plant/species labels: `{rm A}`, `{rm Z}`
+  - individual labels: `{rm I}`, `{rm II}`, `{rm III}`, `{rm IV}`, `{rm P}`, `{rm Q}`, `{rm R}`
+  - population / group labels: `{rm I}`, `{rm II}`, `{rm III}`, `{rm IV}`, `{rm X}`, `{rm Y}`
+  - region label: `{rm P}`
+  - chromosome / hormone labels: `{rm X}`, `{rm Y}`
+  - antigen / nerve / stage labels: `{rm A}`, `{rm B}`
+- Survival-curve types should romanize the Roman numeral label:
+  - `{rm I}`형
+  - `{rm II}`형
+  - `{rm III}`형
+- Cell-cycle labels such as `G1기`, `M기` should use romanized phase symbols.
+- ✅ `{rm G _{1}}`
+- ✅ `{rm M}`
+- Blood-type label `ABO` should be romanized when written symbolically.
+- ✅ `{rm ABO}`
+- Lymphocyte `T`, germ cell `G`, vitamin `C`, node `X`, and Z-line `Z` should be romanized when they are label symbols.
+- ✅ `{rm T}`
+- ✅ `{rm G}`
+- ✅ `{rm C}`
+- ✅ `{rm X}`
+- ✅ `{rm Z}`
+- In biology context, named labels `p` and `L` should also be romanized when they are label/category symbols.
+- ✅ `{rm p}`
+- ✅ `{rm L}`
+- Time variables `t`, `T` stay plain, not romanized.
+- ✅ `t`
+- ✅ `T`
+- Species/ploidy symbol `n` stays plain when it refers to 핵상 or the `n` in `2n`, `n`.
+- ✅ `n`
+- ✅ `2n`
+- Spatial point labels such as `d _{1}`, `d _{2}` should stay plain, not romanized.
+- ✅ `d _{1}`
+- ✅ `d _{2}`
+- ❌ `{rm d _{1}}`
+- Units in biology equations should use roman unit text when they are actual units:
+  - length unit: `{rm m}`
+  - time units: `{rm s}`, `{rm ms}`
+  - membrane-potential unit: `{rm mV}`
+- ✅ `3 {rm m}`
+- ✅ `5 {rm s}`
+- ✅ `20 {rm ms}`
+- ✅ `-70 {rm mV}`
 
 EARTH SCIENCE:
 - Keep scientific equations such as `M = m - 5 log {d over 10}`, `LAMBDA _{max}`, `z = {DELTA LAMBDA over LAMBDA}`.
 - Temperature should still use `CENTIGRADE`.
+- In earth-science context, named region/current/galaxy/star/element labels should use roman form when they are symbolic labels rather than ordinary variables.
+- This includes examples such as:
+  - current / region labels: `{rm A}`, `{rm B}`
+  - Roman-numeral labels: `{rm I}`, `{rm II}`, `{rm III}`, `{rm IV}`, `{rm V}`
+  - point label: `{rm P}`
+  - galaxy labels: `{rm A}`, `{rm B}`
+  - main-sequence star label: `{rm X}`
+  - element labels: `{rm X}`, `{rm Y}`
+- Examples:
+  - deep current / surface current labels `A`, `B` -> `{rm A}`, `{rm B}`
+  - galaxy `A`, galaxy `B` -> `{rm A}`, `{rm B}`
+  - point `P` -> `{rm P}`
+- Time variables `t`, `T` stay plain, not romanized.
+- ✅ `t`
+- ✅ `T`
+- Radiative-energy amount `S` should be romanized when used as a named quantity label.
+- ✅ `{rm S}`
+- Astronomical unit `AU` should be romanized.
+- ✅ `{rm AU}`
+- Luminosity classes `I`, `II`, `III`, `IV`, `V` should be romanized.
+- ✅ `{rm I}`
+- ✅ `{rm II}`
+- ✅ `{rm III}`
+- ✅ `{rm IV}`
+- ✅ `{rm V}`
+- For slope/dip direction labels, `N` and `S` should be romanized.
+- ✅ `{rm N}`
+- ✅ `{rm S}`
+- Geological time unit `Ma` should be romanized.
+- ✅ `{rm Ma}`
+- If the source shows triangle notation such as `삼각형 t`, write it in equation form as `TRIANGLE t`.

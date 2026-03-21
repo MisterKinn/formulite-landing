@@ -226,7 +226,13 @@ CHOICES:
 - If choices are arranged in multiple visual columns but there are no real cell borders/grid lines, do NOT use `insert_table(...)`.
 - Column-aligned choice layouts with headers such as `크기 / 방향`, `값 / 단위`, `보기 / 이유` are still ordinary choice text, not a real table.
 - In that case, type them with `insert_text(...)`, `insert_equation(...)`, visible spaces, and line breaks only.
-- Use literal spaces or `insert_text('    ')` to keep approximate column alignment.
+- For borderless space-aligned layouts, do NOT eyeball the spacing. Compute the spaces so the visible column starts match the source image.
+- Width-count rule for these layouts:
+  - every visible character token counts as width `2`
+  - every plain space counts as width `1`
+- Apply this especially to headers/labels arranged like `A   B   C`, `크기   방향`, `보기   이유`, and similar no-border column layouts.
+- When a later column starts too early or too late, adjust the number of plain spaces based on that width count instead of inserting a rough guess.
+- Use literal spaces or `insert_text('    ')` to keep the computed column alignment.
 - Do not convert a borderless choice layout into a table just to make alignment easier.
 - Example direction:
   `insert_text('크기')`
@@ -236,6 +242,9 @@ CHOICES:
   `insert_text('① ')`
   `insert_equation('{1} over {5} p')`
   `insert_text('      +x방향')`
+- Example idea for `A / B / C`-style headers:
+  - compute each column start with the `character=2, space=1` rule
+  - then insert enough plain spaces so `A`, `B`, and `C` sit above the intended answer columns instead of using a visually rough gap
 
 TEMPLATE / PLACEHOLDER FLOW:
 - If a visible container exists, do not redraw it manually; prefer the matching template.
@@ -252,7 +261,9 @@ For `header.hwp`:
 1) `insert_template('header.hwp')`
 2) immediately `focus_placeholder('###')`
 3) type only the box body
-3.5) Start each ordinary content line with exactly one leading space inside the box.
+3.5) Do not add a leading space before the first visible character unless the source box line is visibly indented.
+3.55) The ordinary exam-only two-space rules do NOT apply inside `header.hwp`. Do not prepend two spaces just because the content is under a problem number or looks choice-like inside `<보기>`.
+3.6) Keep vertical whitespace above and below the inserted `header.hwp` block as tight as possible; do not add blank lines unless the source visibly shows them.
 4) `exit_box()`
 5) continue outside the box
 
@@ -260,7 +271,8 @@ For `box.hwp`:
 1) `insert_template('box.hwp')`
 2) immediately `focus_placeholder('###')`
 3) type or insert ONLY the content that belongs inside the detected box
-3.5) Start each ordinary content line with exactly one leading space inside the box.
+3.5) Do not add a leading space before the first visible character unless the source box line is visibly indented.
+3.6) Keep vertical whitespace above and below the inserted `box.hwp` block as tight as possible; do not add blank lines unless the source visibly shows them.
 4) `exit_box()`
 
 Do NOT:
@@ -271,10 +283,15 @@ Do NOT:
 Inside template boxes:
 - use justify alignment for passage/box text when the source is paragraph-like
 - keep spacing natural; do not invent extra double spaces
-- After `focus_placeholder('###')`, ordinary text/equation lines inside `header.hwp` or `box.hwp` should begin with exactly one leading space.
-- If a choice line is typed inside a box, that choice line should begin with exactly two leading spaces.
-- Wrong: `insert_text('조건은 다음과 같다.')`
-- Correct: `insert_text(' 조건은 다음과 같다.')`
+- After `focus_placeholder('###')`, ordinary text/equation lines inside `header.hwp` or `box.hwp` should normally begin flush left unless the source visibly shows indentation.
+- If a choice line is typed inside `box.hwp`, that choice line should begin with exactly two leading spaces.
+- Inside `header.hwp` (`<보기>`), keep lines flush left by default; do NOT apply the usual two-leading-space choice/stem rule unless the source itself visibly shows that indentation.
+- Inside `header.hwp` (`<보기>`), use single natural spaces between words/symbols by default.
+- Do NOT emit repeated plain spaces inside a line such as `ㄱ.  내용`, `ㄴ.  K = ...`, or `A  는`.
+- Only keep two or more consecutive spaces inside `<보기>` when the source image itself clearly shows that exact spacing.
+- Before or after `header.hwp` / `box.hwp`, do NOT insert extra empty lines unless the source visibly has that gap.
+- Correct: `insert_text('조건은 다음과 같다.')`
+- Wrong: `insert_text(' 조건은 다음과 같다.')`
 - Wrong: `insert_text('  조건은 다음과 같다.')`
 - Correct choice line: `insert_text('  ① 보기 내용')`
 - If a box contains both readable text and a picture/diagram, type the readable text inside the box and crop ONLY the actual picture/diagram region.
@@ -300,6 +317,5 @@ insert_text('ㄱ. 내용')
 insert_enter()
 insert_text('ㄴ. 내용')
 exit_box()
-insert_enter()
 set_align_justify_next_line()
 insert_text('① 선지1    ② 선지2    ③ 선지3    ④ 선지4    ⑤ 선지5')

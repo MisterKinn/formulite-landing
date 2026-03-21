@@ -56,7 +56,7 @@ def _is_rpc_unavailable_error(exc: Exception) -> bool:
         or "0x800706ba" in lower
         or "-2147023174" in lower
         or ("rpc" in lower and ("unavailable" in lower or "server" in lower))
-        or ("RPC" in msg and ("?쒕쾭" in msg or "곌껐" in msg or "연결" in msg))
+        or ("RPC" in msg and ("서버" in msg or "연결" in msg))
     )
 
 
@@ -84,6 +84,7 @@ class HwpController:
         self._box_line_start = False
         self._line_start = True
         self._first_line_written = False
+        self._problem_stem_indent_active = False
         self._align_center_next_line = False
         self._align_right_next_line = False
         self._line_right_aligned = False
@@ -596,13 +597,13 @@ class HwpController:
 
     def connect(self) -> None:
         if not IS_WINDOWS:
-            raise HwpControllerError("LitePro???꾩옱 Windows留?吏?먰빀?덈떎.")
+            raise HwpControllerError("LitePro는 현재 Windows만 지원합니다.")
 
         if self._hwp is not None:
             return
 
         if not self.find_hwp_windows():
-            raise HwpControllerError("?쒓?(HWP) 李쎌쓣 李얠? 紐삵뻽?듬땲?? 癒쇱? HWP瑜??ㅽ뻾?섏꽭??")
+            raise HwpControllerError("한글(HWP) 창을 찾지 못했습니다. 먼저 HWP를 실행해 주세요.")
 
         with _preserve_foreground():
             hwp_obj = None
@@ -769,6 +770,7 @@ class HwpController:
                     self._box_line_start = False
                     self._line_start = True
                     self._first_line_written = False
+                    self._problem_stem_indent_active = False
                     self._align_center_next_line = False
                     self._align_right_next_line = False
                     self._line_right_aligned = False
@@ -845,6 +847,58 @@ class HwpController:
             self._insert_text_raw(" " * spaces)
             self._line_start = False
 
+    @staticmethod
+    def _looks_like_problem_number_line(text: str) -> bool:
+        stripped = str(text or "").strip()
+        if not stripped:
+            return False
+        return re.match(r"^\d+\s*[.)](?:\s+.*)?$", stripped) is not None
+
+    @staticmethod
+    def _looks_like_choice_line(text: str) -> bool:
+        stripped = str(text or "").strip()
+        return stripped.startswith(("①", "②", "③", "④", "⑤"))
+
+    @staticmethod
+    def _looks_like_score_line(text: str) -> bool:
+        stripped = str(text or "").strip()
+        return re.match(r"^\[\s*\d+\s*점\s*\]$", stripped) is not None
+
+    def _should_auto_indent_problem_stem(self, text: str, *, skip_auto_indent_right: bool = False) -> bool:
+        if skip_auto_indent_right:
+            return False
+        if self._in_condition_box or not self._line_start or not self._first_line_written:
+            return False
+        if not self._problem_stem_indent_active:
+            return False
+        if text.startswith((" ", "\t")):
+            return False
+        stripped = str(text or "").strip()
+        if not stripped:
+            return False
+        if self._looks_like_problem_number_line(stripped):
+            return False
+        if self._looks_like_score_line(stripped):
+            return False
+        return True
+
+    def _update_problem_stem_indent_state(self, text: str) -> None:
+        if self._in_condition_box:
+            return
+        stripped = str(text or "").strip()
+        if not stripped:
+            return
+        if self._looks_like_problem_number_line(stripped):
+            self._problem_stem_indent_active = True
+            return
+        if self._looks_like_score_line(stripped):
+            return
+        if stripped.startswith("<보기>"):
+            self._problem_stem_indent_active = False
+            return
+        if self._looks_like_choice_line(stripped):
+            return
+
     def insert_text(self, text: str) -> None:
         if not text:
             return
@@ -887,13 +941,8 @@ class HwpController:
                 # Keep explicit indentation as-is.
                 self._line_start = False
             else:
-                if not skip_auto_indent_right:
-                    # Avoid auto-indenting new problem numbering lines like "2." / "3)".
-                    # This prevents the second/third problem from starting with two spaces.
-                    if re.match(r"^\d+\s*[.)]", text):
-                        pass
-                    else:
-                        pass
+                if self._should_auto_indent_problem_stem(text, skip_auto_indent_right=skip_auto_indent_right):
+                    self._maybe_insert_line_indent(2)
 
         # For right-aligned score lines, avoid leading indentation.
         if skip_auto_indent_right:
@@ -901,14 +950,14 @@ class HwpController:
         # If previous token was an equation, remove a single leading space.
         if self._last_was_equation and text.startswith(" "):
             text = text[1:]
-        if self._in_condition_box and self._box_line_start and not text.startswith(" "):
-            text = f" {text}"
+        if self._in_condition_box and self._box_line_start:
             self._box_line_start = False
         self._insert_text_raw(text)
         self._line_start = False
         self._last_was_equation = False
         if not self._first_line_written:
             self._first_line_written = True
+        self._update_problem_stem_indent_state(text)
 
     def set_bold(self, enabled: bool = True) -> None:
         hwp = self._ensure_connected()
@@ -919,7 +968,7 @@ class HwpController:
             param.Bold = 1 if enabled else 0
             action.Execute("CharShape", param.HSet)
         except Exception as exc:
-            raise HwpControllerError(f"援듦쾶 ?ㅼ젙 ?ㅽ뙣: {exc}") from exc
+            raise HwpControllerError(f"굵게 설정 실패: {exc}") from exc
         self._bold_active = enabled
 
     def set_underline(self, enabled: bool | None = None) -> None:
@@ -936,7 +985,7 @@ class HwpController:
             param.UnderlineType = 1 if enabled else 0
             action.Execute("CharShape", param.HSet)
         except Exception as exc:
-            raise HwpControllerError(f"諛묒쨪 ?ㅼ젙 ?ㅽ뙣: {exc}") from exc
+            raise HwpControllerError(f"밑줄 설정 실패: {exc}") from exc
         self._underline_active = bool(enabled)
 
     def set_italic(self, enabled: bool = True) -> None:
@@ -1086,7 +1135,7 @@ class HwpController:
 
     def set_char_width_ratio(self, percent: int = 100) -> None:
         """
-        Set character width ratio (?ν룊). 100 = 100%.
+        Set character width ratio (장평). 100 = 100%.
         """
         hwp = self._ensure_connected()
         try:
@@ -1109,7 +1158,7 @@ class HwpController:
             if applied:
                 action.Execute("CharShape", param.HSet)
         except Exception as exc:
-            raise HwpControllerError(f"?ν룊 ?ㅼ젙 ?ㅽ뙣: {exc}") from exc
+            raise HwpControllerError(f"장평 설정 실패: {exc}") from exc
 
     def set_table_border_white(self) -> None:
         """
@@ -1436,7 +1485,7 @@ class HwpController:
                 self._set_paragraph_align("left")
                 self._line_center_aligned = False
         except Exception as exc:
-            raise HwpControllerError(f"?⑤씫 ?섎늻湲??ㅽ뙣: {exc}") from exc
+            raise HwpControllerError(f"줄 나누기 실패: {exc}") from exc
 
     def insert_space(self) -> None:
         self.insert_text(" ")
@@ -1459,7 +1508,7 @@ class HwpController:
             action.Execute("CharShape", param.HSet)
             self._active_font_size_pt = float(font_size_pt)
         except Exception as exc:
-            raise HwpControllerError(f"?고듃 ?ш린 ?ㅼ젙 ?ㅽ뙣: {exc}") from exc
+            raise HwpControllerError(f"폰트 크기 설정 실패: {exc}") from exc
 
     def _set_font_name(self, font_name: str) -> None:
         hwp = self._ensure_connected()
@@ -1498,7 +1547,7 @@ class HwpController:
             action.Execute("CharShape", param.HSet)
             self._active_font_name = font_name
         except Exception as exc:
-            raise HwpControllerError(f"湲瑗??ㅼ젙 ?ㅽ뙣: {exc}") from exc
+            raise HwpControllerError(f"글꼴 설정 실패: {exc}") from exc
 
     def _ensure_font_style(self, font_name: str, font_size_pt: float) -> None:
         normalized_name = str(font_name or "").strip()
@@ -1555,6 +1604,16 @@ class HwpController:
         except Exception:
             pass
 
+    def _compact_block_surroundings(self) -> None:
+        """
+        Best-effort: minimize vertical whitespace around inserted blocks
+        such as templates, boxes, and tables.
+        """
+        try:
+            self._apply_compact_paragraph()
+        except Exception:
+            pass
+
     def insert_small_paragraph(self, font_size_pt: float = 4.0) -> None:
         """
         Deprecated in LitePro: we no longer insert 4pt spacer lines.
@@ -1593,7 +1652,7 @@ class HwpController:
             self._align_justify_next_line = False
             self._line_justify_aligned = True
 
-        if not skip_auto_indent_right:
+        if self._should_auto_indent_problem_stem(content, skip_auto_indent_right=skip_auto_indent_right):
             self._maybe_insert_line_indent(2)
         resolved_font_size = (
             float(font_size_pt) if font_size_pt is not None else float(self._typing_eq_font_size_pt)
@@ -1616,6 +1675,7 @@ class HwpController:
         self._last_was_equation = True
         if not self._first_line_written:
             self._first_line_written = True
+        self._update_problem_stem_indent_state(content)
 
     def insert_latex_equation(
         self,
@@ -1879,7 +1939,8 @@ class HwpController:
         Example: insert_template("header.hwp")
         """
         if not name:
-            raise HwpControllerError("?쒗뵆由??대쫫??鍮꾩뼱?덉뒿?덈떎.")
+            raise HwpControllerError("템플릿 이름이 비어 있습니다.")
+        self._compact_block_surroundings()
         base = name.lower().replace("\\", "/").rsplit("/", 1)[-1]
         if base == "box_white.hwp":
             base = "box.hwp"
@@ -1889,7 +1950,8 @@ class HwpController:
         ok = self._try_insert_template(name)
         if not ok:
             template_path = self._template_dir / name
-            raise HwpControllerError(f"?쒗뵆由우쓣 李얠? 紐삵뻽?듬땲?? {template_path}")
+            raise HwpControllerError(f"템플릿을 찾지 못했습니다: {template_path}")
+        self._compact_block_surroundings()
 
     def _insert_virtual_box_template(self) -> None:
         """
@@ -2286,7 +2348,7 @@ class HwpController:
         action = getattr(hwp, "HAction", None)
         param_sets = getattr(hwp, "HParameterSet", None)
         if action is None or param_sets is None or not hasattr(param_sets, "HFindReplace"):
-            raise HwpControllerError("HWP FindReplace ?명꽣?섏씠?ㅻ? 李얠? 紐삵뻽?듬땲??")
+            raise HwpControllerError("HWP FindReplace 파라미터셋을 찾지 못했습니다.")
         param = param_sets.HFindReplace
         try:
             action.GetDefault("RepeatFind", param.HSet)
@@ -2400,7 +2462,7 @@ class HwpController:
     def focus_placeholder(self, marker: str) -> None:
         """
         Find `marker` (e.g. '@@@' or '###'), delete it, and leave the cursor there.
-        This enables "湲곗〈??@@@/###??吏?곌퀬 洹??먮━????댄븨" workflows.
+        This enables "기존 @@@/###를 지우고 그 자리에 타이핑" workflows.
         """
         if marker == "###":
             self._focus_hash_placeholder()
@@ -2481,7 +2543,7 @@ class HwpController:
     def _focus_view_box_from_heading(self) -> bool:
         """
         Fallback path for ###:
-        find a '<蹂닿린>' heading and move into the nearest table cell below it.
+        find a '<보기>' heading and move into the nearest table cell below it.
         """
         saved_pos = self._capture_cursor_pos()
         heading_candidates = ["<보기>", "< 보 기 >", "<보기", "보기>"]
@@ -2511,9 +2573,10 @@ class HwpController:
         return False
 
     def _mark_inside_box(self) -> None:
-        """Update controller state to match being inside a 蹂닿린/議곌굔 box."""
+        """Update controller state to match being inside a 보기/조건 box."""
         self._in_condition_box = True
-        self._box_line_start = True
+        # Do not inject an automatic leading space at box line start.
+        self._box_line_start = False
         self._line_start = False
         if not self._first_line_written:
             self._first_line_written = True
@@ -2524,13 +2587,14 @@ class HwpController:
         Cursor stays inside the box for content insertion.
         """
         try:
+            self._compact_block_surroundings()
             if self._try_insert_template("box_template_noheader.hwp"):
                 if not self._move_to_table_cell():
                     # Template inserted but cursor did not move into cell: fallback to raw table.
                     self._insert_box_raw()
                     self._move_to_table_cell()
                 self._in_condition_box = True
-                self._box_line_start = True
+                self._box_line_start = False
                 self._line_start = False
                 if not self._first_line_written:
                     self._first_line_written = True
@@ -2546,27 +2610,28 @@ class HwpController:
             self._insert_box_raw()
             self._move_to_table_cell()
             self._in_condition_box = True
-            self._box_line_start = True
+            self._box_line_start = False
             self._line_start = False
             if not self._first_line_written:
                 self._first_line_written = True
             self._apply_box_text_style(8.0)
             self._apply_compact_paragraph()
         except Exception as exc:
-            raise HwpControllerError(f"諛뺤뒪 ?쎌엯 ?ㅽ뙣: {exc}") from exc
+            raise HwpControllerError(f"박스 삽입 실패: {exc}") from exc
 
     def insert_view_box(self) -> None:
         """
-        Insert a 1x1 table for a <蹂닿린> container.
-        The <蹂닿린> header text is assumed to be pre-printed or added separately.
+        Insert a 1x1 table for a <보기> container.
+        The <보기> header text is assumed to be pre-printed or added separately.
         """
+        self._compact_block_surroundings()
         if self._try_insert_template("box_template.hwp"):
             if not self._move_to_table_cell():
                 # Template inserted but cursor did not move into cell: fallback to raw table.
                 self._insert_box_raw()
                 self._move_to_table_cell()
             self._in_condition_box = True
-            self._box_line_start = True
+            self._box_line_start = False
             self._line_start = False
             if not self._first_line_written:
                 self._first_line_written = True
@@ -2588,7 +2653,7 @@ class HwpController:
         if not self._first_line_written:
             self._first_line_written = True
 
-        # Match novaai behavior: add "< 蹂?湲?>" header centered.
+        # Match novaai behavior: add "<보기>" header centered.
         try:
             hwp = self._ensure_connected()
             try:
@@ -2599,7 +2664,7 @@ class HwpController:
                 except Exception:
                     pass
             self._apply_box_text_style(8.0)
-            self.insert_text("< 蹂?湲?>")
+            self.insert_text("<보기>")
             try:
                 hwp.HAction.Run("BreakPara")
             except Exception:
@@ -2614,7 +2679,7 @@ class HwpController:
         except Exception:
             pass
 
-        # Ensure <蹂닿린> content uses 8pt (and equation-friendly font) consistently.
+        # Ensure <보기> content uses 8pt (and equation-friendly font) consistently.
         self._apply_box_text_style(8.0)
         self._apply_compact_paragraph()
         # Default to justify alignment for boxed passages.
@@ -2705,9 +2770,10 @@ class HwpController:
         Insert a table and optionally fill/merge cells.
         """
         if rows <= 0 or cols <= 0:
-            raise HwpControllerError("?쒖쓽 ???댁? 1 ?댁긽?댁뼱???⑸땲??")
+            raise HwpControllerError("표의 행/열은 1 이상이어야 합니다.")
         hwp = self._ensure_connected()
         try:
+            self._compact_block_surroundings()
             if not (
                 self._align_center_next_line
                 or self._align_justify_next_line
@@ -2774,7 +2840,8 @@ class HwpController:
                 pass
 
             table_specs: dict[tuple[int, int], dict[str, Any]] = {}
-            merge_specs: list[tuple[int, int, int, int]] = []
+            auto_merge_specs: list[tuple[int, int, int, int]] = []
+            manual_merge_specs: list[tuple[int, int, int, int]] = []
             style_specs: dict[tuple[int, int], dict[str, Any]] = {}
 
             def _normalize_cell_value(value: Any) -> dict[str, Any]:
@@ -2791,6 +2858,9 @@ class HwpController:
                     border_obj = value.get("border")
                     if not isinstance(border_obj, dict):
                         border_obj = {}
+                    diagonal_labels = value.get("diagonal_labels", value.get("diagonalLabels"))
+                    if not isinstance(diagonal_labels, dict):
+                        diagonal_labels = {}
                     text = value.get("text")
                     if text is None:
                         text = value.get("value", "")
@@ -2799,10 +2869,34 @@ class HwpController:
                         "equation": value.get("equation", value.get("eq")),
                         "content": value.get("content", value.get("segments")),
                         "lines": value.get("lines"),
-                        "top_left": _pick("top_left", "topLeft", "upper_left", "upperLeft"),
-                        "top_right": _pick("top_right", "topRight", "upper_right", "upperRight"),
-                        "bottom_left": _pick("bottom_left", "bottomLeft", "lower_left", "lowerLeft"),
-                        "bottom_right": _pick("bottom_right", "bottomRight", "lower_right", "lowerRight"),
+                        "top_left": _pick(
+                            "top_left",
+                            "topLeft",
+                            "upper_left",
+                            "upperLeft",
+                            fallback=diagonal_labels.get("top_left", diagonal_labels.get("topLeft")),
+                        ),
+                        "top_right": _pick(
+                            "top_right",
+                            "topRight",
+                            "upper_right",
+                            "upperRight",
+                            fallback=diagonal_labels.get("top_right", diagonal_labels.get("topRight")),
+                        ),
+                        "bottom_left": _pick(
+                            "bottom_left",
+                            "bottomLeft",
+                            "lower_left",
+                            "lowerLeft",
+                            fallback=diagonal_labels.get("bottom_left", diagonal_labels.get("bottomLeft")),
+                        ),
+                        "bottom_right": _pick(
+                            "bottom_right",
+                            "bottomRight",
+                            "lower_right",
+                            "lowerRight",
+                            fallback=diagonal_labels.get("bottom_right", diagonal_labels.get("bottomRight")),
+                        ),
                         "rowspan": max(1, int(value.get("rowspan", 1) or 1)),
                         "colspan": max(1, int(value.get("colspan", 1) or 1)),
                         "align": str(value.get("align", "") or "").strip().lower(),
@@ -3112,48 +3206,181 @@ class HwpController:
                         pass
 
                 # Normalize cell_data to rows x cols and collect merged-cell specs.
+                # Follow the guide's rule: each row should be handled as either
+                # compact mode (covered cells omitted) or explicit mode
+                # (base-grid columns fully described with None for covered cells).
                 if cell_data and cell_data and isinstance(cell_data[0], str):
                     flat = [str(x) for x in cell_data]
                     cell_data = [
                         flat[i : i + cols] for i in range(0, len(flat), cols)
                     ]
                 occupied = [[False for _ in range(cols)] for _ in range(rows)]
+
+                def _fit_span(start_row: int, start_col: int, rowspan: int, colspan: int) -> tuple[int, int]:
+                    max_requested_row = min(rows, start_row + max(1, int(rowspan)))
+                    max_requested_col = min(cols, start_col + max(1, int(colspan)))
+                    fitted_rowspan = 0
+                    fitted_colspan = max_requested_col - start_col
+                    for rr in range(start_row, max_requested_row):
+                        row_width = 0
+                        for cc in range(start_col, max_requested_col):
+                            if occupied[rr][cc]:
+                                break
+                            row_width += 1
+                        fitted_colspan = min(fitted_colspan, row_width)
+                        if fitted_colspan <= 0:
+                            break
+                        fitted_rowspan += 1
+                    return max(0, fitted_rowspan), max(0, fitted_colspan)
+
                 if isinstance(cell_data, list):
                     max_rows = min(rows, len(cell_data))
                     for r in range(max_rows):
                         row = cell_data[r]
                         if not isinstance(row, list):
                             row = [row]
-                        c = 0
-                        for raw_value in row:
-                            while c < cols and occupied[r][c]:
-                                c += 1
-                            if c >= cols:
-                                break
-                            if raw_value is None:
-                                occupied[r][c] = True
-                                c += 1
-                                continue
-                            spec = _normalize_cell_value(raw_value)
-                            rowspan = max(1, min(int(spec["rowspan"]), rows - r))
-                            colspan = max(1, min(int(spec["colspan"]), cols - c))
-                            spec["rowspan"] = rowspan
-                            spec["colspan"] = colspan
-                            table_specs[(r, c)] = spec
-                            style_params = _extract_style_params(spec)
-                            if style_params or _extract_diagonal_params(spec):
-                                style_specs[(r, c)] = spec
-                            for rr in range(r, r + rowspan):
-                                for cc in range(c, c + colspan):
-                                    occupied[rr][cc] = True
-                            if rowspan > 1 or colspan > 1:
-                                merge_specs.append((r, c, r + rowspan - 1, c + colspan - 1))
-                            c += colspan
+                        has_none = any(item is None for item in row)
+                        explicit_mode = has_none or len(row) >= cols
+                        compact_mode = not explicit_mode
+
+                        if explicit_mode:
+                            max_cols = min(cols, len(row))
+                            for c in range(max_cols):
+                                raw_value = row[c]
+                                if raw_value is None:
+                                    continue
+                                if occupied[r][c]:
+                                    continue
+                                spec = _normalize_cell_value(raw_value)
+                                requested_rowspan = max(1, min(int(spec["rowspan"]), rows - r))
+                                requested_colspan = max(1, min(int(spec["colspan"]), cols - c))
+                                rowspan, colspan = _fit_span(r, c, requested_rowspan, requested_colspan)
+                                if rowspan <= 0 or colspan <= 0:
+                                    continue
+                                spec["rowspan"] = rowspan
+                                spec["colspan"] = colspan
+                                table_specs[(r, c)] = spec
+                                style_params = _extract_style_params(spec)
+                                if style_params or _extract_diagonal_params(spec):
+                                    style_specs[(r, c)] = spec
+                                for rr in range(r, r + rowspan):
+                                    for cc in range(c, c + colspan):
+                                        occupied[rr][cc] = True
+                                if rowspan > 1 or colspan > 1:
+                                    auto_merge_specs.append((r, c, r + rowspan - 1, c + colspan - 1))
+                        if compact_mode:
+                            c = 0
+                            for raw_value in row:
+                                while c < cols and occupied[r][c]:
+                                    c += 1
+                                if c >= cols:
+                                    break
+                                if raw_value is None:
+                                    c += 1
+                                    continue
+                                spec = _normalize_cell_value(raw_value)
+                                requested_rowspan = max(1, min(int(spec["rowspan"]), rows - r))
+                                requested_colspan = max(1, min(int(spec["colspan"]), cols - c))
+                                rowspan, colspan = _fit_span(r, c, requested_rowspan, requested_colspan)
+                                if rowspan <= 0 or colspan <= 0:
+                                    c += 1
+                                    continue
+                                spec["rowspan"] = rowspan
+                                spec["colspan"] = colspan
+                                table_specs[(r, c)] = spec
+                                style_params = _extract_style_params(spec)
+                                if style_params or _extract_diagonal_params(spec):
+                                    style_specs[(r, c)] = spec
+                                for rr in range(r, r + rowspan):
+                                    for cc in range(c, c + colspan):
+                                        occupied[rr][cc] = True
+                                if rowspan > 1 or colspan > 1:
+                                    auto_merge_specs.append((r, c, r + rowspan - 1, c + colspan - 1))
+                                c += colspan
                 if merged_cells:
                     for merge_value in merged_cells:
                         merge_spec = _normalize_merge_spec(merge_value)
                         if merge_spec is not None:
-                            merge_specs.append(merge_spec)
+                            manual_merge_specs.append(merge_spec)
+
+                def _spec_has_meaningful_content(spec: dict[str, Any] | None) -> bool:
+                    if not isinstance(spec, dict):
+                        return False
+                    for key in ("text", "equation", "top_left", "top_right", "bottom_left", "bottom_right"):
+                        value = spec.get(key)
+                        if value is not None and str(value).strip():
+                            return True
+                    content = spec.get("content")
+                    if isinstance(content, list) and any(
+                        (item is not None and str(item).strip()) if not isinstance(item, dict)
+                        else any(str(item.get(k, "") or "").strip() for k in ("text", "value", "equation"))
+                        for item in content
+                    ):
+                        return True
+                    lines = spec.get("lines")
+                    if isinstance(lines, list) and any(
+                        (item is not None and str(item).strip()) if not isinstance(item, dict)
+                        else any(str(item.get(k, "") or "").strip() for k in ("text", "value", "equation"))
+                        for item in lines
+                    ):
+                        return True
+                    return False
+
+                def _rect_cells(rect: tuple[int, int, int, int]) -> list[tuple[int, int]]:
+                    start_row, start_col, end_row, end_col = rect
+                    return [
+                        (rr, cc)
+                        for rr in range(start_row, end_row + 1)
+                        for cc in range(start_col, end_col + 1)
+                    ]
+
+                def _count_meaningful_anchor_cells(rect: tuple[int, int, int, int]) -> int:
+                    start_row, start_col, end_row, end_col = rect
+                    count = 0
+                    for (rr, cc), spec in table_specs.items():
+                        if start_row <= rr <= end_row and start_col <= cc <= end_col:
+                            if _spec_has_meaningful_content(spec):
+                                count += 1
+                    return count
+
+                def _resolve_merge_specs() -> list[tuple[int, int, int, int]]:
+                    claimed = [[False for _ in range(cols)] for _ in range(rows)]
+                    accepted: list[tuple[int, int, int, int]] = []
+                    seen: set[tuple[int, int, int, int]] = set()
+
+                    def _try_accept(rect: tuple[int, int, int, int]) -> None:
+                        start_row, start_col, end_row, end_col = rect
+                        normalized = (
+                            max(0, min(int(start_row), rows - 1)),
+                            max(0, min(int(start_col), cols - 1)),
+                            max(0, min(int(end_row), rows - 1)),
+                            max(0, min(int(end_col), cols - 1)),
+                        )
+                        start_row, start_col, end_row, end_col = normalized
+                        if end_row < start_row or end_col < start_col:
+                            return
+                        if start_row == end_row and start_col == end_col:
+                            return
+                        rect = (start_row, start_col, end_row, end_col)
+                        if rect in seen:
+                            return
+                        if _count_meaningful_anchor_cells(rect) > 1:
+                            return
+                        for rr, cc in _rect_cells(rect):
+                            if claimed[rr][cc]:
+                                return
+                        accepted.append(rect)
+                        seen.add(rect)
+                        for rr, cc in _rect_cells(rect):
+                            claimed[rr][cc] = True
+
+                    # Prefer merges implied directly by cell anchor specs.
+                    for rect in auto_merge_specs:
+                        _try_accept(rect)
+                    # Apply extra merged_cells only when they do not conflict.
+                    for rect in manual_merge_specs:
+                        _try_accept(rect)
+                    return accepted
 
                 def _run(action_name: str) -> None:
                     try:
@@ -3307,9 +3534,9 @@ class HwpController:
                         _run("TableLowerCell")
                         for _ in range(cols - 1):
                             _run("TableLeftCell")
-                unique_merge_specs = list(dict.fromkeys(merge_specs))
+                resolved_merge_specs = _resolve_merge_specs()
                 for start_row, start_col, end_row, end_col in sorted(
-                    unique_merge_specs,
+                    resolved_merge_specs,
                     key=lambda item: (item[0], item[1], item[2], item[3]),
                     reverse=True,
                 ):
@@ -3317,7 +3544,7 @@ class HwpController:
                 for (style_row, style_col), style_spec in style_specs.items():
                     _apply_cell_style(style_row, style_col, style_spec)
         except Exception as exc:
-            raise HwpControllerError(f"???쎌엯 ?ㅽ뙣: {exc}") from exc
+            raise HwpControllerError(f"표 삽입 실패: {exc}") from exc
         finally:
             # Prevent follow-up typing from continuing inside the last table cell.
             # If callers need to keep the cursor inside the table (e.g., for additional table actions),
@@ -3333,6 +3560,7 @@ class HwpController:
                     self._set_paragraph_align("left")
                 except Exception:
                     pass
+                self._compact_block_surroundings()
                 self._line_start = True
 
     def exit_box(self) -> None:
@@ -3344,6 +3572,8 @@ class HwpController:
                 hwp.HAction.Run("MoveDown")
                 self._in_condition_box = False
                 self._box_line_start = False
+                self._compact_block_surroundings()
+                self._line_start = True
                 return
             except Exception:
                 pass
@@ -3352,16 +3582,18 @@ class HwpController:
                 hwp.HAction.Run("MoveDown")
                 self._in_condition_box = False
                 self._box_line_start = False
+                self._compact_block_surroundings()
+                self._line_start = True
                 return
             except Exception:
                 pass
             self._in_condition_box = False
             self._box_line_start = False
-            raise HwpControllerError("諛뺤뒪 醫낅즺 ?ㅽ뙣: ??諛뺤뒪 ?대룞 ?ㅽ뙣")
+            raise HwpControllerError("박스 종료 실패: 박스 밖으로 이동하지 못했습니다.")
         except Exception as exc:
-            raise HwpControllerError(f"諛뺤뒪 醫낅즺 ?ㅽ뙣: {exc}") from exc
+            raise HwpControllerError(f"박스 종료 실패: {exc}") from exc
 
-    # ?? Image insertion (1x1 invisible-table approach) ??????
+    # Image insertion (1x1 invisible-table approach)
     _source_image_path: str | None = None
 
     def set_source_image(self, path: str | None) -> None:
@@ -3371,15 +3603,182 @@ class HwpController:
     # Max pixel width for cropped images before gentle downscaling.
     _CROP_MAX_WIDTH = 900
 
+    def _extract_ocr_line_boxes(self, src: str) -> list[tuple[int, int, int, int, str]]:
+        try:
+            import os
+            import pytesseract  # type: ignore[import-not-found]
+            from PIL import Image  # type: ignore[import-not-found]
+        except Exception:
+            return []
+
+        try:
+            tesseract_cmd = os.getenv("TESSERACT_CMD")
+            if tesseract_cmd:
+                pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
+        except Exception:
+            pass
+
+        try:
+            image = load_pil_image(src, mode="RGB")
+        except Exception:
+            return []
+
+        scale = 1.0
+        max_dim = max(image.size)
+        if max_dim > 1800:
+            scale = 1800.0 / float(max_dim)
+            image = image.resize(
+                (
+                    max(1, int(image.size[0] * scale)),
+                    max(1, int(image.size[1] * scale)),
+                ),
+                Image.LANCZOS,
+            )
+
+        try:
+            data = pytesseract.image_to_data(
+                image,
+                lang="kor+eng",
+                output_type=pytesseract.Output.DICT,
+            )
+        except Exception:
+            return []
+
+        count = len(data.get("text", []))
+        groups: dict[tuple[int, int, int], dict[str, Any]] = {}
+        for i in range(count):
+            text = str(data.get("text", [""] * count)[i] or "").strip()
+            if not text:
+                continue
+            try:
+                conf = float(data.get("conf", ["-1"] * count)[i] or -1)
+            except Exception:
+                conf = -1
+            if conf < 20 and len(text) < 2:
+                continue
+            try:
+                left = int(data.get("left", [0] * count)[i] or 0)
+                top = int(data.get("top", [0] * count)[i] or 0)
+                width = int(data.get("width", [0] * count)[i] or 0)
+                height = int(data.get("height", [0] * count)[i] or 0)
+            except Exception:
+                continue
+            if width <= 0 or height <= 0:
+                continue
+            block = int(data.get("block_num", [0] * count)[i] or 0)
+            par = int(data.get("par_num", [0] * count)[i] or 0)
+            line = int(data.get("line_num", [0] * count)[i] or 0)
+            key = (block, par, line)
+            bucket = groups.setdefault(
+                key,
+                {
+                    "x0": left,
+                    "y0": top,
+                    "x1": left + width,
+                    "y1": top + height,
+                    "parts": [],
+                },
+            )
+            bucket["x0"] = min(int(bucket["x0"]), left)
+            bucket["y0"] = min(int(bucket["y0"]), top)
+            bucket["x1"] = max(int(bucket["x1"]), left + width)
+            bucket["y1"] = max(int(bucket["y1"]), top + height)
+            bucket["parts"].append((left, text))
+
+        lines: list[tuple[int, int, int, int, str]] = []
+        inv_scale = 1.0 / scale if scale > 0 else 1.0
+        for bucket in groups.values():
+            parts = sorted(bucket["parts"], key=lambda item: item[0])
+            text = " ".join(str(part[1]) for part in parts).strip()
+            if not text:
+                continue
+            x0 = int(round(float(bucket["x0"]) * inv_scale))
+            y0 = int(round(float(bucket["y0"]) * inv_scale))
+            x1 = int(round(float(bucket["x1"]) * inv_scale))
+            y1 = int(round(float(bucket["y1"]) * inv_scale))
+            if x1 <= x0 or y1 <= y0:
+                continue
+            lines.append((x0, y0, x1 - x0, y1 - y0, text))
+        return lines
+
+    def _snap_crop_to_text_gaps(
+        self,
+        src: str,
+        rect: tuple[int, int, int, int],
+        image_size: tuple[int, int],
+    ) -> tuple[int, int, int, int]:
+        img_w, img_h = image_size
+        x1, y1, x2, y2 = rect
+        lines = self._extract_ocr_line_boxes(src)
+        if not lines:
+            return rect
+
+        band_expand_x = max(18, int((x2 - x1) * 0.18))
+        search_y = max(60, int((y2 - y1) * 1.4))
+        band_left = max(0, x1 - band_expand_x)
+        band_right = min(img_w, x2 + band_expand_x)
+
+        candidate_lines: list[tuple[int, int, int, int, str]] = []
+        min_line_width = img_w * 0.12
+        for line in lines:
+            lx, ly, lw, lh, text = line
+            if lw <= 0 or lh <= 0:
+                continue
+            compact = "".join(str(text or "").split())
+            if len(compact) < 6 and lw < min_line_width:
+                continue
+            line_right = lx + lw
+            if line_right < band_left or lx > band_right:
+                continue
+            if ly > y2 + search_y or (ly + lh) < y1 - search_y:
+                continue
+            candidate_lines.append(line)
+
+        if not candidate_lines:
+            return rect
+
+        above_line: tuple[int, int, int, int, str] | None = None
+        below_line: tuple[int, int, int, int, str] | None = None
+        for line in candidate_lines:
+            lx, ly, lw, lh, _text = line
+            line_bottom = ly + lh
+            if line_bottom <= y1:
+                if above_line is None or line_bottom > above_line[1] + above_line[3]:
+                    above_line = line
+            elif ly >= y2:
+                if below_line is None or ly < below_line[1]:
+                    below_line = line
+
+        snapped_top = y1
+        snapped_bottom = y2
+        if above_line is not None:
+            _, ly, _lw, lh, _text = above_line
+            margin = max(4, int(lh * 0.2))
+            snapped_top = max(0, ly + lh + margin)
+        if below_line is not None:
+            _, ly, _lw, lh, _text = below_line
+            margin = max(4, int(lh * 0.2))
+            snapped_bottom = min(img_h, ly - margin)
+
+        if snapped_bottom <= snapped_top:
+            return rect
+
+        new_height = snapped_bottom - snapped_top
+        old_height = max(1, y2 - y1)
+        if new_height < max(18, int(old_height * 0.45)):
+            return rect
+
+        return (x1, snapped_top, x2, snapped_bottom)
+
     def _refine_crop_rect(
         self,
         src: str,
         rect: tuple[int, int, int, int],
     ) -> tuple[int, int, int, int]:
         """
-        Tighten a model-provided crop rectangle to the actual visible content
-        inside that rectangle. This helps when the model selects a region that
-        is too loose or contains large white margins.
+        Refine a rough AI crop using CV-heavy content detection plus OCR line-gap
+        snapping so the final crop keeps figure labels but avoids swallowing
+        surrounding body text.
         """
         try:
             import cv2  # type: ignore[import-not-found]
@@ -3393,77 +3792,309 @@ class HwpController:
 
         ih, iw = img.shape[:2]
         x1, y1, x2, y2 = rect
-        x1 = max(0, min(x1, iw - 1))
-        y1 = max(0, min(y1, ih - 1))
-        x2 = max(x1 + 1, min(x2, iw))
-        y2 = max(y1 + 1, min(y2, ih))
-        roi = img[y1:y2, x1:x2]
-        if roi.size == 0:
-            return rect
+        x1 = max(0, min(int(x1), iw - 1))
+        y1 = max(0, min(int(y1), ih - 1))
+        x2 = max(x1 + 1, min(int(x2), iw))
+        y2 = max(y1 + 1, min(int(y2), ih))
+        rough_rect = (x1, y1, x2, y2)
+        rough_w = x2 - x1
+        rough_h = y2 - y1
+        if rough_w < 24 or rough_h < 24:
+            return rough_rect
 
-        rh, rw = roi.shape[:2]
-        if rw < 24 or rh < 24:
-            return rect
+        search_pad_x = max(14, int(rough_w * 0.14))
+        search_pad_y = max(14, int(rough_h * 0.14))
+        sx1 = max(0, x1 - search_pad_x)
+        sy1 = max(0, y1 - search_pad_y)
+        sx2 = min(iw, x2 + search_pad_x)
+        sy2 = min(ih, y2 + search_pad_y)
+        search = img[sy1:sy2, sx1:sx2]
+        if search.size == 0:
+            return rough_rect
 
-        gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-        blur = cv2.GaussianBlur(gray, (3, 3), 0)
+        sh, sw = search.shape[:2]
+        if sw < 24 or sh < 24:
+            return rough_rect
 
-        # Capture both dark ink and thin line art.
-        _, non_white = cv2.threshold(blur, 244, 255, cv2.THRESH_BINARY_INV)
-        edges = cv2.Canny(blur, 40, 140)
-        mask = cv2.bitwise_or(non_white, edges)
+        gray = cv2.cvtColor(search, cv2.COLOR_BGR2GRAY)
+        blurred = cv2.GaussianBlur(gray, (3, 3), 0)
+        try:
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+            enhanced = clahe.apply(blurred)
+        except Exception:
+            enhanced = blurred
+
+        _, non_white = cv2.threshold(enhanced, 244, 255, cv2.THRESH_BINARY_INV)
+        try:
+            _, otsu = cv2.threshold(
+                enhanced,
+                0,
+                255,
+                cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU,
+            )
+        except Exception:
+            otsu = cv2.threshold(enhanced, 200, 255, cv2.THRESH_BINARY_INV)[1]
+        adaptive = cv2.adaptiveThreshold(
+            enhanced,
+            255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY_INV,
+            31,
+            11,
+        )
+        edges = cv2.Canny(enhanced, 40, 140)
+        gradient = cv2.morphologyEx(enhanced, cv2.MORPH_GRADIENT, np.ones((3, 3), np.uint8))
+        _, gradient_mask = cv2.threshold(gradient, 18, 255, cv2.THRESH_BINARY)
+
+        h_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (max(15, int(sw * 0.08)), 1))
+        v_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, max(15, int(sh * 0.08))))
+        h_lines = cv2.morphologyEx(otsu, cv2.MORPH_OPEN, h_kernel)
+        v_lines = cv2.morphologyEx(otsu, cv2.MORPH_OPEN, v_kernel)
+
+        mask = cv2.bitwise_or(non_white, otsu)
+        mask = cv2.bitwise_or(mask, adaptive)
+        mask = cv2.bitwise_or(mask, edges)
+        mask = cv2.bitwise_or(mask, gradient_mask)
+        mask = cv2.bitwise_or(mask, h_lines)
+        mask = cv2.bitwise_or(mask, v_lines)
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8), iterations=1)
+
+        def _trim_dense_edges(local_mask):
+            trimmed = local_mask.copy()
+            hh, ww = trimmed.shape[:2]
+            if hh < 8 or ww < 8:
+                return trimmed
+            band = 2
+            density_threshold = 0.22
+            max_trim_y = max(1, int(hh * 0.12))
+            max_trim_x = max(1, int(ww * 0.12))
+            top = 0
+            bottom = hh
+            left = 0
+            right = ww
+            while top < max_trim_y:
+                sample = trimmed[top : min(hh, top + band), left:right]
+                if sample.size == 0:
+                    break
+                if float(np.count_nonzero(sample)) / float(sample.size) < density_threshold:
+                    break
+                top += 1
+            while (hh - bottom) < max_trim_y and bottom > top:
+                sample = trimmed[max(top, bottom - band) : bottom, left:right]
+                if sample.size == 0:
+                    break
+                if float(np.count_nonzero(sample)) / float(sample.size) < density_threshold:
+                    break
+                bottom -= 1
+            while left < max_trim_x:
+                sample = trimmed[top:bottom, left : min(ww, left + band)]
+                if sample.size == 0:
+                    break
+                if float(np.count_nonzero(sample)) / float(sample.size) < density_threshold:
+                    break
+                left += 1
+            while (ww - right) < max_trim_x and right > left:
+                sample = trimmed[top:bottom, max(left, right - band) : right]
+                if sample.size == 0:
+                    break
+                if float(np.count_nonzero(sample)) / float(sample.size) < density_threshold:
+                    break
+                right -= 1
+            if top > 0:
+                trimmed[:top, :] = 0
+            if bottom < hh:
+                trimmed[bottom:, :] = 0
+            if left > 0:
+                trimmed[:, :left] = 0
+            if right < ww:
+                trimmed[:, right:] = 0
+            return trimmed
+
+        mask = _trim_dense_edges(mask)
+
+        search_area = float(max(1, sw * sh))
+        rough_rel = (x1 - sx1, y1 - sy1, x2 - sx1, y2 - sy1)
 
         num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
         if num_labels <= 1:
-            return rect
+            return rough_rect
 
-        roi_area = float(rw * rh)
-        min_component_area = max(24, int(roi_area * 0.0005))
-        boxes: list[tuple[int, int, int, int, int]] = []
+        components: list[dict[str, Any]] = []
+        min_area = max(12, int(search_area * 0.00012))
         for label in range(1, num_labels):
+            cx = int(stats[label, cv2.CC_STAT_LEFT])
+            cy = int(stats[label, cv2.CC_STAT_TOP])
+            cw = int(stats[label, cv2.CC_STAT_WIDTH])
+            ch = int(stats[label, cv2.CC_STAT_HEIGHT])
             area = int(stats[label, cv2.CC_STAT_AREA])
-            if area < min_component_area:
+            if cw <= 1 or ch <= 1 or area < min_area:
                 continue
-            sx = int(stats[label, cv2.CC_STAT_LEFT])
-            sy = int(stats[label, cv2.CC_STAT_TOP])
-            sw = int(stats[label, cv2.CC_STAT_WIDTH])
-            sh = int(stats[label, cv2.CC_STAT_HEIGHT])
-            if sw <= 1 or sh <= 1:
+            density = float(area) / float(max(1, cw * ch))
+            touches_edge = cx <= 1 or cy <= 1 or (cx + cw) >= sw - 1 or (cy + ch) >= sh - 1
+            long_line = cw >= max(20, int(sw * 0.35)) or ch >= max(20, int(sh * 0.35))
+            if touches_edge and area > search_area * 0.35 and density < 0.12 and not long_line:
                 continue
-            boxes.append((sx, sy, sx + sw, sy + sh, area))
+            if density < 0.01 and not long_line:
+                continue
+            comp = {
+                "x1": cx,
+                "y1": cy,
+                "x2": cx + cw,
+                "y2": cy + ch,
+                "area": area,
+                "cx": cx + (cw / 2.0),
+                "cy": cy + (ch / 2.0),
+            }
+            components.append(comp)
 
-        if not boxes:
-            return rect
+        if not components:
+            return rough_rect
 
-        bx0 = min(b[0] for b in boxes)
-        by0 = min(b[1] for b in boxes)
-        bx1 = max(b[2] for b in boxes)
-        by1 = max(b[3] for b in boxes)
+        def _rect_overlap(a: tuple[int, int, int, int], b: tuple[int, int, int, int]) -> int:
+            ax1, ay1, ax2, ay2 = a
+            bx1, by1, bx2, by2 = b
+            ix1 = max(ax1, bx1)
+            iy1 = max(ay1, by1)
+            ix2 = min(ax2, bx2)
+            iy2 = min(ay2, by2)
+            if ix2 <= ix1 or iy2 <= iy1:
+                return 0
+            return int((ix2 - ix1) * (iy2 - iy1))
 
-        bw = max(1, bx1 - bx0)
-        bh = max(1, by1 - by0)
-        content_area = float(bw * bh)
+        def _gap_to_union(comp: dict[str, Any], union_rect: tuple[int, int, int, int]) -> tuple[int, int]:
+            ux1, uy1, ux2, uy2 = union_rect
+            gap_x = max(0, max(ux1 - int(comp["x2"]), int(comp["x1"]) - ux2))
+            gap_y = max(0, max(uy1 - int(comp["y2"]), int(comp["y1"]) - uy2))
+            return gap_x, gap_y
 
-        # If refinement would collapse to a tiny noisy patch, keep the original.
-        if content_area < roi_area * 0.03:
-            return rect
+        rough_center_x = (rough_rel[0] + rough_rel[2]) / 2.0
+        rough_center_y = (rough_rel[1] + rough_rel[3]) / 2.0
+        seeds = [
+            comp for comp in components
+            if _rect_overlap(
+                rough_rel,
+                (int(comp["x1"]), int(comp["y1"]), int(comp["x2"]), int(comp["y2"])),
+            ) > 0
+        ]
+        if not seeds:
+            seeds = [
+                min(
+                    components,
+                    key=lambda comp: (
+                        ((float(comp["cx"]) - rough_center_x) ** 2 + (float(comp["cy"]) - rough_center_y) ** 2),
+                        -float(comp["area"]),
+                    ),
+                )
+            ]
 
-        pad_x = max(6, int(bw * 0.04))
-        pad_y = max(6, int(bh * 0.04))
-        rx1 = max(x1, x1 + bx0 - pad_x)
-        ry1 = max(y1, y1 + by0 - pad_y)
-        rx2 = min(x2, x1 + bx1 + pad_x)
-        ry2 = min(y2, y1 + by1 + pad_y)
+        union_x1 = min(int(comp["x1"]) for comp in seeds)
+        union_y1 = min(int(comp["y1"]) for comp in seeds)
+        union_x2 = max(int(comp["x2"]) for comp in seeds)
+        union_y2 = max(int(comp["y2"]) for comp in seeds)
+        gap_x_limit = max(16, int(rough_w * 0.12))
+        gap_y_limit = max(16, int(rough_h * 0.12))
+
+        changed = True
+        while changed:
+            changed = False
+            current_union = (union_x1, union_y1, union_x2, union_y2)
+            for comp in components:
+                comp_rect = (int(comp["x1"]), int(comp["y1"]), int(comp["x2"]), int(comp["y2"]))
+                if _rect_overlap(current_union, comp_rect) > 0:
+                    if (
+                        comp_rect[0] < union_x1
+                        or comp_rect[1] < union_y1
+                        or comp_rect[2] > union_x2
+                        or comp_rect[3] > union_y2
+                    ):
+                        union_x1 = min(union_x1, comp_rect[0])
+                        union_y1 = min(union_y1, comp_rect[1])
+                        union_x2 = max(union_x2, comp_rect[2])
+                        union_y2 = max(union_y2, comp_rect[3])
+                        changed = True
+                    continue
+                gap_x, gap_y = _gap_to_union(comp, current_union)
+                if gap_x <= gap_x_limit and gap_y <= gap_y_limit:
+                    union_x1 = min(union_x1, comp_rect[0])
+                    union_y1 = min(union_y1, comp_rect[1])
+                    union_x2 = max(union_x2, comp_rect[2])
+                    union_y2 = max(union_y2, comp_rect[3])
+                    changed = True
+
+        union_x1 = max(0, min(union_x1, sw - 1))
+        union_y1 = max(0, min(union_y1, sh - 1))
+        union_x2 = max(union_x1 + 1, min(union_x2, sw))
+        union_y2 = max(union_y1 + 1, min(union_y2, sh))
+        union_mask = mask[union_y1:union_y2, union_x1:union_x2]
+        if union_mask.size == 0:
+            return rough_rect
+
+        row_proj = np.count_nonzero(union_mask, axis=1).astype(np.float32)
+        col_proj = np.count_nonzero(union_mask, axis=0).astype(np.float32)
+        if row_proj.size > 0:
+            row_proj = np.convolve(row_proj, np.ones(5, dtype=np.float32) / 5.0, mode="same")
+        if col_proj.size > 0:
+            col_proj = np.convolve(col_proj, np.ones(5, dtype=np.float32) / 5.0, mode="same")
+
+        row_peak = float(row_proj.max()) if row_proj.size else 0.0
+        col_peak = float(col_proj.max()) if col_proj.size else 0.0
+        row_thresh = max(1.0, row_peak * 0.08)
+        col_thresh = max(1.0, col_peak * 0.08)
+        row_idx = np.where(row_proj >= row_thresh)[0]
+        col_idx = np.where(col_proj >= col_thresh)[0]
+        if row_idx.size > 0:
+            union_y1 += int(row_idx[0])
+            union_y2 = union_y1 + int(row_idx[-1] - row_idx[0] + 1)
+        if col_idx.size > 0:
+            union_x1 += int(col_idx[0])
+            union_x2 = union_x1 + int(col_idx[-1] - col_idx[0] + 1)
+
+        refined_w = max(1, union_x2 - union_x1)
+        refined_h = max(1, union_y2 - union_y1)
+        pad_x = max(6, int(refined_w * 0.04))
+        pad_y = max(6, int(refined_h * 0.05))
+        rx1 = max(0, sx1 + union_x1 - pad_x)
+        ry1 = max(0, sy1 + union_y1 - pad_y)
+        rx2 = min(iw, sx1 + union_x2 + pad_x)
+        ry2 = min(ih, sy1 + union_y2 + pad_y)
+        refined_rect = (int(rx1), int(ry1), int(rx2), int(ry2))
 
         if rx2 <= rx1 or ry2 <= ry1:
-            return rect
+            return rough_rect
 
-        # Only accept the refinement when it meaningfully tightens the crop.
         refined_area = float((rx2 - rx1) * (ry2 - ry1))
-        if refined_area >= roi_area * 0.98:
-            return rect
-        return (int(rx1), int(ry1), int(rx2), int(ry2))
+        rough_area = float(max(1, rough_w * rough_h))
+        overlap_area = float(_rect_overlap(rough_rect, refined_rect))
+        width_ratio = float(rx2 - rx1) / float(max(1, rough_w))
+        height_ratio = float(ry2 - ry1) / float(max(1, rough_h))
+        refined_center_x = (rx1 + rx2) / 2.0
+        refined_center_y = (ry1 + ry2) / 2.0
+        rough_center_abs_x = (x1 + x2) / 2.0
+        rough_center_abs_y = (y1 + y2) / 2.0
+        center_distance = ((refined_center_x - rough_center_abs_x) ** 2 + (refined_center_y - rough_center_abs_y) ** 2) ** 0.5
+        if refined_area < rough_area * 0.02:
+            return rough_rect
+        if overlap_area <= 0:
+            return rough_rect
+        if center_distance > max(rough_w, rough_h) * 0.8:
+            return rough_rect
+        if refined_area < rough_area * 0.08:
+            return rough_rect
+        if refined_area < rough_area * 0.15 and (width_ratio < 0.45 or height_ratio < 0.45):
+            return rough_rect
+        if width_ratio < 0.18 or height_ratio < 0.18:
+            return rough_rect
+        if refined_area >= rough_area * 0.995:
+            refined_rect = rough_rect
+
+        snapped_rect = self._snap_crop_to_text_gaps(src, refined_rect, (iw, ih))
+        sx1_final, sy1_final, sx2_final, sy2_final = snapped_rect
+        if sx2_final <= sx1_final or sy2_final <= sy1_final:
+            return refined_rect
+        snapped_area = float((sx2_final - sx1_final) * (sy2_final - sy1_final))
+        if snapped_area < refined_area * 0.45:
+            return refined_rect
+        return snapped_rect
 
     def insert_cropped_image(
         self,
@@ -3475,7 +4106,7 @@ class HwpController:
         """
         Crop a region from the source image and insert it into the HWP document.
 
-        Parameters are percentages (0.0??.0) of the original image dimensions:
+        Parameters are percentages (0.0-1.0) of the original image dimensions:
             x1_pct, y1_pct = top-left corner
             x2_pct, y2_pct = bottom-right corner
 
@@ -3566,7 +4197,7 @@ class HwpController:
         self._raw_insert_picture(str(p))
         self._exit_table_after_image()
 
-    # ?? Low-level image helpers (table-based) ?????????????
+    # Low-level image helpers (table-based)
 
     def _insert_1x1_table(self) -> None:
         """Insert a 1x1 table with zero-padding. Cursor lands inside the cell."""
@@ -3652,7 +4283,7 @@ class HwpController:
                 pass
 
     def _raw_insert_picture(self, image_path: str) -> None:
-        """Insert an image file into HWP as inline (湲?먯쿂??痍④툒)."""
+        """Insert an image file into HWP as inline (글자처럼 취급)."""
         hwp = self._ensure_connected()
         abs_path = str(Path(image_path).resolve())
 
@@ -3668,7 +4299,7 @@ class HwpController:
                     action.GetDefault("InsertPicture", param_obj.HSet)
                     param_obj.FileName = abs_path
                     if hasattr(param_obj, "Treatment"):
-                        param_obj.Treatment = 0  # 湲?먯쿂??痍④툒
+                        param_obj.Treatment = 0  # 글자처럼 취급
                     if hasattr(param_obj, "SizeType"):
                         param_obj.SizeType = 0
                     result = action.Execute("InsertPicture", param_obj.HSet)
@@ -3703,11 +4334,11 @@ class HwpController:
         Uses multiple strategies in order:
         1. ShapeObjDialog HAction (most reliable, works inside table cells)
         2. Direct ctrl.Properties manipulation
-        3. SelectCtrlReverse ??retry strategies above
+        3. SelectCtrlReverse plus the retry strategies above
         """
         hwp = self._ensure_connected()
 
-        # ?? Strategy 1: ShapeObjDialog (works even inside table cells) ??
+        # Strategy 1: ShapeObjDialog (works even inside table cells)
         try:
             pset = hwp.HParameterSet.HShapeObject
             hwp.HAction.GetDefault("ShapeObjDialog", pset.HSet)
@@ -3718,7 +4349,7 @@ class HwpController:
         except Exception:
             pass
 
-        # ?? Strategy 2: Select the control, then direct property set ??
+        # Strategy 2: Select the control, then direct property set
         ctrl = getattr(hwp, "CurSelectedCtrl", None)
 
         if ctrl is None:
@@ -3797,33 +4428,33 @@ class HwpController:
 
         Strategy:
         1. Physically resize the image with Pillow (0.3x).
-        2. Insert a 1x1 table (block-level element ??text cannot flow beside it).
+        2. Insert a 1x1 table (block-level element, so text cannot flow beside it).
         3. Set table border to 0/none (invisible).
         4. Insert the resized image inside the table cell.
-        5. Exit the table ??cursor moves below the image.
+        5. Exit the table so the cursor moves below the image.
 
         This approach uses structure (table) instead of properties
         (TreatAsChar, TextWrap) to enforce block layout.
         """
         abs_path = str(Path(image_path).resolve())
 
-        # ?? 1. Physically resize the image ????????????????????
+        # 1. Physically resize the image
         insert_path = self._physically_resize_image(abs_path, self._IMAGE_INSERT_SCALE)
 
-        # ?? 2. Insert 1x1 table ??????????????????????????????
+        # 2. Insert 1x1 table
         self._insert_1x1_table()
 
-        # ?? 3. Set table border to none (invisible) ??????????
+        # 3. Set table border to none (invisible)
         self._set_current_table_border_none()
 
-        # ?? 4. Center-align cell & insert the image ??????????
+        # 4. Center-align cell and insert the image
         try:
             self._set_paragraph_align("center")
         except Exception:
             pass
         self._raw_insert_picture(insert_path)
 
-        # ?? 5. Exit table ??cursor below the image ???????????
+        # 5. Exit table and leave the cursor below the image
         self._exit_table_after_image()
 
     def exit_table(self) -> None:
@@ -3833,6 +4464,8 @@ class HwpController:
             try:
                 hwp.HAction.Run("CloseEx")
                 hwp.HAction.Run("MoveDown")
+                self._compact_block_surroundings()
+                self._line_start = True
                 return
             except Exception:
                 pass
@@ -3844,10 +4477,12 @@ class HwpController:
                     hwp.HAction.Run("MoveDown")
                 except Exception:
                     pass
+                self._compact_block_surroundings()
+                self._line_start = True
                 return
             except Exception:
                 pass
-            raise HwpControllerError("??醫낅즺 ?ㅽ뙣: ??諛뺤뒪 ?대룞 ?ㅽ뙣")
+            raise HwpControllerError("표 종료 실패: 표 밖으로 이동하지 못했습니다.")
         except Exception as exc:
-            raise HwpControllerError(f"??醫낅즺 ?ㅽ뙣: {exc}") from exc
+            raise HwpControllerError(f"표 종료 실패: {exc}") from exc
 

@@ -63,7 +63,7 @@ Use ONLY the following functions:
 - set_align_center_next_line()
 - set_align_right_next_line()
 - set_align_justify_next_line()
-- insert_cropped_image(x1_pct, y1_pct, x2_pct, y2_pct)  # crop & insert a region from the source image (0.0–1.0 percentages)
+- insert_cropped_image(x1_pct, y1_pct, x2_pct, y2_pct)  # rough normalized figure box from the source image (0.0–1.0); app refines with CV/OCR before insertion
 
 Return ONLY Python code. No explanations.
 
@@ -78,9 +78,15 @@ instead of inserting the table as an image. You may use structured cell objects 
 - {"text": "", "diagonal": "\\"}
 - {"text": "", "diagonal": "/"}
 - {"text": "", "diagonal": "x"}
+- {"diagonal": "\\", "diagonal_labels": {"top_right": "물질", "bottom_left": "과정"}}
+- {"diagonal": "/", "diagonal_labels": {"top_left": "구분", "bottom_right": "횟수"}}
 - {"diagonal": "\\", "top_right": "ㄱ", "bottom_left": "집단"}
 - {"diagonal": "/", "top_left": "구분", "bottom_right": "횟수"}
 Covered cells may be omitted or written as None.
+Each row must use only one style:
+- compact row: omit covered cells
+- explicit row: include the full base-grid width and use None for covered cells
+Do not mix compact rows and explicit rows within the same row.
 If explicit merge metadata is easier, you may also pass:
 - merged_cells=[{"row": 0, "col": 0, "rowspan": 1, "colspan": 4}]
 For table-cell math:
@@ -96,7 +102,8 @@ Do not emit `fill_color`, `background_color`, `bg_color`, `border`, `border_colo
 `border_type`, or `border_width` for table cells.
 If a cell visibly contains a diagonal line or X mark, include `diagonal: "\\"`, `diagonal: "/"`, or `diagonal: "x"`.
 If text is placed in the split triangle regions of a diagonal cell, keep it in ONE cell and use
-`top_left`, `top_right`, `bottom_left`, or `bottom_right` instead of splitting it into extra cells.
+`diagonal_labels` or `top_left`, `top_right`, `bottom_left`, `bottom_right`
+instead of splitting it into extra cells.
 Do NOT use text color functions or `color=...` for text runs; ignore visible font color differences and type the text normally.
 If a text run combines multiple styles at once, prefer one
 `insert_styled_text(...)` call instead of splitting the same text into
