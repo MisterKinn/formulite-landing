@@ -5,21 +5,17 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { loadTossPayments } from "@tosspayments/tosspayments-sdk";
 
-const CheckIcon = ({ color = "currentColor" }: { color?: string }) => (
-    <svg
-        width="18"
-        height="18"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke={color}
-        strokeWidth="2.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className="pricing-check-icon"
-    >
-        <polyline points="20 6 9 17 4 12" />
-    </svg>
-);
+interface PricingTokenLine {
+    prefix?: string;
+    value: string;
+    suffix?: string;
+}
+
+interface PricingTokenInfo {
+    label: string;
+    lines: PricingTokenLine[];
+    helperText: string;
+}
 
 interface PricingPlan {
     name: string;
@@ -28,7 +24,7 @@ interface PricingPlan {
         monthly: string;
         yearly: string;
     };
-    features: string[];
+    tokenInfo: PricingTokenInfo;
     cta: string;
     popular?: boolean;
     tier: "free" | "go" | "plus" | "pro";
@@ -38,16 +34,45 @@ type BillingCycle = "monthly" | "yearly";
 
 const TOKENS_PER_PROBLEM = 25000;
 
-const formatTokenCount = (count: number) => `${count.toLocaleString()}토큰`;
+const formatTokenNumber = (count: number) => count.toLocaleString();
+const formatApproxTypingCount = (baseProblems: number, bonusProblems?: number) => {
+    if (!bonusProblems) {
+        return `약 총 ${baseProblems.toLocaleString()}회 타이핑 가능`;
+    }
+
+    return `약 월 ${baseProblems.toLocaleString()}+${bonusProblems.toLocaleString()}회 타이핑 가능`;
+};
 
 const formatTokenAllowance = (baseProblems: number, bonusProblems?: number) => {
     const baseTokens = baseProblems * TOKENS_PER_PROBLEM;
     if (!bonusProblems) {
-        return `총 ${formatTokenCount(baseTokens)} AI 타이핑 생성`;
+        return {
+            label: "총 토큰",
+            lines: [
+                {
+                    value: formatTokenNumber(baseTokens),
+                    suffix: "토큰",
+                },
+            ],
+            helperText: formatApproxTypingCount(baseProblems),
+        };
     }
 
     const bonusTokens = bonusProblems * TOKENS_PER_PROBLEM;
-    return `월 ${formatTokenCount(baseTokens)}+${formatTokenCount(bonusTokens)} AI 타이핑 생성`;
+    return {
+        label: "월 토큰",
+        lines: [
+            {
+                value: formatTokenNumber(baseTokens),
+                suffix: "기본토큰",
+            },
+            {
+                value: formatTokenNumber(bonusTokens),
+                suffix: "추가토큰",
+            },
+        ],
+        helperText: formatApproxTypingCount(baseProblems, bonusProblems),
+    };
 };
 
 const plans: PricingPlan[] = [
@@ -58,65 +83,41 @@ const plans: PricingPlan[] = [
             monthly: "0",
             yearly: "0",
         },
-        features: [
-            formatTokenAllowance(3),
-            "기본 수식 자동화",
-            "자연어 기반 한글 문서 자동화 체험",
-            "복수 계정 작업 불가능",
-        ],
+        tokenInfo: formatTokenAllowance(3),
         cta: "무료로 시작하기",
         tier: "free",
     },
     {
         name: "Go 요금제",
-        subDescription: "개인 작업량을 빠르게 자동화하기에 적합한 플랜입니다.",
+        subDescription: "개인에 적합한 플랜입니다.",
         prices: {
             monthly: "11,900",
             yearly: "8,330",
         },
-        features: [
-            formatTokenAllowance(60, 6),
-            "고급 AI 모델",
-            "코드 저장 & 재사용",
-            "자연어 기반 한글 문서 자동화",
-            "복수 계정 작업 불가능",
-        ],
+        tokenInfo: formatTokenAllowance(60, 6),
         cta: "Go 시작하기",
         tier: "go",
     },
     {
         name: "Plus 요금제",
-        subDescription: "가장 많은 팀이 선택하는 표준 워크플로 플랜입니다.",
+        subDescription: "학원 선생님이 선택하면 좋은 플랜입니다.",
         prices: {
             monthly: "29,900",
             yearly: "20,930",
         },
-        features: [
-            formatTokenAllowance(200, 20),
-            "고급 AI 모델",
-            "코드 저장 & 재사용",
-            "우선 지원 서비스",
-            "복수 계정 작업 불가능",
-        ],
+        tokenInfo: formatTokenAllowance(200, 20),
         cta: "Plus 시작하기",
         popular: true,
         tier: "plus",
     },
     {
         name: "Ultra 요금제",
-        subDescription: "대량 처리와 팀 운영을 함께 고려한 확장형 플랜입니다.",
+        subDescription: "학원에서 사용하면 좋은 플랜입니다.",
         prices: {
             monthly: "99,000",
             yearly: "69,300",
         },
-        features: [
-            formatTokenAllowance(1200, 120),
-            "고급 AI 모델",
-            "OCR 이미지 인식 및 크롭·삽입 자동화",
-            "팀 협업 기능",
-            "복수 계정 작업 가능",
-            "전담 지원 서비스",
-        ],
+        tokenInfo: formatTokenAllowance(1200, 120),
         cta: "Ultra 시작하기",
         tier: "pro",
     },
@@ -336,25 +337,37 @@ export default function Pricing() {
                                     {plan.subDescription}
                                 </p>
 
-                                <ul className="pricing-card-v2__features">
-                                    {plan.features.map((feature, i) => (
-                                        <li
-                                            key={i}
-                                            className="pricing-card-v2__feature"
-                                        >
-                                            <span className="pricing-card-v2__check-wrap">
-                                                <CheckIcon
-                                                    color={
-                                                        plan.popular
-                                                            ? "#ccc"
-                                                            : "#555"
-                                                    }
-                                                />
+                                <div className="pricing-card-v2__divider" />
+                                <div className="pricing-card-v2__token-block">
+                                    <span className="pricing-card-v2__token-label">
+                                        {plan.tokenInfo.label}
+                                    </span>
+                                    <div className="pricing-card-v2__token-values">
+                                        {plan.tokenInfo.lines.map((line, index) => (
+                                            <span
+                                                key={`${plan.tier}-token-line-${index}`}
+                                                className="pricing-card-v2__token-line"
+                                            >
+                                                {line.prefix && (
+                                                    <span className="pricing-card-v2__token-prefix">
+                                                        {line.prefix}
+                                                    </span>
+                                                )}
+                                                <span className="pricing-card-v2__token-value">
+                                                    {line.value}
+                                                </span>
+                                                {line.suffix && (
+                                                    <span className="pricing-card-v2__token-suffix">
+                                                        {line.suffix}
+                                                    </span>
+                                                )}
                                             </span>
-                                            <span>{feature}</span>
-                                        </li>
-                                    ))}
-                                </ul>
+                                        ))}
+                                    </div>
+                                    <p className="pricing-card-v2__token-helper">
+                                        {plan.tokenInfo.helperText}
+                                    </p>
+                                </div>
                             </div>
                         </div>
                     ))}

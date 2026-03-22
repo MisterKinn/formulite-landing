@@ -462,7 +462,7 @@ body {
     }
 
     .pricing-card-v2 {
-        padding: 1.15rem 1.2rem;
+        padding: 1.15rem 1.2rem 1.55rem;
         border-radius: 1rem;
         max-width: 320px;
     }
@@ -496,24 +496,26 @@ body {
         font-size: 0.95rem;
     }
 
-    .pricing-card-v2__feature {
-        font-size: 0.75rem;
-        gap: 0.5rem;
+    .pricing-card-v2__divider {
+        margin: 0.05rem 0 0.75rem;
     }
 
-    .pricing-card-v2__check-wrap {
-        width: 18px;
-        height: 18px;
+    .pricing-card-v2__token-label {
+        font-size: 0.76rem;
     }
 
-    .pricing-card-v2__check-wrap svg {
-        width: 14px;
-        height: 14px;
+    .pricing-card-v2__token-prefix,
+    .pricing-card-v2__token-suffix {
+        font-size: 0.76rem;
     }
 
-    .pricing-card-v2__features {
-        gap: 0.625rem;
-        margin-bottom: 0;
+    .pricing-card-v2__token-value {
+        font-size: 1.08rem;
+    }
+
+    .pricing-card-v2__token-helper {
+        font-size: 0.7rem;
+        margin-top: 0.3rem;
     }
 
     .pricing-badge-v2 {

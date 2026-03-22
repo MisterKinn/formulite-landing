@@ -281,6 +281,8 @@ class AIWorker(QThread):
     error = Signal(str)
     progress = Signal(int, str)
     item_finished = Signal(int, str)
+    item_usage = Signal(int, int)
+    item_usage_details = Signal(int, object)
 
     def __init__(
         self,
@@ -637,7 +639,7 @@ Preserve semantics and layout, but normalize rendering to clean exam-print style
         crop.save(out_path, format="PNG")
         return str(out_path)
 
-    def _generate_image_from_crop(self, crop_path: str) -> str:
+    def _generate_image_from_crop(self, crop_path: str) -> tuple[str, dict[str, object]]:
         from ai_client import (  # type: ignore
             DEFAULT_GEMINI_MODEL,
             _load_env as _load_ai_env,
@@ -685,18 +687,28 @@ Preserve semantics and layout, but normalize rendering to clean exam-print style
             )
             usage = AIClient._coerce_usage_metadata_dict(response)
             total_tokens = int(usage.get("total_tokens") or ESTIMATED_TOKENS_PER_PROBLEM)
+            usage_record = {
+                "model": model_name,
+                "provider": "gemini",
+                "feature": "image_generation",
+                "source": "desktop",
+                "prompt_tokens": int(usage.get("prompt_tokens") or 0),
+                "output_tokens": int(usage.get("candidate_tokens") or 0),
+                "total_tokens": total_tokens,
+                "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            }
             user = get_stored_user() or {}
             uid = str(user.get("uid") or "").strip()
             if uid:
                 record_ai_usage_log(
                     uid,
-                    model=model_name,
-                    provider="gemini",
-                    feature="image_generation",
-                    source="desktop",
-                    prompt_tokens=int(usage.get("prompt_tokens") or 0),
-                    output_tokens=int(usage.get("candidate_tokens") or 0),
-                    total_tokens=total_tokens,
+                    model=str(usage_record.get("model") or model_name),
+                    provider=str(usage_record.get("provider") or "gemini"),
+                    feature=str(usage_record.get("feature") or "image_generation"),
+                    source=str(usage_record.get("source") or "desktop"),
+                    prompt_tokens=int(usage_record.get("prompt_tokens") or 0),
+                    output_tokens=int(usage_record.get("output_tokens") or 0),
+                    total_tokens=int(usage_record.get("total_tokens") or total_tokens),
                 )
         except Exception as exc:
             raise AIClientError(f"Gemini 이미지 생성 실패: {exc}") from exc
@@ -733,7 +745,7 @@ Preserve semantics and layout, but normalize rendering to clean exam-print style
         out_dir.mkdir(parents=True, exist_ok=True)
         out_path = out_dir / f"generated_{os.getpid()}_{uuid.uuid4().hex[:10]}{ext}"
         out_path.write_bytes(img_bytes)
-        return str(out_path)
+        return str(out_path), usage_record
 
     def _apply_image_generation_pipeline(
         self,
@@ -741,17 +753,18 @@ Preserve semantics and layout, but normalize rendering to clean exam-print style
         image_path: str,
         script: str,
         log_fn,
-    ) -> tuple[str, int]:
+    ) -> tuple[str, list[dict[str, object]]]:
         if self._image_mode != "ai_generate":
-            return script, 0
+            return script, []
         if not script.strip():
-            return script, 0
+            return script, []
 
         lines = script.splitlines()
         crop_pattern = re.compile(r"^(\s*)insert_cropped_image\((.+)\)\s*$")
         call_count = 0
         generated_count = 0
         failed_count = 0
+        usage_records: list[dict[str, object]] = []
 
         for line_idx, line in enumerate(lines):
             m = crop_pattern.match(line)
@@ -770,9 +783,10 @@ Preserve semantics and layout, but normalize rendering to clean exam-print style
                     idx=idx,
                     call_no=call_count,
                 )
-                generated_path = self._generate_image_from_crop(crop_path)
+                generated_path, usage_record = self._generate_image_from_crop(crop_path)
                 lines[line_idx] = f"{indent}insert_generated_image({generated_path!r})"
                 generated_count += 1
+                usage_records.append(dict(usage_record))
                 log_fn(f"[{idx}] Generated image #{generated_count}: {generated_path}")
             except Exception as exc:
                 failed_count += 1
@@ -783,7 +797,7 @@ Preserve semantics and layout, but normalize rendering to clean exam-print style
             log_fn(f"[{idx}] Image generation complete: {generated_count} item(s)")
         if failed_count > 0:
             log_fn(f"[{idx}] Image generation fallback used for {failed_count} item(s)")
-        return "\n".join(lines), generated_count * ESTIMATED_TOKENS_PER_PROBLEM
+        return "\n".join(lines), usage_records
 
     @staticmethod
     def _strip_image_insertions(script: str) -> str:
@@ -907,20 +921,20 @@ Preserve semantics and layout, but normalize rendering to clean exam-print style
         image_path: str,
         script: str,
         log_fn,
-    ) -> tuple[str, int]:
+    ) -> tuple[str, list[dict[str, object]]]:
         processed = script
-        image_credit_cost = 0
+        image_usage_records: list[dict[str, object]] = []
         if self._image_mode == "ai_generate":
-            processed, image_credit_cost = self._apply_image_generation_pipeline(
+            processed, image_usage_records = self._apply_image_generation_pipeline(
                 idx, image_path, processed, log_fn
             )
         elif self._image_mode == "no_image":
             stripped = self._strip_image_insertions(processed)
             if stripped != (processed or "").strip():
                 log_fn(f"[{idx}] Image insertion lines removed by no-image mode")
-            return stripped, 0
+            return stripped, []
         processed = self._apply_python_figure_pipeline(idx, processed, log_fn)
-        return self._apply_local_figure_pipeline(idx, processed, log_fn), image_credit_cost
+        return self._apply_local_figure_pipeline(idx, processed, log_fn), image_usage_records
 
     @staticmethod
     def _crop_absolute_bbox_to_file(
@@ -1162,13 +1176,24 @@ Preserve semantics and layout, but normalize rendering to clean exam-print style
 
                 if generation_mode == "explanation":
                     final_code = _append_explanation_if_needed("")
-                    final_code, image_token_cost = self._apply_image_mode_pipeline(
+                    final_code, image_usage_records = self._apply_image_mode_pipeline(
                         idx, image_path, final_code, _log
                     )
+                    usage_records = client.consume_pending_usage_records()
+                    actual_generation_tokens = client.consume_pending_usage_tokens()
+                    if actual_generation_tokens <= 0 and usage_records:
+                        actual_generation_tokens = sum(
+                            max(0, int(record.get("total_tokens") or 0))
+                            for record in usage_records
+                        )
+                    image_token_cost = sum(
+                        max(0, int(record.get("total_tokens") or 0))
+                        for record in image_usage_records
+                    )
+                    total_usage_cost = actual_generation_tokens + image_token_cost
+                    self.item_usage.emit(idx, total_usage_cost)
+                    self.item_usage_details.emit(idx, list(usage_records) + list(image_usage_records))
                     if uid and final_code.strip():
-                        usage_records = client.consume_pending_usage_records()
-                        actual_generation_tokens = client.consume_pending_usage_tokens()
-                        total_usage_cost = actual_generation_tokens + image_token_cost
                         if not check_usage_limit(uid, tier, amount=total_usage_cost):
                             limit = get_plan_limit(tier)
                             remaining = get_remaining_usage(uid, tier)
@@ -1201,13 +1226,24 @@ Preserve semantics and layout, but normalize rendering to clean exam-print style
                     log_fn=_log,
                 )
                 final_code = _append_explanation_if_needed(final_code)
-                final_code, image_token_cost = self._apply_image_mode_pipeline(
+                final_code, image_usage_records = self._apply_image_mode_pipeline(
                     idx, image_path, final_code, _log
                 )
+                usage_records = client.consume_pending_usage_records()
+                actual_generation_tokens = client.consume_pending_usage_tokens()
+                if actual_generation_tokens <= 0 and usage_records:
+                    actual_generation_tokens = sum(
+                        max(0, int(record.get("total_tokens") or 0))
+                        for record in usage_records
+                    )
+                image_token_cost = sum(
+                    max(0, int(record.get("total_tokens") or 0))
+                    for record in image_usage_records
+                )
+                total_usage_cost = actual_generation_tokens + image_token_cost
+                self.item_usage.emit(idx, total_usage_cost)
+                self.item_usage_details.emit(idx, list(usage_records) + list(image_usage_records))
                 if uid and final_code.strip():
-                    usage_records = client.consume_pending_usage_records()
-                    actual_generation_tokens = client.consume_pending_usage_tokens()
-                    total_usage_cost = actual_generation_tokens + image_token_cost
                     if not check_usage_limit(uid, tier, amount=total_usage_cost):
                         limit = get_plan_limit(tier)
                         remaining = get_remaining_usage(uid, tier)
@@ -2076,6 +2112,260 @@ class UsageDialog(_FramelessCardDialog):
         self.accept()
 
 
+class TokenUsageBreakdownDialog(_FramelessCardDialog):
+    """Detailed token usage dialog for a generated item."""
+
+    def __init__(
+        self,
+        parent=None,
+        *,
+        tier: str = "Free",
+        item_title: str = "",
+        usage_records: list[dict[str, object]] | None = None,
+        fallback_total: int = 0,
+    ) -> None:
+        super().__init__(parent, 460, 560)
+        self.setWindowTitle("토큰 사용량")
+        card = self._make_card()
+        lay = QVBoxLayout(card)
+        lay.setContentsMargins(28, 16, 28, 24)
+        lay.setSpacing(0)
+
+        close_row = QHBoxLayout()
+        close_row.setContentsMargins(0, 0, 0, 0)
+        close_row.addStretch()
+        close_btn = QPushButton()
+        close_btn.setFixedSize(28, 28)
+        close_btn.setIcon(_material_icon(_MI_CLOSE, 18, QColor("#9ca3af")))
+        close_btn.setIconSize(QSize(18, 18))
+        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.setStyleSheet(
+            "QPushButton { border: none; background: transparent; border-radius: 14px; }"
+            "QPushButton:hover { background-color: #e5e7eb; }"
+        )
+        close_btn.clicked.connect(self.accept)
+        close_row.addWidget(close_btn)
+        lay.addLayout(close_row)
+        lay.addSpacing(4)
+
+        accent = self._tier_accent_color(tier)
+        records = self._aggregate_usage_records(usage_records or [])
+        total_tokens = sum(max(0, int(record.get("total_tokens") or 0)) for record in records)
+        if total_tokens <= 0:
+            total_tokens = max(0, int(fallback_total or 0))
+
+        icon_label = QLabel(_MI_BAR_CHART)
+        icon_label.setFont(QFont("Material Icons", 32))
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon_label.setStyleSheet(f"color: {accent}; background: transparent;")
+        icon_label.setFixedHeight(44)
+        lay.addWidget(icon_label)
+        lay.addSpacing(10)
+
+        title = QLabel("토큰 사용량")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setStyleSheet(
+            "font-size: 17px; font-weight: 700; color: #1a1a2e; background: transparent;"
+        )
+        lay.addWidget(title)
+        lay.addSpacing(6)
+
+        subtitle = QLabel(item_title or "선택 항목")
+        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        subtitle.setWordWrap(True)
+        subtitle.setStyleSheet(
+            "font-size: 12px; color: #6b7280; background: transparent;"
+        )
+        lay.addWidget(subtitle)
+        lay.addSpacing(18)
+
+        sep = QFrame()
+        sep.setFixedHeight(1)
+        sep.setStyleSheet("background-color: #f3f4f6; border: none;")
+        lay.addWidget(sep)
+        lay.addSpacing(16)
+
+        total_label = QLabel("총 토큰")
+        total_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        total_label.setStyleSheet(
+            "font-size: 12px; font-weight: 600; color: #8b8fa3; background: transparent;"
+        )
+        lay.addWidget(total_label)
+        lay.addSpacing(4)
+
+        total_value = QLabel(f"{total_tokens:,}<span style='font-size:18px; color:#9ca3af;'> 토큰</span>")
+        total_value.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        total_value.setTextFormat(Qt.TextFormat.RichText)
+        total_value.setStyleSheet(
+            f"font-size: 32px; font-weight: 800; color: {accent}; background: transparent;"
+        )
+        lay.addWidget(total_value)
+        lay.addSpacing(18)
+
+        section_title = QLabel("사용 내역")
+        section_title.setStyleSheet(
+            "font-size: 13px; font-weight: 700; color: #1a1a2e; background: transparent;"
+        )
+        lay.addWidget(section_title)
+        lay.addSpacing(10)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+        content = QWidget()
+        content.setStyleSheet("background: transparent;")
+        content_lay = QVBoxLayout(content)
+        content_lay.setContentsMargins(0, 0, 0, 0)
+        content_lay.setSpacing(10)
+
+        if records:
+            for record in records:
+                content_lay.addWidget(self._build_record_card(record, accent))
+        else:
+            empty = QLabel("표시할 상세 사용 기록이 없습니다.")
+            empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            empty.setStyleSheet(
+                "font-size: 12px; color: #9ca3af; background: transparent; padding: 20px 0;"
+            )
+            content_lay.addWidget(empty)
+        content_lay.addStretch(1)
+        scroll.setWidget(content)
+        lay.addWidget(scroll, 1)
+
+    @staticmethod
+    def _tier_accent_color(tier: str) -> str:
+        return {
+            "Free": "#6366f1",
+            "free": "#6366f1",
+            "Go": "#0ea5e9",
+            "go": "#0ea5e9",
+            "Standard": "#8b5cf6",
+            "standard": "#8b5cf6",
+            "Plus": "#8b5cf6",
+            "plus": "#8b5cf6",
+            "Pro": "#8b5cf6",
+            "pro": "#8b5cf6",
+            "ultra": "#8b5cf6",
+        }.get(tier, "#6366f1")
+
+    @staticmethod
+    def _feature_label(feature: str, count: int) -> str:
+        label = {
+            "typing_problem": "문제 생성",
+            "typing_explanation": "해설 생성",
+            "image_generation": "이미지 생성",
+            "typing": "문제 생성",
+        }.get(str(feature or "").strip().lower(), "AI 작업")
+        if count > 1:
+            return f"{label} {count}회"
+        return label
+
+    @staticmethod
+    def _provider_label(provider: str) -> str:
+        text = str(provider or "").strip()
+        if not text:
+            return "AI"
+        if text.lower() == "gemini":
+            return "Gemini"
+        return text.upper()
+
+    @classmethod
+    def _aggregate_usage_records(
+        cls, records: list[dict[str, object]]
+    ) -> list[dict[str, object]]:
+        aggregated: dict[tuple[str, str, str], dict[str, object]] = {}
+        order: list[tuple[str, str, str]] = []
+        for record in records:
+            if not isinstance(record, dict):
+                continue
+            provider = str(record.get("provider") or "").strip()
+            model = str(record.get("model") or "").strip()
+            feature = str(record.get("feature") or "").strip()
+            key = (provider, model, feature)
+            if key not in aggregated:
+                aggregated[key] = {
+                    "provider": provider,
+                    "model": model,
+                    "feature": feature,
+                    "prompt_tokens": 0,
+                    "output_tokens": 0,
+                    "total_tokens": 0,
+                    "count": 0,
+                }
+                order.append(key)
+            target = aggregated[key]
+            target["prompt_tokens"] = int(target.get("prompt_tokens") or 0) + max(
+                0, int(record.get("prompt_tokens") or 0)
+            )
+            target["output_tokens"] = int(target.get("output_tokens") or 0) + max(
+                0, int(record.get("output_tokens") or 0)
+            )
+            target["total_tokens"] = int(target.get("total_tokens") or 0) + max(
+                0, int(record.get("total_tokens") or 0)
+            )
+            target["count"] = int(target.get("count") or 0) + 1
+        return [aggregated[key] for key in order]
+
+    @classmethod
+    def _build_record_card(cls, record: dict[str, object], accent: str) -> QFrame:
+        frame = QFrame()
+        frame.setStyleSheet(
+            "QFrame { background-color: #f8fafc; border: 1px solid #e5e7eb; border-radius: 14px; }"
+        )
+        layout = QVBoxLayout(frame)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(6)
+
+        feature = cls._feature_label(
+            str(record.get("feature") or ""),
+            max(1, int(record.get("count") or 1)),
+        )
+        total_tokens = max(0, int(record.get("total_tokens") or 0))
+        prompt_tokens = max(0, int(record.get("prompt_tokens") or 0))
+        output_tokens = max(0, int(record.get("output_tokens") or 0))
+        provider = cls._provider_label(str(record.get("provider") or ""))
+        model = str(record.get("model") or "").strip()
+
+        top_row = QHBoxLayout()
+        top_row.setContentsMargins(0, 0, 0, 0)
+        top_row.setSpacing(8)
+        task_label = QLabel(feature)
+        task_label.setStyleSheet(
+            "font-size: 14px; font-weight: 700; color: #1a1a2e; background: transparent;"
+        )
+        token_label = QLabel(f"{total_tokens:,} 토큰")
+        token_label.setStyleSheet(
+            f"font-size: 14px; font-weight: 700; color: {accent}; background: transparent;"
+        )
+        top_row.addWidget(task_label)
+        top_row.addStretch(1)
+        top_row.addWidget(token_label)
+        layout.addLayout(top_row)
+
+        model_label = QLabel(f"{provider} | {model or '-'}")
+        model_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        model_label.setStyleSheet(
+            "font-size: 11px; color: #6b7280; background: transparent;"
+        )
+        layout.addWidget(model_label)
+
+        sep = QFrame()
+        sep.setFixedHeight(1)
+        sep.setStyleSheet("background-color: #e5e7eb; border: none;")
+        layout.addWidget(sep)
+
+        detail_label = QLabel(
+            f"입력 {prompt_tokens:,} 토큰   출력 {output_tokens:,} 토큰"
+        )
+        detail_label.setStyleSheet(
+            "font-size: 12px; font-weight: 600; color: #374151; background: transparent;"
+        )
+        layout.addWidget(detail_label)
+        return frame
+
+
 class DownloadFormDialog(_FramelessCardDialog):
     """?? ?? ???? ?????."""
 
@@ -2550,6 +2840,8 @@ class NovaAILiteWindow(QWidget):
         self.generated_code: str = ""
         self.generated_codes: list[str] = []
         self._generated_codes_by_index: list[str] = []
+        self._generated_tokens_by_index: list[int] = []
+        self._generated_usage_records_by_index: list[list[dict[str, object]]] = []
         self._gen_statuses: list[str] = []
         self._ai_worker: AIWorker | None = None
         self._typed_indexes: set[int] = set()
@@ -3037,6 +3329,7 @@ class NovaAILiteWindow(QWidget):
         self._order_delegate.delete_clicked.connect(self._on_order_delete_clicked)
         self._order_delegate.retype_clicked.connect(self._on_order_retype_clicked)
         self._order_delegate.view_clicked.connect(self._on_order_view_clicked)
+        self._order_delegate.token_clicked.connect(self._on_order_token_clicked)
         self.order_list.setItemDelegate(self._order_delegate)
         self.order_list.itemClicked.connect(self._on_order_item_clicked)
         self.order_list.itemSelectionChanged.connect(self._on_order_selection_changed)
@@ -3081,6 +3374,17 @@ class NovaAILiteWindow(QWidget):
             "QPushButton:hover { background-color: #e5e7eb; }"
             "QPushButton:disabled { color: #aaa; border-color: #eee; background-color: #fafafa; }"
         )
+        self._token_usage_btn = QPushButton("토큰")
+        self._token_usage_btn.setEnabled(False)
+        self._token_usage_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._token_usage_btn.setToolTip("선택한 코드 항목의 사용 토큰 보기")
+        self._token_usage_btn.setStyleSheet(
+            "QPushButton { background-color: #f3f4f6; color: #333;"
+            "  border: 1px solid #e5e7eb; border-radius: 6px; padding: 6px 14px;"
+            "  font-size: 12px; font-weight: 500; }"
+            "QPushButton:hover { background-color: #e5e7eb; }"
+            "QPushButton:disabled { color: #aaa; border-color: #eee; background-color: #fafafa; }"
+        )
         self._generated_container = QWidget()
         gen_layout = QVBoxLayout(self._generated_container)
         gen_layout.setContentsMargins(0, 0, 0, 0)
@@ -3088,6 +3392,7 @@ class NovaAILiteWindow(QWidget):
         gen_header = QHBoxLayout()
         gen_header.addWidget(self._generated_code_label)
         gen_header.addStretch(1)
+        gen_header.addWidget(self._token_usage_btn)
         gen_header.addWidget(self._code_type_btn)
         gen_layout.addLayout(gen_header)
         gen_layout.addWidget(self.code_view)
@@ -3433,6 +3738,7 @@ class NovaAILiteWindow(QWidget):
         self._refresh_typing_mode_labels()
 
         self.btn_ai_type.clicked.connect(self.on_ai_type_run)
+        self._token_usage_btn.clicked.connect(self._on_token_usage_clicked)
         self._code_type_btn.clicked.connect(self._on_code_type_clicked)
         self.code_view.textChanged.connect(self._on_code_view_changed)
 
@@ -4810,6 +5116,8 @@ class NovaAILiteWindow(QWidget):
         self.generated_code = ""
         self.generated_codes = []
         self._generated_codes_by_index = [""] * len(self.selected_images)
+        self._generated_tokens_by_index = [0] * len(self.selected_images)
+        self._generated_usage_records_by_index = [[] for _ in self.selected_images]
         self._gen_statuses = ["\uB300\uAE30\uC911"] * len(self.selected_images)
         self._typed_indexes = set()
         self._next_auto_type_index = 0
@@ -4827,6 +5135,8 @@ class NovaAILiteWindow(QWidget):
         self._ai_worker.error.connect(self._on_ai_error)
         self._ai_worker.progress.connect(self._on_ai_progress)
         self._ai_worker.item_finished.connect(self._on_ai_item_finished)
+        self._ai_worker.item_usage.connect(self._on_ai_item_usage)
+        self._ai_worker.item_usage_details.connect(self._on_ai_item_usage_details)
         self._ai_worker.start()
 
     def on_type_run(self) -> None:
@@ -4953,6 +5263,29 @@ class NovaAILiteWindow(QWidget):
         if self._auto_type_after_ai and not self._auto_type_gap_timer.isActive():
             self._try_auto_type()
 
+    def _on_ai_item_usage(self, idx: int, tokens: int) -> None:
+        if idx < 0:
+            return
+        if idx >= len(self._generated_tokens_by_index):
+            self._generated_tokens_by_index.extend([0] * (idx + 1 - len(self._generated_tokens_by_index)))
+        self._generated_tokens_by_index[idx] = max(0, int(tokens or 0))
+        if idx == self._current_code_index:
+            self._update_code_type_button_state()
+
+    def _on_ai_item_usage_details(self, idx: int, records: object) -> None:
+        if idx < 0:
+            return
+        if idx >= len(self._generated_usage_records_by_index):
+            self._generated_usage_records_by_index.extend(
+                [[] for _ in range(idx + 1 - len(self._generated_usage_records_by_index))]
+            )
+        normalized: list[dict[str, object]] = []
+        if isinstance(records, list):
+            for record in records:
+                if isinstance(record, dict):
+                    normalized.append(dict(record))
+        self._generated_usage_records_by_index[idx] = normalized
+
     def _cancel_pending_auto_type(self) -> None:
         if self._auto_type_gap_timer.isActive():
             self._auto_type_gap_timer.stop()
@@ -5035,6 +5368,14 @@ class NovaAILiteWindow(QWidget):
         if len(raw_codes) < total:
             raw_codes.extend([""] * (total - len(raw_codes)))
         raw_codes = raw_codes[:total]
+        if len(self._generated_tokens_by_index) < total:
+            self._generated_tokens_by_index.extend([0] * (total - len(self._generated_tokens_by_index)))
+        self._generated_tokens_by_index = self._generated_tokens_by_index[:total]
+        if len(self._generated_usage_records_by_index) < total:
+            self._generated_usage_records_by_index.extend(
+                [[] for _ in range(total - len(self._generated_usage_records_by_index))]
+            )
+        self._generated_usage_records_by_index = self._generated_usage_records_by_index[:total]
 
         self._generated_codes_by_index = raw_codes
         ok_count = sum(1 for c in raw_codes if c.strip())
@@ -5588,6 +5929,18 @@ class NovaAILiteWindow(QWidget):
                 for item_id in new_item_ids
                 if item_id in old_index_by_id
             ]
+        if self._generated_tokens_by_index:
+            self._generated_tokens_by_index = [
+                self._generated_tokens_by_index[old_index_by_id[item_id]]
+                for item_id in new_item_ids
+                if item_id in old_index_by_id
+            ]
+        if self._generated_usage_records_by_index:
+            self._generated_usage_records_by_index = [
+                self._generated_usage_records_by_index[old_index_by_id[item_id]]
+                for item_id in new_item_ids
+                if item_id in old_index_by_id
+            ]
         if self._gen_statuses:
             self._gen_statuses = [
                 self._gen_statuses[old_index_by_id[item_id]]
@@ -5630,6 +5983,10 @@ class NovaAILiteWindow(QWidget):
         self.selected_images.pop(idx)
         if idx < len(self._generated_codes_by_index):
             self._generated_codes_by_index.pop(idx)
+        if idx < len(self._generated_tokens_by_index):
+            self._generated_tokens_by_index.pop(idx)
+        if idx < len(self._generated_usage_records_by_index):
+            self._generated_usage_records_by_index.pop(idx)
         if idx < len(self._gen_statuses):
             self._gen_statuses.pop(idx)
         self._render_order_list()
@@ -5662,6 +6019,8 @@ class NovaAILiteWindow(QWidget):
             self._chat_file_list.clear()
             self._gen_statuses = []
             self._generated_codes_by_index = []
+            self._generated_tokens_by_index = []
+            self._generated_usage_records_by_index = []
             self._current_code_index = -1
             self._current_code_item_id = None
             self._set_code_view_text("")
@@ -5672,6 +6031,8 @@ class NovaAILiteWindow(QWidget):
             return
         self._refresh_typing_mode_labels()
         self._generated_codes_by_index = [""] * len(self.selected_images)
+        self._generated_tokens_by_index = [0] * len(self.selected_images)
+        self._generated_usage_records_by_index = [[] for _ in self.selected_images]
         self._gen_statuses = ["\uB300\uAE30\uC911"] * len(self.selected_images)
         self._render_order_list()
         self._current_code_index = -1
@@ -5804,9 +6165,14 @@ class NovaAILiteWindow(QWidget):
         idx = self._current_code_index
         if idx < 0 or idx >= len(self._generated_codes_by_index):
             self._code_type_btn.setEnabled(False)
+            self._token_usage_btn.setEnabled(False)
             return
         code = self._generated_codes_by_index[idx] or ""
         self._code_type_btn.setEnabled(bool(code.strip()))
+        tokens = 0
+        if idx < len(self._generated_tokens_by_index):
+            tokens = max(0, int(self._generated_tokens_by_index[idx] or 0))
+        self._token_usage_btn.setEnabled(tokens > 0)
 
     def _sync_current_code_from_view(self) -> None:
         idx = self._current_code_index
@@ -5829,6 +6195,43 @@ class NovaAILiteWindow(QWidget):
             QMessageBox.warning(self, "\uC54C\uB9BC", "\uC120\uD0DD\uB41C \uCF54\uB4DC \uD56D\uBAA9\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.")
             return
         self._type_code_for_index(idx)
+
+    def _on_token_usage_clicked(self) -> None:
+        idx = self._current_code_index
+        self._show_token_usage_for_index(idx)
+
+    def _on_order_token_clicked(self, idx: int) -> None:
+        if 0 <= idx < self.order_list.count():
+            item = self.order_list.item(idx)
+            if item is not None:
+                self.order_list.setCurrentItem(item)
+                self._on_order_item_clicked(item)
+        self._show_token_usage_for_index(idx)
+
+    def _show_token_usage_for_index(self, idx: int) -> None:
+        if idx < 0 or idx >= len(self._generated_codes_by_index):
+            QMessageBox.information(self, "토큰 사용량", "선택된 코드 항목이 없습니다.")
+            return
+        tokens = 0
+        if idx < len(self._generated_tokens_by_index):
+            tokens = max(0, int(self._generated_tokens_by_index[idx] or 0))
+        if tokens <= 0:
+            QMessageBox.information(self, "토큰 사용량", "아직 집계된 토큰 사용량이 없습니다.")
+            return
+        title = f"{idx + 1}번 항목"
+        if idx < len(self.selected_images):
+            title = f"{idx + 1}. {self._upload_item_display_name(self.selected_images[idx])}"
+        usage_records: list[dict[str, object]] = []
+        if idx < len(self._generated_usage_records_by_index):
+            usage_records = list(self._generated_usage_records_by_index[idx] or [])
+        dlg = TokenUsageBreakdownDialog(
+            self,
+            tier=self.profile_plan or "Free",
+            item_title=title,
+            usage_records=usage_records,
+            fallback_total=tokens,
+        )
+        dlg.exec()
 
     def _type_code_for_index(self, idx: int) -> None:
         if idx < 0 or idx >= len(self._generated_codes_by_index):
@@ -6292,15 +6695,11 @@ class TypingWorker(QThread):
                         or HwpController.get_current_filename()
                         or HwpController.get_last_detected_filename()
                     )
-                    if not resolved_target:
-                        self.error.emit(
-                            "활성 HWP 문서를 찾지 못했습니다. "
-                            "타이핑할 문서를 선택한 뒤 다시 시도해 주세요."
-                        )
-                        return
                     if controller is None:
                         controller = HwpController()
                         controller.connect()
+                        if not resolved_target:
+                            resolved_target = controller.get_active_document_name() or None
                         t_font, t_size, e_font, e_size = self._snapshot_typing_styles()
                         style_snapshot = (t_font, t_size, e_font, e_size)
                         controller.activate_target_window(resolved_target)
@@ -6344,6 +6743,8 @@ class TypingWorker(QThread):
                         try:
                             controller = HwpController()
                             controller.connect()
+                            if not resolved_target:
+                                resolved_target = controller.get_active_document_name() or None
                             controller.activate_target_window(resolved_target)
                             t_font, t_size, e_font, e_size = self._snapshot_typing_styles()
                             style_snapshot = (t_font, t_size, e_font, e_size)
@@ -6373,6 +6774,8 @@ class TypingWorker(QThread):
                         try:
                             controller = HwpController()
                             controller.connect()
+                            if not resolved_target:
+                                resolved_target = controller.get_active_document_name() or None
                             controller.activate_target_window(resolved_target)
                             t_font, t_size, e_font, e_size = self._snapshot_typing_styles()
                             style_snapshot = (t_font, t_size, e_font, e_size)
@@ -6578,6 +6981,7 @@ class OrderListDelegate(QStyledItemDelegate):
     delete_clicked = Signal(int)
     retype_clicked = Signal(int)
     view_clicked = Signal(int)
+    token_clicked = Signal(int)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -6588,6 +6992,7 @@ class OrderListDelegate(QStyledItemDelegate):
         self._delete_icon = _material_icon(_MI_DELETE, size=16, color=QColor("#9ca3af"))
         self._retype_icon = _material_icon(_MI_RETYPE, size=16, color=QColor("#9ca3af"))
         self._view_icon = _material_icon(_MI_CODE, size=16, color=QColor("#9ca3af"))
+        self._token_icon = _material_icon(_MI_BAR_CHART, size=16, color=QColor("#9ca3af"))
 
     def advance(self) -> None:
         self._phase += 0.25
@@ -6599,6 +7004,11 @@ class OrderListDelegate(QStyledItemDelegate):
         delete_x = rect.x() + rect.width() - self._icon_padding - self._icon_size
         retype_x = delete_x - self._icon_gap - self._icon_size
         view_x = retype_x - self._icon_gap - self._icon_size
+        token_x = view_x - self._icon_gap - self._icon_size
+        painter.drawPixmap(
+            QRect(token_x, icon_y, self._icon_size, self._icon_size),
+            self._token_icon.pixmap(self._icon_size, self._icon_size),
+        )
         painter.drawPixmap(
             QRect(view_x, icon_y, self._icon_size, self._icon_size),
             self._view_icon.pixmap(self._icon_size, self._icon_size),
@@ -6634,7 +7044,7 @@ class OrderListDelegate(QStyledItemDelegate):
                 base_color = QColor(40, 40, 40)
 
         # Prepare text rect.
-        icon_area = (self._icon_size * 3) + (self._icon_gap * 2) + self._icon_padding
+        icon_area = (self._icon_size * 4) + (self._icon_gap * 3) + self._icon_padding
         rect = opt.rect.adjusted(8, 0, -(8 + icon_area), 0)
         fm = opt.fontMetrics
         y = rect.y() + (rect.height() + fm.ascent() - fm.descent()) // 2
@@ -6707,10 +7117,15 @@ class OrderListDelegate(QStyledItemDelegate):
             delete_x = full_rect.x() + full_rect.width() - self._icon_padding - self._icon_size
             retype_x = delete_x - self._icon_gap - self._icon_size
             view_x = retype_x - self._icon_gap - self._icon_size
+            token_x = view_x - self._icon_gap - self._icon_size
             delete_rect = QRect(delete_x, icon_y, self._icon_size, self._icon_size)
             retype_rect = QRect(retype_x, icon_y, self._icon_size, self._icon_size)
             view_rect = QRect(view_x, icon_y, self._icon_size, self._icon_size)
+            token_rect = QRect(token_x, icon_y, self._icon_size, self._icon_size)
             pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
+            if token_rect.contains(pos):
+                self.token_clicked.emit(index.row())
+                return True
             if delete_rect.contains(pos):
                 self.delete_clicked.emit(index.row())
                 return True
@@ -6738,28 +7153,35 @@ def _load_app_fonts() -> None:
                 QFontDatabase.addApplicationFont(str(ff))
 
 
-def _clear_win32com_cache() -> None:
-    """Remove corrupted win32com gen_py cache to prevent black console popups."""
+def _prepare_win32com_cache() -> None:
+    """Ensure win32com cache package files exist before COM wrappers are generated."""
     try:
         import win32com  # type: ignore
-        import shutil
 
         cache_dir = getattr(win32com, "__gen_path__", None)
-        if cache_dir and Path(cache_dir).exists():
-            shutil.rmtree(cache_dir, ignore_errors=True)
+        if not cache_dir:
+            return
+        cache_path = Path(cache_dir)
+        package_paths = [cache_path]
+        if cache_path.name and cache_path.name != "gen_py":
+            package_paths.append(cache_path.parent)
+        for package_path in package_paths:
+            package_path.mkdir(parents=True, exist_ok=True)
+            init_file = package_path / "__init__.py"
+            if not init_file.exists():
+                init_file.write_text("# auto-generated by Nova AI\n", encoding="utf-8")
     except Exception:
         pass
 
 
-def _clear_comtypes_cache() -> None:
-    """Remove stale comtypes generated wrappers that can trigger console popups."""
+def _prepare_comtypes_cache() -> None:
+    """Ensure comtypes wrapper cache directory exists without deleting it."""
     try:
         import comtypes.client  # type: ignore
-        import shutil
 
         cache_dir = getattr(comtypes.client, "gen_dir", None)
-        if cache_dir and Path(cache_dir).exists():
-            shutil.rmtree(cache_dir, ignore_errors=True)
+        if cache_dir:
+            Path(cache_dir).mkdir(parents=True, exist_ok=True)
     except Exception:
         pass
 
@@ -6970,8 +7392,8 @@ def _maybe_show_update_notice(parent: QWidget) -> None:
 
 
 def main() -> None:
-    _clear_win32com_cache()
-    _clear_comtypes_cache()
+    _prepare_win32com_cache()
+    _prepare_comtypes_cache()
     _load_runtime_env_files()
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
