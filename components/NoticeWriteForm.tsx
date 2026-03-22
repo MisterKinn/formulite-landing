@@ -18,6 +18,7 @@ export default function NoticeWriteForm({
     const router = useRouter();
     const { user, loading } = useAuth();
     const [hasAdminSession, setHasAdminSession] = useState(false);
+    const [adminSessionChecked, setAdminSessionChecked] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [form, setForm] = useState({
@@ -28,8 +29,15 @@ export default function NoticeWriteForm({
     });
 
     useEffect(() => {
-        const token = sessionStorage.getItem(ADMIN_SESSION_STORAGE_KEY);
-        setHasAdminSession(Boolean(token));
+        const syncAdminSession = () => {
+            const token = sessionStorage.getItem(ADMIN_SESSION_STORAGE_KEY);
+            setHasAdminSession(Boolean(token));
+            setAdminSessionChecked(true);
+        };
+
+        syncAdminSession();
+        window.addEventListener("storage", syncAdminSession);
+        return () => window.removeEventListener("storage", syncAdminSession);
     }, []);
 
     const isAdminUser = useMemo(() => {
@@ -38,10 +46,10 @@ export default function NoticeWriteForm({
     }, [hasAdminSession, user?.email]);
 
     useEffect(() => {
-        if (!loading && !isAdminUser) {
+        if (!loading && adminSessionChecked && !isAdminUser) {
             router.replace("/login");
         }
-    }, [isAdminUser, loading, router]);
+    }, [adminSessionChecked, isAdminUser, loading, router]);
 
     const getAuthorizationHeader = async () => {
         if (user?.email && ADMIN_EMAILS.includes(user.email.toLowerCase())) {
@@ -110,7 +118,7 @@ export default function NoticeWriteForm({
         }
     };
 
-    if (loading || !isAdminUser) {
+    if (loading || !adminSessionChecked || !isAdminUser) {
         return (
             <div className="notice-write-card">
                 <p className="notice-write-helper">권한을 확인하고 있습니다.</p>

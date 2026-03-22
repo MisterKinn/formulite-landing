@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
+const ESTIMATED_TOKENS_PER_REQUEST = 25000;
+
 /**
  * Example API endpoint that uses AI call limits
  * POST /api/ai/generate
@@ -62,7 +64,7 @@ export async function POST(request: NextRequest) {
             {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ userId }),
+                body: JSON.stringify({ userId, amount: ESTIMATED_TOKENS_PER_REQUEST }),
             }
         );
 

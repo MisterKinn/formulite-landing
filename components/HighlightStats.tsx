@@ -24,7 +24,7 @@ const highlightStats: HighlightStat[] = [
         eyebrow: "월 운영 비용",
         value: "29,900",
         unit: "원",
-        caption: "월 330문제 기준 요금제",
+        caption: "월 220문제 기준 요금제",
     },
     {
         eyebrow: "작업 가능 시간",

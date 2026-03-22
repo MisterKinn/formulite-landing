@@ -113,22 +113,25 @@ def _normalize_plan_tier(value: Any, fallback: str = "free") -> str:
     return _PLAN_ALIASES.get(raw, fallback)
 
 
-# Plan/Tier Limits (monthly AI calls)
+# Token budget configuration.
+ESTIMATED_TOKENS_PER_PROBLEM = 25000
+
+# Plan/Tier Limits (monthly AI tokens)
 PLAN_LIMITS = {
-    "free": 5,
-    "Free": 5,
-    "go": 110,
-    "Go": 110,
-    "standard": 330,
-    "Standard": 330,
-    "plus": 330,
-    "Plus": 330,
-    "pro": 2200,
-    "Pro": 2200,
-    "ultra": 2200,
-    "Ultra": 2200,
-    "test": 330,
-    "Test": 330,
+    "free": 3 * ESTIMATED_TOKENS_PER_PROBLEM,
+    "Free": 3 * ESTIMATED_TOKENS_PER_PROBLEM,
+    "go": 66 * ESTIMATED_TOKENS_PER_PROBLEM,
+    "Go": 66 * ESTIMATED_TOKENS_PER_PROBLEM,
+    "standard": 220 * ESTIMATED_TOKENS_PER_PROBLEM,
+    "Standard": 220 * ESTIMATED_TOKENS_PER_PROBLEM,
+    "plus": 220 * ESTIMATED_TOKENS_PER_PROBLEM,
+    "Plus": 220 * ESTIMATED_TOKENS_PER_PROBLEM,
+    "pro": 1320 * ESTIMATED_TOKENS_PER_PROBLEM,
+    "Pro": 1320 * ESTIMATED_TOKENS_PER_PROBLEM,
+    "ultra": 1320 * ESTIMATED_TOKENS_PER_PROBLEM,
+    "Ultra": 1320 * ESTIMATED_TOKENS_PER_PROBLEM,
+    "test": 220 * ESTIMATED_TOKENS_PER_PROBLEM,
+    "Test": 220 * ESTIMATED_TOKENS_PER_PROBLEM,
 }
 
 ADMIN_UNLIMITED_EMAIL = "admin@gmail.com"
@@ -185,6 +188,52 @@ def _resolve_usage_api_base_url() -> str:
     return str(base).rstrip("/")
 
 
+def record_ai_usage_log(
+    uid: str,
+    *,
+    model: str,
+    provider: str = "gemini",
+    feature: str = "typing",
+    source: str = "desktop",
+    prompt_tokens: int = 0,
+    output_tokens: int = 0,
+    total_tokens: int = 0,
+    created_at: Optional[str] = None,
+) -> bool:
+    if not REQUESTS_AVAILABLE:
+        return False
+    if not uid:
+        return False
+
+    try:
+        base = _resolve_usage_api_base_url()
+        url = f"{base}/api/ai/usage-history"
+        headers = {"Content-Type": "application/json"}
+        id_token = get_valid_id_token() or refresh_id_token()
+        if id_token:
+            headers["Authorization"] = f"Bearer {id_token}"
+
+        response = requests.post(
+            url,
+            json={
+                "userId": uid,
+                "model": model,
+                "provider": provider,
+                "feature": feature,
+                "source": source,
+                "promptTokens": max(0, int(prompt_tokens or 0)),
+                "outputTokens": max(0, int(output_tokens or 0)),
+                "totalTokens": max(0, int(total_tokens or 0)),
+                "createdAt": created_at or datetime.utcnow().isoformat() + "Z",
+            },
+            timeout=10,
+            headers=headers,
+        )
+        return response.status_code == 200
+    except Exception:
+        return False
+
+
 def _sync_cached_user_plan(plan: Any) -> None:
     normalized = _normalize_plan_tier(plan, "free")
     user = get_stored_user()
@@ -238,7 +287,10 @@ def _fetch_usage_status_from_web(uid: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def _increment_usage_via_web(uid: str) -> Optional[Dict[str, Any]]:
+def _increment_usage_via_web(
+    uid: str,
+    amount: int = ESTIMATED_TOKENS_PER_PROBLEM,
+) -> Optional[Dict[str, Any]]:
     if not REQUESTS_AVAILABLE:
         return None
     if not uid:
@@ -249,7 +301,7 @@ def _increment_usage_via_web(uid: str) -> Optional[Dict[str, Any]]:
         url = f"{base}/api/ai/increment-usage"
         response = requests.post(
             url,
-            json={"userId": uid},
+            json={"userId": uid, "amount": amount},
             timeout=10,
             headers={"Content-Type": "application/json"},
         )
@@ -461,6 +513,16 @@ def _save_local_usage(data: Dict[str, Any]) -> None:
         pass
 
 
+def _normalize_usage_value(raw_usage: Any) -> int:
+    try:
+        usage = max(0, int(raw_usage or 0))
+    except Exception:
+        return 0
+    if usage < 10000:
+        return usage * ESTIMATED_TOKENS_PER_PROBLEM
+    return usage
+
+
 def get_valid_id_token() -> Optional[str]:
     """
     Get a valid Firebase ID token, refreshing if expired.
@@ -546,7 +608,7 @@ def refresh_user_profile_from_firebase() -> Optional[Dict[str, Any]]:
         (usage_status or {}).get("plan"),
         _normalize_plan_tier(user.get("plan") or user.get("tier"), "free"),
     )
-    usage_count = int((usage_status or {}).get("currentUsage") or 0)
+    usage_count = _normalize_usage_value((usage_status or {}).get("currentUsage") or 0)
 
     # When Firestore returns repeated 403s in packaged environments,
     # skip aggressive retries for a short cooldown window.
@@ -622,7 +684,7 @@ def refresh_user_profile_from_firebase() -> Optional[Dict[str, Any]]:
                 "aiCallUsage": (
                     usage_count
                     if usage_status is not None
-                    else get_value(fields.get("aiCallUsage", {})) or 0
+                    else _normalize_usage_value(get_value(fields.get("aiCallUsage", {})) or 0)
                 ),
             }
             
@@ -716,7 +778,7 @@ def get_user_profile(uid: str) -> Optional[Dict[str, Any]]:
 
 def get_ai_usage(uid: str) -> int:
     """
-    Get current AI call usage count for the user.
+    Get current AI token usage for the user.
     Uses cached data if available and fresh, otherwise fetches from Firebase.
     """
     if not uid:
@@ -740,7 +802,7 @@ def get_ai_usage(uid: str) -> int:
     # Try to get from Firebase
     profile = refresh_user_profile_from_firebase()
     if profile:
-        usage = profile.get("aiCallUsage", 0)
+        usage = _normalize_usage_value(profile.get("aiCallUsage", 0))
         _firebase_cache["usage"] = usage
         _firebase_cache["last_refresh"] = now
         return usage
@@ -767,7 +829,7 @@ def force_refresh_usage() -> int:
     return 0
 
 
-def increment_ai_usage(uid: str, amount: int = 1) -> bool:
+def increment_ai_usage(uid: str, amount: int = ESTIMATED_TOKENS_PER_PROBLEM) -> bool:
     """
     Atomically increment aiCallUsage field in Firestore.
     Called each time user makes an AI request.
@@ -784,17 +846,11 @@ def increment_ai_usage(uid: str, amount: int = 1) -> bool:
         return True
 
     # 1) Canonical source: website usage API (same logic as web app)
-    web_result = None
-    remaining_amount = amount
-    for _ in range(amount):
-        web_result = _increment_usage_via_web(uid)
-        if web_result is None:
-            break
-        remaining_amount -= 1
-        if not bool(web_result.get("canUse")):
-            return False
-    if remaining_amount <= 0:
+    web_result = _increment_usage_via_web(uid, amount=amount)
+    if web_result is not None:
         return bool(web_result.get("canUse"))
+
+    remaining_amount = amount
 
     # 2) Fallback Firestore/local
     if not REQUESTS_AVAILABLE:
@@ -824,7 +880,7 @@ def increment_ai_usage(uid: str, amount: int = 1) -> bool:
             
             if "aiCallUsage" in fields:
                 val = fields["aiCallUsage"].get("integerValue", 0)
-                current_usage = int(val)
+                current_usage = _normalize_usage_value(val)
             
             # Update with incremented value
             new_usage = current_usage + remaining_amount
@@ -871,7 +927,7 @@ def increment_ai_usage(uid: str, amount: int = 1) -> bool:
                 current_usage = 0
                 if "aiCallUsage" in fields:
                     val = fields["aiCallUsage"].get("integerValue", 0)
-                    current_usage = int(val)
+                    current_usage = _normalize_usage_value(val)
                 new_usage = current_usage + remaining_amount
                 update_url = f"{retry_doc_url}?updateMask.fieldPaths=aiCallUsage"
                 payload = {
@@ -913,7 +969,7 @@ def _increment_local_usage(amount: int = 1) -> bool:
 
 def get_remaining_usage(uid: str, tier: str = "free") -> int:
     """
-    Get remaining AI calls for today.
+    Get remaining AI tokens for the current billing period.
     """
     if _is_admin_unlimited_user(uid):
         # Large sentinel value to represent "practically unlimited".
@@ -928,9 +984,9 @@ def get_remaining_usage(uid: str, tier: str = "free") -> int:
     return max(0, int(limit) - int(current_usage))
 
 
-def check_usage_limit(uid: str, tier: str = "Free", amount: int = 1) -> bool:
+def check_usage_limit(uid: str, tier: str = "Free", amount: int = ESTIMATED_TOKENS_PER_PROBLEM) -> bool:
     """
-    Check if user has remaining AI calls.
+    Check if user has enough remaining AI tokens.
     Returns True if user can make more calls.
     """
     try:
@@ -947,9 +1003,9 @@ def check_usage_limit(uid: str, tier: str = "Free", amount: int = 1) -> bool:
 
 
 def get_plan_limit(tier: str) -> int:
-    """Get the daily limit for a given plan/tier."""
+    """Get the monthly token limit for a given plan/tier."""
     normalized = _normalize_plan_tier(tier, "free")
-    return PLAN_LIMITS.get(normalized, PLAN_LIMITS.get("free", 5))
+    return PLAN_LIMITS.get(normalized, PLAN_LIMITS.get("free", 3 * ESTIMATED_TOKENS_PER_PROBLEM))
 
 
 def register_desktop_device_session(

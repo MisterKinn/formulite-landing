@@ -678,6 +678,12 @@
     gap: 16px;
 }
 
+.danger-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
 .danger-info {
     display: flex;
     flex-direction: column;
@@ -703,6 +709,126 @@
     color: #97a2b8;
     background: rgba(255, 255, 255, 0.03);
     border: 1px dashed rgba(255, 255, 255, 0.08);
+}
+
+.danger-btn-secondary {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.1);
+    color: #e6edf8;
+}
+
+.danger-btn-secondary:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.18);
+}
+
+.profile-modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(3, 7, 12, 0.78);
+    backdrop-filter: blur(10px);
+}
+
+.profile-modal-card {
+    width: min(760px, 100%);
+    max-height: min(80vh, 820px);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 24px;
+    border-radius: 28px;
+    border: 1px solid rgba(151, 166, 196, 0.18);
+    background: rgba(12, 16, 22, 0.98);
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.38);
+}
+
+.profile-modal-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.profile-modal-head h3 {
+    margin: 0;
+    color: #fff;
+    font-size: 1.1rem;
+    font-weight: 800;
+}
+
+.profile-modal-head p {
+    margin: 8px 0 0;
+    color: #97a2b8;
+    font-size: 0.875rem;
+    line-height: 1.6;
+}
+
+.profile-modal-close {
+    padding: 10px 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.04);
+    color: #e6edf8;
+    font-size: 0.875rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.profile-modal-close:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.profile-usage-history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow-y: auto;
+}
+
+.profile-usage-history-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 16px 18px;
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.profile-usage-history-main,
+.profile-usage-history-side {
+    min-width: 0;
+}
+
+.profile-usage-history-title {
+    display: block;
+    color: #fff;
+    font-size: 0.95rem;
+    font-weight: 700;
+}
+
+.profile-usage-history-meta {
+    margin: 6px 0 0;
+    color: #97a2b8;
+    font-size: 0.8125rem;
+    line-height: 1.6;
+}
+
+.profile-usage-history-side {
+    text-align: right;
+    flex-shrink: 0;
+}
+
+.profile-usage-history-side strong {
+    color: #9fc3ff;
+    font-size: 0.95rem;
+    font-weight: 800;
 }
 
 .profile-payment-list {
@@ -896,8 +1022,13 @@
 
     .profile-subscription-actions .profile-btn,
     .profile-action-row .profile-btn,
-    .danger-btn {
+    .danger-btn,
+    .danger-actions,
+    .profile-usage-history-row,
+    .profile-modal-head {
         width: 100%;
+        flex-direction: column;
+        align-items: stretch;
     }
 
     .profile-cancel-sub-tooltip {

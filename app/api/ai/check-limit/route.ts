@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import getFirebaseAdmin from "@/lib/firebaseAdmin";
-import { getTierLimit } from "@/lib/tierLimits";
 import {
     buildUsageResetFields,
+    getStoredUsageTokens,
     inferPaidPlanFromPayment,
+    needsUsageResetFromLimitMigration,
     needsUsageResetFromPayment,
+    resolveEffectiveUsageLimit,
     resolveEffectiveUsagePlan,
 } from "@/lib/aiUsage";
 import { PlanTier } from "@/lib/tierLimits";
@@ -118,6 +120,7 @@ export async function GET(request: NextRequest) {
         const userRef = db.collection("users").doc(userId);
         let userDoc = await userRef.get();
         const nowIso = new Date().toISOString();
+        const now = new Date();
 
         // Recover from legacy/broken state: payments exist but root user doc is missing.
         if (!userDoc.exists) {
@@ -127,6 +130,7 @@ export async function GET(request: NextRequest) {
                     plan: inferredFromPayments.plan,
                     tier: inferredFromPayments.plan,
                     aiCallUsage: 0,
+                    aiUsageMode: "tokens",
                     usageResetAt: inferredFromPayments.resetAt || nowIso,
                     createdAt: nowIso,
                     updatedAt: nowIso,
@@ -142,19 +146,34 @@ export async function GET(request: NextRequest) {
             userData as Record<string, any>,
         );
         const plan = planResolved.plan;
-        let currentUsage = userData.aiCallUsage || 0;
+        let currentUsage = getStoredUsageTokens(userData as Record<string, any>);
         const resetDecision = needsUsageResetFromPayment(
             userData as Record<string, any>,
             plan,
         );
+        const migrationResetDecision = needsUsageResetFromLimitMigration(
+            userData as Record<string, any>,
+            now,
+        );
 
-        const resetAt = resetDecision.resetAt || planResolved.resetAt;
-        if (resetDecision.shouldReset || (!!resetAt && plan !== "free")) {
+        const resetAt =
+            migrationResetDecision.resetAt ||
+            resetDecision.resetAt ||
+            planResolved.resetAt;
+        if (
+            migrationResetDecision.shouldReset ||
+            resetDecision.shouldReset ||
+            (!!resetAt && plan !== "free")
+        ) {
             await userDoc.ref.update(buildUsageResetFields(resetAt));
             currentUsage = 0;
         }
 
-        const limit = getTierLimit(plan);
+        const limit = resolveEffectiveUsageLimit(
+            userData as Record<string, any>,
+            plan,
+            now,
+        );
         const canUse = currentUsage < limit;
 
         return NextResponse.json({
@@ -164,6 +183,7 @@ export async function GET(request: NextRequest) {
             limit,
             remaining: Math.max(0, limit - currentUsage),
             canUse,
+            usageUnit: "tokens",
         }, {
             headers: {
                 "Cache-Control": "no-store, no-cache, must-revalidate",

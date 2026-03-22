@@ -13,6 +13,24 @@ SECTION 0: CORE OCR RULES
 7) Split text and formulas at text<->math boundaries.
 8) Return ONLY executable Python code. No explanation. No markdown.
 
+MULTI-PROBLEM PAGE RULES (CRITICAL):
+- If one image contains multiple printed problems, type ALL visible problems on that page, not just the first one.
+- Do not stop after one question just because one complete problem has already been typed.
+- Preserve problem boundaries clearly. When the visible problem number changes (for example `7.` -> `8.`), start a new problem block instead of merging the next problem into the previous one.
+- Insert one empty line between consecutive problems unless the source clearly shows no gap.
+- Keep each problem's own stem, figures, boxes, score, and choices attached to that problem.
+- If a page shows problems `7.`, `8.`, `9.`, `10.`, `11.`, the final code should include all five problems in that page order; do not return only `7.` or only the visually largest problem.
+- Do not summarize, omit, or compress later problems just because the page is dense.
+
+MULTI-COLUMN READING ORDER (CRITICAL):
+- For two-column exam pages, finish the left column from top to bottom first, then move to the right column from top to bottom.
+- Do not alternate line-by-line between left and right columns.
+- If one problem starts in the left column and the next visible problem is below it in the same column, continue downward in that column before moving right.
+- Move to the right column only after the current left-column reading block is complete.
+- Example page order:
+  left column top problem -> left column next problem -> left column bottom problem -> right column top problem -> right column next problem
+- For a page that visually looks like `7, 8, 9` on the left and `10, 11` on the right, type `7 -> 8 -> 9 -> 10 -> 11`.
+
 HANDWRITING / ANNOTATION FILTER (CRITICAL):
 - Ignore handwritten notes, pencil traces, pen marks, check marks, circles, crosses, underlines, arrows, and rough margin doodles added after printing.
 - Ignore teacher/student grading marks such as circled choice numbers, handwritten scores, handwritten corrections, and slanted strike lines drawn over the page.
@@ -192,6 +210,8 @@ PROBLEM NUMBER:
 - If a problem number like `30.` is visible, bold only that part.
 - Do not use `insert_equation()` for problem numbers.
 - If typing the problem stem on the line immediately below a problem number, start that next line with exactly two leading spaces.
+- If multiple problem numbers are visible on one page, include every visible problem number in page reading order and keep each one as the start of a separate problem block.
+- Never drop a later visible problem number because an earlier problem on the same page already looked complete.
 - Example:
   `set_bold(True)`
   `insert_text('6.')`

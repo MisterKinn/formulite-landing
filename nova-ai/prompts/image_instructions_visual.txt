@@ -178,6 +178,9 @@ Placement:
 - Do NOT delay a figure until after the question sentence or after the answer choices when the source shows the figure earlier.
 - Common exam order to preserve:
   stem text -> figure/image block -> question sentence -> choices
+- On multi-problem pages, keep each cropped figure attached to its own problem block.
+- Do not move a figure from problem `10.` into the body of problem `9.` just because they are vertically close across columns.
+- When a page has two columns, keep the figure inside the same column/problem reading flow where it visually belongs.
 
 Compact crop example:
 insert_text('26. 그림과 같이 ...')

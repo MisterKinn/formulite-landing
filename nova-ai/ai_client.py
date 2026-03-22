@@ -30,11 +30,14 @@ from backend.firebase_profile import (
     increment_ai_usage,
     get_remaining_usage,
     get_plan_limit,
+    record_ai_usage_log,
 )
 
 
 MAX_IMAGE_DIM = 2048  # Higher cap to improve recognition
 DEFAULT_GEMINI_MODEL = "gemini-2.5-pro"
+ESTIMATED_TOKENS_PER_PROBLEM = 25000
+ESTIMATED_TOKENS_PER_EXPLANATION = 25000
 
 
 SYSTEM_PROMPT = """
@@ -63,7 +66,7 @@ Use ONLY the following functions:
 - set_align_center_next_line()
 - set_align_right_next_line()
 - set_align_justify_next_line()
-- insert_cropped_image(x1_pct, y1_pct, x2_pct, y2_pct)  # rough normalized figure box from the source image (0.0–1.0); app refines with CV/OCR before insertion
+- insert_cropped_image(x1_norm, y1_norm, x2_norm, y2_norm)  # normalized figure box (0-1000 preferred; legacy 0.0-1.0 also accepted); app inserts with percent-based cropping
 
 Return ONLY Python code. No explanations.
 
@@ -209,6 +212,86 @@ def normalize_ai_error_message(message: str) -> str:
 
 
 class AIClient:
+    @staticmethod
+    def _coerce_usage_metadata_dict(response: object) -> dict[str, int]:
+        def _to_int(value: object) -> int:
+            try:
+                numeric = int(value or 0)
+                return max(0, numeric)
+            except Exception:
+                return 0
+
+        raw_usage = None
+        for attr_name in ("usage_metadata", "usageMetadata"):
+            try:
+                raw_usage = getattr(response, attr_name, None)
+            except Exception:
+                raw_usage = None
+            if raw_usage is not None:
+                break
+
+        usage_dict: dict[str, object] = {}
+        if raw_usage is not None:
+            if isinstance(raw_usage, dict):
+                usage_dict = raw_usage
+            else:
+                for attr_name in (
+                    "to_dict",
+                    "model_dump",
+                ):
+                    try:
+                        reader = getattr(raw_usage, attr_name, None)
+                        if callable(reader):
+                            payload = reader()
+                            if isinstance(payload, dict):
+                                usage_dict = payload
+                                break
+                    except Exception:
+                        continue
+                if not usage_dict:
+                    usage_dict = {
+                        "prompt_token_count": getattr(raw_usage, "prompt_token_count", 0),
+                        "candidates_token_count": getattr(raw_usage, "candidates_token_count", 0),
+                        "total_token_count": getattr(raw_usage, "total_token_count", 0),
+                    }
+
+        prompt_tokens = _to_int(
+            usage_dict.get("prompt_token_count") or usage_dict.get("promptTokenCount")
+        )
+        candidate_tokens = _to_int(
+            usage_dict.get("candidates_token_count")
+            or usage_dict.get("candidatesTokenCount")
+            or usage_dict.get("output_token_count")
+            or usage_dict.get("outputTokenCount")
+        )
+        total_tokens = _to_int(
+            usage_dict.get("total_token_count") or usage_dict.get("totalTokenCount")
+        )
+        if total_tokens <= 0:
+            total_tokens = prompt_tokens + candidate_tokens
+
+        return {
+            "prompt_tokens": prompt_tokens,
+            "candidate_tokens": candidate_tokens,
+            "total_tokens": total_tokens,
+        }
+
+    @staticmethod
+    def _estimate_total_tokens(
+        prompt: str,
+        result_text: str,
+        *,
+        image_path: Optional[str],
+        reasoning_effort: Optional[str],
+    ) -> int:
+        prompt_chars = len(prompt or "")
+        result_chars = len(result_text or "")
+        text_estimate = max(1, (prompt_chars + result_chars) // 4)
+        image_overhead = ESTIMATED_TOKENS_PER_PROBLEM if image_path else 2000
+        if str(reasoning_effort or "").strip().lower() == "high":
+            image_overhead = max(image_overhead, ESTIMATED_TOKENS_PER_EXPLANATION)
+        return max(text_estimate, image_overhead)
+
     def _create_genai_client(self):
         api_key = self.api_key or os.getenv("GEMINI_API_KEY")
         if not api_key:
@@ -288,6 +371,9 @@ class AIClient:
 
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
         self._check_usage = check_usage
+        self._last_usage_tokens = 0
+        self._pending_usage_tokens = 0
+        self._pending_usage_records: list[dict[str, object]] = []
 
     def _get_user_info(self) -> tuple[str | None, str]:
         """현재 사용자 정보 반환: (uid, tier)"""
@@ -296,7 +382,7 @@ class AIClient:
             return user.get("uid"), str(user.get("plan") or user.get("tier") or "free")
         return None, "free"
 
-    def _check_usage_limit(self) -> None:
+    def _check_usage_limit(self, estimated_tokens: int = ESTIMATED_TOKENS_PER_PROBLEM) -> None:
         """사용량 제한 체크"""
         if not self._check_usage:
             return
@@ -305,8 +391,9 @@ class AIClient:
         if not uid:
             return  # 비로그인 상태에서는 체크 안함
         
-        if not check_usage_limit(uid, tier):
+        if not check_usage_limit(uid, tier, amount=max(1, int(estimated_tokens))):
             limit = get_plan_limit(tier)
+            remaining = get_remaining_usage(uid, tier)
             normalized_tier = str(tier or "free").lower()
             tier_label = {
                 "free": "무료",
@@ -321,20 +408,20 @@ class AIClient:
             # 업그레이드 안내 메시지 (월 기준)
             upgrade_msg = ""
             if normalized_tier == "free":
-                upgrade_msg = "\n\n💡 Go 플랜으로 업그레이드하면 월 110회까지 사용 가능!"
+                upgrade_msg = "\n\n💡 Go 플랜으로 업그레이드하면 월 66회까지 사용 가능!"
             elif normalized_tier == "go":
-                upgrade_msg = "\n\n💡 Plus 플랜으로 업그레이드하면 월 330회까지 사용 가능!"
+                upgrade_msg = "\n\n💡 Plus 플랜으로 업그레이드하면 월 220회까지 사용 가능!"
             elif normalized_tier in ("plus", "standard", "test"):
-                upgrade_msg = "\n\n💡 Ultra 플랜으로 업그레이드하면 월 2200회까지 사용 가능!"
+                upgrade_msg = "\n\n💡 Ultra 플랜으로 업그레이드하면 월 1320회까지 사용 가능!"
 
             raise AIClientError(
-                f"⚠️ 월 사용량 한도 초과! ({limit}/{limit})\n"
+                f"⚠️ 월 토큰 한도 초과! (예상 필요: {estimated_tokens:,}, 남음: {remaining:,}, 한도: {limit:,})\n"
                 f"현재 플랜: {tier_label}"
                 f"{upgrade_msg}\n\n"
                 "nova-ai.work에서 플랜을 업그레이드하거나 결제 주기 초기화 후 다시 시도해주세요."
             )
 
-    def _record_usage(self) -> None:
+    def _record_usage(self, tokens: Optional[int] = None) -> None:
         """사용량 기록"""
         if not self._check_usage:
             return
@@ -342,8 +429,37 @@ class AIClient:
         uid, tier = self._get_user_info()
         if not uid:
             return
-        
-        increment_ai_usage(uid)
+
+        usage_tokens = max(
+            1,
+            int(tokens if tokens is not None else self._last_usage_tokens or ESTIMATED_TOKENS_PER_PROBLEM),
+        )
+        increment_ai_usage(uid, amount=usage_tokens)
+        for record in self.consume_pending_usage_records():
+            record_ai_usage_log(
+                uid,
+                model=str(record.get("model") or self.model),
+                provider=str(record.get("provider") or self.provider),
+                feature=str(record.get("feature") or "typing"),
+                source=str(record.get("source") or "desktop"),
+                prompt_tokens=int(record.get("prompt_tokens") or 0),
+                output_tokens=int(record.get("output_tokens") or 0),
+                total_tokens=int(record.get("total_tokens") or usage_tokens),
+                created_at=str(record.get("created_at") or ""),
+            )
+
+    def consume_pending_usage_tokens(self) -> int:
+        tokens = max(0, int(self._pending_usage_tokens or 0))
+        self._pending_usage_tokens = 0
+        return tokens
+
+    def get_pending_usage_tokens(self) -> int:
+        return max(0, int(self._pending_usage_tokens or 0))
+
+    def consume_pending_usage_records(self) -> list[dict[str, object]]:
+        records = list(self._pending_usage_records)
+        self._pending_usage_records = []
+        return records
 
     def _prepare_gemini_image(self, image_path: str):
         try:
@@ -430,6 +546,31 @@ class AIClient:
                     config=config,
                 )
             result_text = self._safe_gemini_response_text(response)
+            usage = self._coerce_usage_metadata_dict(response)
+            total_tokens = int(usage.get("total_tokens") or 0)
+            if total_tokens <= 0:
+                total_tokens = self._estimate_total_tokens(
+                    prompt,
+                    result_text,
+                    image_path=image_path,
+                    reasoning_effort=reasoning_effort,
+                )
+            self._last_usage_tokens = total_tokens
+            self._pending_usage_tokens += total_tokens
+            self._pending_usage_records.append(
+                {
+                    "model": model_name,
+                    "provider": self.provider,
+                    "feature": "typing_explanation"
+                    if str(reasoning_effort or "").strip().lower() == "high"
+                    else "typing_problem",
+                    "source": "desktop",
+                    "prompt_tokens": int(usage.get("prompt_tokens") or 0),
+                    "output_tokens": int(usage.get("candidate_tokens") or 0),
+                    "total_tokens": total_tokens,
+                    "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                }
+            )
         except AIClientError:
             raise
         except Exception as exc:
@@ -459,7 +600,12 @@ class AIClient:
         if not prompt.strip():
             return ""
 
-        self._check_usage_limit()
+        estimated_tokens = (
+            ESTIMATED_TOKENS_PER_EXPLANATION
+            if str(reasoning_effort or "").strip().lower() == "high"
+            else ESTIMATED_TOKENS_PER_PROBLEM
+        )
+        self._check_usage_limit(estimated_tokens=estimated_tokens)
         model_name = _normalize_model_name((model_override or self.model or "").strip() or self.model)
         retry_count_raw = (
             os.getenv("GEMINI_RETRY_COUNT")
@@ -507,7 +653,7 @@ class AIClient:
             raise AIClientError("Gemini 호출이 실패했습니다.")
 
         if result_text.strip():
-            self._record_usage()
+            self._record_usage(self._last_usage_tokens)
         return result_text.strip()
 
     def build_prompt(
@@ -531,9 +677,190 @@ class AIClient:
             parts.append(f"User request: {description}")
         else:
             parts.append(
-                "User request: Extract the printed exam content from the image, ignore handwritten annotations, and type it into HWP."
+                "User request: Extract all printed exam content from the image, ignore handwritten annotations, "
+                "and type it into HWP. If multiple problems are visible on the same page, include all of them "
+                "in reading order rather than only the first problem."
             )
         return "\n\n".join(parts)
+
+    @staticmethod
+    def _normalize_detected_region_box(raw_box: object) -> dict[str, float] | None:
+        if not isinstance(raw_box, dict):
+            return None
+        try:
+            ymin = float(raw_box.get("ymin", 0))
+            xmin = float(raw_box.get("xmin", 0))
+            ymax = float(raw_box.get("ymax", 0))
+            xmax = float(raw_box.get("xmax", 0))
+        except Exception:
+            return None
+
+        ymin, ymax = sorted((ymin, ymax))
+        xmin, xmax = sorted((xmin, xmax))
+        ymin = max(0.0, min(1000.0, ymin))
+        xmin = max(0.0, min(1000.0, xmin))
+        ymax = max(0.0, min(1000.0, ymax))
+        xmax = max(0.0, min(1000.0, xmax))
+        if ymax <= ymin or xmax <= xmin:
+            return None
+        return {
+            "ymin": ymin,
+            "xmin": xmin,
+            "ymax": ymax,
+            "xmax": xmax,
+        }
+
+    @classmethod
+    def _normalize_detected_regions_payload(
+        cls,
+        payload: object,
+        *,
+        allowed_types: tuple[str, ...],
+    ) -> list[dict[str, object]]:
+        normalized: list[dict[str, object]] = []
+        if not isinstance(payload, list):
+            return normalized
+        for item in payload:
+            if not isinstance(item, dict):
+                continue
+            region_type = str(item.get("type") or "").strip().lower()
+            if region_type not in allowed_types:
+                continue
+            box = cls._normalize_detected_region_box(item.get("box"))
+            if box is None:
+                continue
+            normalized.append({"type": region_type, "box": box})
+        normalized.sort(
+            key=lambda item: (
+                float(((item.get("box") or {}) if isinstance(item.get("box"), dict) else {}).get("ymin", 0.0)),
+                float(((item.get("box") or {}) if isinstance(item.get("box"), dict) else {}).get("xmin", 0.0)),
+            )
+        )
+        return normalized
+
+    def detect_regions_for_image(
+        self,
+        image_path: str,
+        *,
+        allowed_types: tuple[str, ...] = ("problem", "image", "choices"),
+    ) -> list[dict[str, object]]:
+        image_model = (
+            os.getenv("GEMINI_LAYOUT_MODEL")
+            or os.getenv("GEMINI_TYPING_MODEL")
+            or os.getenv("NOVA_AI_MODEL")
+            or "gemini-3-flash-preview"
+        ).strip()
+        retry_count_raw = (
+            os.getenv("GEMINI_RETRY_COUNT")
+            or os.getenv("NOVA_AI_GEMINI_RETRY_COUNT")
+            or "2"
+        ).strip()
+        try:
+            retry_count = max(0, int(retry_count_raw))
+        except Exception:
+            retry_count = 2
+
+        backoff_base_raw = (
+            os.getenv("GEMINI_RETRY_BACKOFF_SECONDS")
+            or os.getenv("NOVA_AI_GEMINI_RETRY_BACKOFF_SECONDS")
+            or "3"
+        ).strip()
+        try:
+            backoff_base = max(0.5, float(backoff_base_raw))
+        except Exception:
+            backoff_base = 3.0
+
+        last_exc: AIClientError | None = None
+        for attempt in range(retry_count + 1):
+            client = None
+            try:
+                from google.genai import types
+
+                box_schema = types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "ymin": types.Schema(type=types.Type.NUMBER),
+                        "xmin": types.Schema(type=types.Type.NUMBER),
+                        "ymax": types.Schema(type=types.Type.NUMBER),
+                        "xmax": types.Schema(type=types.Type.NUMBER),
+                    },
+                    required=["ymin", "xmin", "ymax", "xmax"],
+                    propertyOrdering=["ymin", "xmin", "ymax", "xmax"],
+                )
+                region_schema = types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "type": types.Schema(
+                            type=types.Type.STRING,
+                            enum=list(allowed_types),
+                        ),
+                        "box": box_schema,
+                    },
+                    required=["type", "box"],
+                    propertyOrdering=["type", "box"],
+                )
+                response_schema = types.Schema(
+                    type=types.Type.ARRAY,
+                    items=region_schema,
+                )
+                prompt = (
+                    "Analyze this Korean exam problem image and detect the major layout regions. "
+                    "Return one JSON array with bounding boxes for each visible region that matches the requested types. "
+                    f"Allowed region types: {', '.join(allowed_types)}. "
+                    "Use normalized coordinates from 0 to 1000, where (0,0) is the top-left and "
+                    "(1000,1000) is the bottom-right. "
+                    "Each item must contain a `type` and a `box` with `ymin`, `xmin`, `ymax`, `xmax`. "
+                    "Only return regions that are clearly visible in the image."
+                )
+                config = types.GenerateContentConfig(
+                    responseMimeType="application/json",
+                    responseSchema=response_schema,
+                    thinkingConfig=types.ThinkingConfig(thinkingLevel="low"),
+                )
+                client = self._create_genai_client()
+                response = client.models.generate_content(
+                    model=image_model,
+                    contents=[
+                        prompt,
+                        self._prepare_gemini_image_part(image_path, types),
+                    ],
+                    config=config,
+                )
+                raw_text = self._safe_gemini_response_text(response).strip()
+                if not raw_text:
+                    return []
+                cleaned = raw_text
+                if cleaned.startswith("```"):
+                    lines = cleaned.splitlines()
+                    if lines and lines[0].strip().startswith("```"):
+                        lines = lines[1:]
+                    if lines and lines[-1].strip() == "```":
+                        lines = lines[:-1]
+                    cleaned = "\n".join(lines).strip()
+                payload = json.loads(cleaned)
+                return self._normalize_detected_regions_payload(
+                    payload,
+                    allowed_types=allowed_types,
+                )
+            except AIClientError as exc:
+                last_exc = exc
+                if attempt >= retry_count or not _is_retryable_gemini_error(str(exc)):
+                    raise
+                time.sleep(backoff_base * (attempt + 1))
+            except Exception as exc:
+                last_exc = AIClientError(str(exc))
+                if attempt >= retry_count or not _is_retryable_gemini_error(str(exc)):
+                    raise AIClientError(str(exc)) from exc
+                time.sleep(backoff_base * (attempt + 1))
+            finally:
+                try:
+                    if client is not None:
+                        client.close()
+                except Exception:
+                    pass
+        if last_exc is not None:
+            raise last_exc
+        return []
 
     def generate_script_for_image(
         self, image_path: str, description: str = "", ocr_text: str = ""

@@ -36,6 +36,20 @@ interface PricingPlan {
 
 type BillingCycle = "monthly" | "yearly";
 
+const TOKENS_PER_PROBLEM = 25000;
+
+const formatTokenCount = (count: number) => `${count.toLocaleString()}토큰`;
+
+const formatTokenAllowance = (baseProblems: number, bonusProblems?: number) => {
+    const baseTokens = baseProblems * TOKENS_PER_PROBLEM;
+    if (!bonusProblems) {
+        return `총 ${formatTokenCount(baseTokens)} AI 타이핑 생성`;
+    }
+
+    const bonusTokens = bonusProblems * TOKENS_PER_PROBLEM;
+    return `월 ${formatTokenCount(baseTokens)}+${formatTokenCount(bonusTokens)} AI 타이핑 생성`;
+};
+
 const plans: PricingPlan[] = [
     {
         name: "Free 요금제",
@@ -45,7 +59,7 @@ const plans: PricingPlan[] = [
             yearly: "0",
         },
         features: [
-            "총 5회 AI 타이핑 생성",
+            formatTokenAllowance(3),
             "기본 수식 자동화",
             "자연어 기반 한글 문서 자동화 체험",
             "복수 계정 작업 불가능",
@@ -61,7 +75,7 @@ const plans: PricingPlan[] = [
             yearly: "8,330",
         },
         features: [
-            "월 100회+10회 AI 타이핑 생성",
+            formatTokenAllowance(60, 6),
             "고급 AI 모델",
             "코드 저장 & 재사용",
             "자연어 기반 한글 문서 자동화",
@@ -78,7 +92,7 @@ const plans: PricingPlan[] = [
             yearly: "20,930",
         },
         features: [
-            "월 300회+30회 AI 타이핑 생성",
+            formatTokenAllowance(200, 20),
             "고급 AI 모델",
             "코드 저장 & 재사용",
             "우선 지원 서비스",
@@ -96,7 +110,7 @@ const plans: PricingPlan[] = [
             yearly: "69,300",
         },
         features: [
-            "월 2000+200회 AI 타이핑 생성",
+            formatTokenAllowance(1200, 120),
             "고급 AI 모델",
             "OCR 이미지 인식 및 크롭·삽입 자동화",
             "팀 협업 기능",

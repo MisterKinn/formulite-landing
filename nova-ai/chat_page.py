@@ -2056,7 +2056,7 @@ class ChatWorker(QThread):
             "- exit_box()\n"
             "- insert_view_box()\n"
             "- insert_table(rows, cols, cell_data=[...], align_center=False, exit_after=True)  # only rows/cols positional\n"
-            "- insert_cropped_image(x1_pct, y1_pct, x2_pct, y2_pct)  # rough normalized figure box; app refines before insertion\n"
+            "- insert_cropped_image(x1_norm, y1_norm, x2_norm, y2_norm)  # normalized figure box (0-1000 preferred; legacy 0.0-1.0 also accepted); app inserts with percent-based cropping\n"
             '- insert_generated_image("path")\n'
             "- set_bold(True/False)\n"
             "- set_underline(True/False)\n\n"

@@ -40,6 +40,7 @@ export async function POST(request: NextRequest) {
 
         await userRef.update({
             aiCallUsage: 0,
+            aiUsageMode: "tokens",
             usageResetAt: new Date().toISOString(),
         });
 

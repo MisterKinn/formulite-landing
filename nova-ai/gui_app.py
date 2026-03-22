@@ -79,6 +79,7 @@ from backend.oauth_desktop import (
     logout_user,
 )
 from backend.firebase_profile import (
+    ESTIMATED_TOKENS_PER_PROBLEM,
     refresh_user_profile_from_firebase,
     get_ai_usage,
     increment_ai_usage,
@@ -89,6 +90,7 @@ from backend.firebase_profile import (
     register_desktop_device_session,
     is_desktop_session_active,
     PLAN_LIMITS,
+    record_ai_usage_log,
 )
 from runtime_env import can_connect, first_env_value, load_runtime_env, missing_env_keys
 
@@ -598,16 +600,25 @@ Preserve semantics and layout, but normalize rendering to clean exam-print style
     ) -> str:
         from PIL import Image  # type: ignore[import-not-found]
 
-        x1_pct, y1_pct, x2_pct, y2_pct = coords
+        x1_raw, y1_raw, x2_raw, y2_raw = coords
         img = load_pil_image(source_image_path, mode="RGB")
         w, h = img.size
-        x1 = max(0, min(int(x1_pct * w), w))
-        y1 = max(0, min(int(y1_pct * h), h))
-        x2 = max(0, min(int(x2_pct * w), w))
-        y2 = max(0, min(int(y2_pct * h), h))
+        max_coord = max(abs(float(x1_raw)), abs(float(y1_raw)), abs(float(x2_raw)), abs(float(y2_raw)))
+        scale = 1000.0 if max_coord > 1.5 else 1.0
+        x1_norm, x2_norm = sorted((float(x1_raw) / scale, float(x2_raw) / scale))
+        y1_norm, y2_norm = sorted((float(y1_raw) / scale, float(y2_raw) / scale))
+        x1_norm = max(0.0, min(1.0, x1_norm))
+        y1_norm = max(0.0, min(1.0, y1_norm))
+        x2_norm = max(0.0, min(1.0, x2_norm))
+        y2_norm = max(0.0, min(1.0, y2_norm))
+
+        x1 = max(0, min(int(round(x1_norm * w)), w))
+        y1 = max(0, min(int(round(y1_norm * h)), h))
+        x2 = max(0, min(int(round(x2_norm * w)), w))
+        y2 = max(0, min(int(round(y2_norm * h)), h))
         if x2 <= x1 or y2 <= y1:
             raise AIClientError(
-                f"크롭 좌표가 잘못되었습니다: ({x1_pct}, {y1_pct})-({x2_pct}, {y2_pct})"
+                f"크롭 좌표가 잘못되었습니다: ({x1_raw}, {y1_raw})-({x2_raw}, {y2_raw})"
             )
 
         refined = refine_content_rect(
@@ -672,6 +683,21 @@ Preserve semantics and layout, but normalize rendering to clean exam-print style
                 ],
                 config=types.GenerateContentConfig(response_modalities=["IMAGE"]),
             )
+            usage = AIClient._coerce_usage_metadata_dict(response)
+            total_tokens = int(usage.get("total_tokens") or ESTIMATED_TOKENS_PER_PROBLEM)
+            user = get_stored_user() or {}
+            uid = str(user.get("uid") or "").strip()
+            if uid:
+                record_ai_usage_log(
+                    uid,
+                    model=model_name,
+                    provider="gemini",
+                    feature="image_generation",
+                    source="desktop",
+                    prompt_tokens=int(usage.get("prompt_tokens") or 0),
+                    output_tokens=int(usage.get("candidate_tokens") or 0),
+                    total_tokens=total_tokens,
+                )
         except Exception as exc:
             raise AIClientError(f"Gemini 이미지 생성 실패: {exc}") from exc
         finally:
@@ -757,7 +783,7 @@ Preserve semantics and layout, but normalize rendering to clean exam-print style
             log_fn(f"[{idx}] Image generation complete: {generated_count} item(s)")
         if failed_count > 0:
             log_fn(f"[{idx}] Image generation fallback used for {failed_count} item(s)")
-        return "\n".join(lines), generated_count
+        return "\n".join(lines), generated_count * ESTIMATED_TOKENS_PER_PROBLEM
 
     @staticmethod
     def _strip_image_insertions(script: str) -> str:
@@ -930,319 +956,6 @@ Preserve semantics and layout, but normalize rendering to clean exam-print style
         crop.save(out_path, format="PNG")
         return str(out_path)
 
-    def _crop_box_body_to_file(
-        self,
-        source_image_path: str,
-        region: LayoutRegion,
-        *,
-        idx: int,
-        label: str,
-    ) -> str:
-        img = load_pil_image(source_image_path, mode="RGB")
-        x, y, w, h = region.bbox
-        inner_rect = refine_content_rect(
-            source_image_path,
-            (x + 4, y + 4, max(1, w - 8), max(1, h - 8)),
-            min_padding=4,
-        )
-        if inner_rect is None:
-            inner_rect = (x + 4, y + 4, max(1, w - 8), max(1, h - 8))
-
-        if region.kind == "view_box" and region.header_bbox is not None:
-            hx, hy, hw, hh = region.header_bbox
-            header_bottom = hy + hh + max(4, int(hh * 0.35))
-            ix, iy, iw, ih = inner_rect
-            body_top = max(iy, min(y + h - 1, header_bottom))
-            body_bottom = max(body_top + 1, min(y + h, iy + ih))
-            narrowed = (ix, body_top, iw, max(1, body_bottom - body_top))
-            refined_body_rect = refine_content_rect(
-                source_image_path,
-                narrowed,
-                min_padding=4,
-            )
-            if refined_body_rect is not None:
-                inner_rect = refined_body_rect
-            else:
-                inner_rect = narrowed
-
-        ix, iy, iw, ih = inner_rect
-        crop = img.crop((ix, iy, ix + iw, iy + ih))
-
-        tmp_dir = Path(tempfile.gettempdir()) / "nova_ai" / "region_crops"
-        tmp_dir.mkdir(parents=True, exist_ok=True)
-        safe_label = re.sub(r"[^a-z0-9_-]+", "_", label.lower()).strip("_") or "region"
-        out_path = tmp_dir / f"{safe_label}_{os.getpid()}_{idx}_{uuid.uuid4().hex[:8]}.png"
-        crop.save(out_path, format="PNG")
-        return str(out_path)
-
-    @staticmethod
-    def _layout_region_gap_lines(prev_region: LayoutRegion | None, next_region: LayoutRegion) -> list[str]:
-        if prev_region is None:
-            return []
-        prev_bottom = prev_region.bbox[1] + prev_region.bbox[3]
-        next_top = next_region.bbox[1]
-        gap = max(0, next_top - prev_bottom)
-        if gap >= 42:
-            return ["insert_enter()", "insert_enter()"]
-        if gap >= 12:
-            return ["insert_enter()"]
-        return []
-
-    @staticmethod
-    def _trim_script(text: str) -> str:
-        return "\n".join(line.rstrip() for line in str(text or "").splitlines() if line.strip()).strip()
-
-    @staticmethod
-    def _strip_region_level_directives(script: str) -> str:
-        kept: list[str] = []
-        for line in str(script or "").splitlines():
-            stripped = line.strip()
-            if stripped.startswith("SUBJECT ="):
-                continue
-            if stripped.startswith("FORMAT_TYPE ="):
-                continue
-            if stripped.startswith("MATH_CHOICES_EQUATION ="):
-                continue
-            kept.append(line)
-        return "\n".join(kept).strip()
-
-    @staticmethod
-    def _bbox_to_crop_percentages(
-        image_size: tuple[int, int],
-        bbox: tuple[int, int, int, int],
-    ) -> tuple[float, float, float, float]:
-        img_w, img_h = image_size
-        if img_w <= 0 or img_h <= 0:
-            return (0.0, 0.0, 1.0, 1.0)
-        x, y, w, h = bbox
-        x1 = max(0.0, min(1.0, x / img_w))
-        y1 = max(0.0, min(1.0, y / img_h))
-        x2 = max(0.0, min(1.0, (x + w) / img_w))
-        y2 = max(0.0, min(1.0, (y + h) / img_h))
-        return (x1, y1, x2, y2)
-
-    @staticmethod
-    def _looks_incomplete_region_layout(doc: LayoutDocument) -> bool:
-        if not doc.regions:
-            return True
-        kinds = [region.kind for region in doc.regions]
-        if len(doc.regions) == 1 and kinds[0] in {"box", "view_box"}:
-            return True
-        has_text = any(kind == "text" for kind in kinds)
-        has_image = any(kind == "image" for kind in kinds)
-        has_box = any(kind in {"box", "view_box"} for kind in kinds)
-        if has_box and not has_text and not has_image:
-            return True
-        return False
-
-    def _extract_region_ocr_hint(
-        self,
-        source_image_path: str,
-        bbox: tuple[int, int, int, int],
-        *,
-        max_chars: int = 1200,
-    ) -> str:
-        try:
-            crop_path = self._crop_absolute_bbox_to_file(
-                source_image_path,
-                bbox,
-                idx=0,
-                label="ocr_hint",
-            )
-            hint = extract_text(crop_path).strip()
-        except Exception:
-            hint = ""
-        compact = " ".join(hint.split()).strip()
-        if len(compact) <= max_chars:
-            return compact
-        return compact[: max_chars - 3].rstrip() + "..."
-
-    def _call_region_ai(
-        self,
-        *,
-        client: AIClient,
-        image_path: str,
-        description: str,
-        ocr_hint: str,
-        idx: int,
-        log_fn,
-        label: str,
-    ) -> str:
-        _log_label = f"[{idx}] {label}"
-        log_fn(f"{_log_label} AI region generation start")
-        raw = client.generate_script_for_image(
-            image_path,
-            description=description,
-            ocr_text=ocr_hint,
-        ) or ""
-        log_fn(f"{_log_label} AI region response length: {len(raw)}")
-        return self._trim_script(self._extract_code(raw))
-
-    def _generate_script_for_region(
-        self,
-        *,
-        client: AIClient,
-        source_image_path: str,
-        region: LayoutRegion,
-        idx: int,
-        log_fn,
-        depth: int = 0,
-        inside_template: str | None = None,
-    ) -> str:
-        label = f"region_{depth}_{region.kind}"
-        crop_path = self._crop_absolute_bbox_to_file(
-            source_image_path,
-            region.bbox,
-            idx=idx,
-            label=label,
-        )
-
-        if region.kind == "text":
-            ocr_hint = region.text_hint.strip()
-            if inside_template:
-                description = (
-                    "Generate minimal HWP automation code for ONLY this cropped text region. "
-                    f"This region belongs inside the already-opened `###` body of `{inside_template}`. "
-                    "Do not insert any outer template. "
-                    "Do not call `focus_placeholder(...)` or `exit_box()`. "
-                    "Preserve the visible top-to-bottom reading order inside the current box body only."
-                )
-            else:
-                description = (
-                    "Generate minimal HWP automation code for ONLY this cropped text region. "
-                    "This region is outside any box template. "
-                    "Do not insert `header.hwp`, `box.hwp`, `insert_box()`, `insert_view_box()`, "
-                    "`focus_placeholder(...)`, or `exit_box()`. "
-                    "Preserve the visible top-to-bottom reading order of this region only."
-                )
-            script = self._call_region_ai(
-                client=client,
-                image_path=crop_path,
-                description=description,
-                ocr_hint=ocr_hint,
-                idx=idx,
-                log_fn=log_fn,
-                label=label,
-            )
-            if inside_template:
-                script = self._strip_region_level_directives(script)
-            return script
-
-        if region.kind == "image":
-            img = load_pil_image(source_image_path, mode="RGB")
-            x1, y1, x2, y2 = self._bbox_to_crop_percentages(img.size, region.bbox)
-            return f"insert_cropped_image({x1:.6f}, {y1:.6f}, {x2:.6f}, {y2:.6f})"
-
-        if region.kind in {"box", "view_box"}:
-            template_name = "header.hwp" if region.kind == "view_box" else "box.hwp"
-            if region.children:
-                child_scripts: list[str] = []
-                prev_child: LayoutRegion | None = None
-                for child in region.children:
-                    child_script = self._generate_script_for_region(
-                        client=client,
-                        source_image_path=source_image_path,
-                        region=child,
-                        idx=idx,
-                        log_fn=log_fn,
-                        depth=depth + 1,
-                        inside_template=template_name,
-                    )
-                    child_script = self._trim_script(child_script)
-                    if not child_script:
-                        continue
-                    child_scripts.extend(self._layout_region_gap_lines(prev_child, child))
-                    child_scripts.append(child_script)
-                    prev_child = child
-                body_script = self._trim_script("\n".join(child_scripts))
-            else:
-                crop_path = self._crop_box_body_to_file(
-                    source_image_path,
-                    region,
-                    idx=idx,
-                    label=f"{label}_body",
-                )
-                try:
-                    ocr_hint = extract_text(crop_path).strip()
-                except Exception:
-                    ocr_hint = ""
-                compact_hint = " ".join(ocr_hint.split()).strip()
-                if len(compact_hint) > 1200:
-                    compact_hint = compact_hint[:1197].rstrip() + "..."
-                description = (
-                    "Generate HWP automation code for ONLY the content inside this cropped box body. "
-                    f"The caller already inserted `{template_name}` and already focused `###`. "
-                    "Do not insert the outer template again. "
-                    "Do not call `focus_placeholder('###')` or `exit_box()` for the outer box. "
-                    "Preserve the visible reading order inside this crop. "
-                    "If the crop contains a table, use `insert_table(...)`. "
-                    "If the crop contains a non-text visual region, use `insert_cropped_image(...)` only for that visual part."
-                )
-                body_script = self._call_region_ai(
-                    client=client,
-                    image_path=crop_path,
-                    description=description,
-                    ocr_hint=compact_hint,
-                    idx=idx,
-                    log_fn=log_fn,
-                    label=label,
-                )
-                body_script = self._strip_region_level_directives(body_script)
-            body_script = self._trim_script(body_script)
-            if not body_script:
-                return ""
-            return self._trim_script(
-                "\n".join(
-                    [
-                        f"insert_template('{template_name}')",
-                        "focus_placeholder('###')",
-                        body_script,
-                        "exit_box()",
-                    ]
-                )
-            )
-        return ""
-
-    def _generate_problem_code_via_regions(
-        self,
-        *,
-        idx: int,
-        image_path: str,
-        client: AIClient,
-        ocr_text_full: str,
-        log_fn,
-    ) -> str:
-        doc = analyze_layout(image_path)
-        log_fn(f"[{idx}] Region analysis complete: {len(doc.regions)} top-level region(s)")
-        for region_idx, region in enumerate(doc.regions, start=1):
-            log_fn(
-                f"[{idx}] Region {region_idx}: kind={region.kind}, bbox={region.bbox}, children={len(region.children)}"
-            )
-        if self._looks_incomplete_region_layout(doc):
-            log_fn(f"[{idx}] Region layout looks incomplete; fallback requested")
-            return ""
-        if not doc.regions:
-            return ""
-
-        scripts: list[str] = []
-        prev_region: LayoutRegion | None = None
-        for region in doc.regions:
-            script = self._generate_script_for_region(
-                client=client,
-                source_image_path=image_path,
-                region=region,
-                idx=idx,
-                log_fn=log_fn,
-                inside_template=None,
-            )
-            script = self._trim_script(script)
-            if not script:
-                continue
-            scripts.extend(self._layout_region_gap_lines(prev_region, region))
-            scripts.append(script)
-            prev_region = region
-        return self._trim_script("\n".join(scripts))
-
     def _generate_problem_code_single_pass(
         self,
         *,
@@ -1262,9 +975,12 @@ Preserve semantics and layout, but normalize rendering to clean exam-print style
                 "Generate the FULL HWP automation code for the ENTIRE problem in ONE pass. "
                 f"A container was detected and the most likely template is '{det.template}'. "
                 "If the visible layout matches, use the correct template and placeholder flow in the final script. "
-                "Return one complete script covering the problem statement, box content, score, and answer choices "
-                "together in natural reading order. Do NOT return partial scripts split into outside text, box body, "
-                "and choices."
+                "Return one complete script covering the full visible page content in natural reading order. "
+                "If the page contains multiple printed problems, include all visible problems in order instead of only one. "
+                "If the page is two-column, finish the left column top-to-bottom before moving to the right column. "
+                "For example, if the page shows 7, 8, 9 in the left column and 10, 11 in the right column, keep that order as 7 -> 8 -> 9 -> 10 -> 11. "
+                "Keep each problem's statement, box content, score, figure placement, and answer choices attached to that problem. "
+                "Do NOT return partial scripts split into outside text, box body, and choices."
             )
             try:
                 inside_img = crop_inside_rect(image_path, det.rect)
@@ -1295,6 +1011,8 @@ Preserve semantics and layout, but normalize rendering to clean exam-print style
                 "If that region is a real printed box containing text, a table, or an image, "
                 "prefer the `insert_template('box.hwp')` -> `focus_placeholder('###')` workflow "
                 "and place the boxed content inside that placeholder. "
+                "If multiple printed problems are visible on the page, include all of them in page reading order. "
+                "If the page is two-column, read the entire left column first and then the right column. "
                 "Use `header.hwp` only when literal '<보기>' text is visibly present."
             )
             try:
@@ -1321,7 +1039,9 @@ Preserve semantics and layout, but normalize rendering to clean exam-print style
                 "Generate the FULL HWP automation code for the ENTIRE problem in ONE pass. "
                 f"A container/header pattern was detected and the most likely template is '{det.template}'. "
                 "If the visible layout matches, use the correct template and placeholder flow in the final script. "
-                "Return one complete script for the whole problem, not partial scripts for separate regions."
+                "Return one complete script for the whole visible page content, not partial scripts for separate regions. "
+                "If the page contains multiple printed problems, include all of them in reading order. "
+                "For two-column pages, finish the left column first, then continue with the right column."
             )
             log_fn(f"[{idx}] Template hint enabled for single-pass generation")
         else:
@@ -1371,20 +1091,24 @@ Preserve semantics and layout, but normalize rendering to clean exam-print style
                 uid = str(user.get("uid") or "")
                 tier = str(user.get("plan") or user.get("tier") or "free")
                 generation_mode = getattr(self, "_generation_mode", "problem")
-                base_usage_cost = 2 if generation_mode == "problem_and_explanation" else 1
+                estimated_base_tokens = (
+                    ESTIMATED_TOKENS_PER_PROBLEM * 2
+                    if generation_mode == "problem_and_explanation"
+                    else ESTIMATED_TOKENS_PER_PROBLEM
+                )
 
-                if uid and not check_usage_limit(uid, tier, amount=base_usage_cost):
+                if uid and not check_usage_limit(uid, tier, amount=estimated_base_tokens):
                     limit = get_plan_limit(tier)
                     remaining = get_remaining_usage(uid, tier)
                     extra_hint = ""
                     if self._image_mode == "ai_generate":
                         extra_hint = (
                             "\nAI 이미지 생성 모드에서는 실제 이미지 생성이 성공한 건수만큼 "
-                            "건당 1크레딧이 추가 차감됩니다."
+                            f"건당 약 {ESTIMATED_TOKENS_PER_PROBLEM:,}토큰이 추가 차감됩니다."
                         )
                     raise AIClientError(
-                        f"현재 모드 실행에 필요한 기본 크레딧이 부족합니다. "
-                        f"(기본 필요: {base_usage_cost}, 남음: {remaining}, 한도: {limit})\n"
+                        f"현재 모드 실행에 필요한 예상 토큰이 부족합니다. "
+                        f"(기본 필요: {estimated_base_tokens:,}, 남음: {remaining:,}, 한도: {limit:,})\n"
                         f"\uD604\uC7AC \uD50C\uB79C: {tier}\n"
                         "nova-ai.work\uC5D0\uC11C \uD50C\uB79C\uC744 \uC5C5\uADF8\uB808\uC774\uB4DC\uD574\uC8FC\uC138\uC694."
                         f"{extra_hint}"
@@ -1438,21 +1162,35 @@ Preserve semantics and layout, but normalize rendering to clean exam-print style
 
                 if generation_mode == "explanation":
                     final_code = _append_explanation_if_needed("")
-                    final_code, image_credit_cost = self._apply_image_mode_pipeline(
+                    final_code, image_token_cost = self._apply_image_mode_pipeline(
                         idx, image_path, final_code, _log
                     )
                     if uid and final_code.strip():
-                        total_usage_cost = base_usage_cost + image_credit_cost
+                        usage_records = client.consume_pending_usage_records()
+                        actual_generation_tokens = client.consume_pending_usage_tokens()
+                        total_usage_cost = actual_generation_tokens + image_token_cost
                         if not check_usage_limit(uid, tier, amount=total_usage_cost):
                             limit = get_plan_limit(tier)
                             remaining = get_remaining_usage(uid, tier)
                             raise AIClientError(
-                                "현재 모드 실행에 필요한 크레딧이 부족합니다. "
-                                f"(기본: {base_usage_cost}, 이미지 생성 추가: {image_credit_cost}, "
-                                f"총 필요: {total_usage_cost}, 남음: {remaining}, 한도: {limit})\n"
+                                "현재 모드 실행에 필요한 토큰이 부족합니다. "
+                                f"(실제 생성: {actual_generation_tokens:,}, 이미지 생성 추가: {image_token_cost:,}, "
+                                f"총 필요: {total_usage_cost:,}, 남음: {remaining:,}, 한도: {limit:,})\n"
                                 f"현재 플랜: {tier}"
                             )
                         increment_ai_usage(uid, amount=total_usage_cost)
+                        for record in usage_records:
+                            record_ai_usage_log(
+                                uid,
+                                model=str(record.get("model") or ""),
+                                provider=str(record.get("provider") or "gemini"),
+                                feature=str(record.get("feature") or "typing"),
+                                source="desktop",
+                                prompt_tokens=int(record.get("prompt_tokens") or 0),
+                                output_tokens=int(record.get("output_tokens") or 0),
+                                total_tokens=int(record.get("total_tokens") or 0),
+                                created_at=str(record.get("created_at") or ""),
+                            )
                     return final_code
 
                 final_code = self._generate_problem_code_single_pass(
@@ -1463,21 +1201,35 @@ Preserve semantics and layout, but normalize rendering to clean exam-print style
                     log_fn=_log,
                 )
                 final_code = _append_explanation_if_needed(final_code)
-                final_code, image_credit_cost = self._apply_image_mode_pipeline(
+                final_code, image_token_cost = self._apply_image_mode_pipeline(
                     idx, image_path, final_code, _log
                 )
                 if uid and final_code.strip():
-                    total_usage_cost = base_usage_cost + image_credit_cost
+                    usage_records = client.consume_pending_usage_records()
+                    actual_generation_tokens = client.consume_pending_usage_tokens()
+                    total_usage_cost = actual_generation_tokens + image_token_cost
                     if not check_usage_limit(uid, tier, amount=total_usage_cost):
                         limit = get_plan_limit(tier)
                         remaining = get_remaining_usage(uid, tier)
                         raise AIClientError(
-                            "현재 모드 실행에 필요한 크레딧이 부족합니다. "
-                            f"(기본: {base_usage_cost}, 이미지 생성 추가: {image_credit_cost}, "
-                            f"총 필요: {total_usage_cost}, 남음: {remaining}, 한도: {limit})\n"
+                            "현재 모드 실행에 필요한 토큰이 부족합니다. "
+                            f"(실제 생성: {actual_generation_tokens:,}, 이미지 생성 추가: {image_token_cost:,}, "
+                            f"총 필요: {total_usage_cost:,}, 남음: {remaining:,}, 한도: {limit:,})\n"
                             f"현재 플랜: {tier}"
                         )
                     increment_ai_usage(uid, amount=total_usage_cost)
+                    for record in usage_records:
+                        record_ai_usage_log(
+                            uid,
+                            model=str(record.get("model") or ""),
+                            provider=str(record.get("provider") or "gemini"),
+                            feature=str(record.get("feature") or "typing"),
+                            source="desktop",
+                            prompt_tokens=int(record.get("prompt_tokens") or 0),
+                            output_tokens=int(record.get("output_tokens") or 0),
+                            total_tokens=int(record.get("total_tokens") or 0),
+                            created_at=str(record.get("created_at") or ""),
+                        )
                 return final_code
 
             # Generate code in batches while still allowing the environment
@@ -2242,7 +1994,7 @@ class UsageDialog(_FramelessCardDialog):
         lay.addSpacing(10)
 
         # title
-        title = QLabel("\uC0AC\uC6A9\uB7C9 \uD604\uD669")
+        title = QLabel("\uD1A0\uD070 \uC0AC\uC6A9\uB7C9")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setStyleSheet("font-size: 17px; font-weight: 700; color: #1a1a2e; background: transparent;")
         lay.addWidget(title)
@@ -2267,7 +2019,9 @@ class UsageDialog(_FramelessCardDialog):
 
         # big number
         num_color = "#ef4444" if ratio >= 1.0 else "#f97316" if ratio >= 0.8 else accent
-        big = QLabel(f"{usage}<span style='font-size:18px; color:#9ca3af;'> / {limit}</span>")
+        big = QLabel(
+            f"{usage:,}<span style='font-size:18px; color:#9ca3af;'> / {limit:,}</span>"
+        )
         big.setAlignment(Qt.AlignmentFlag.AlignCenter)
         big.setStyleSheet(f"font-size: 36px; font-weight: 800; color: {num_color}; background: transparent;")
         big.setTextFormat(Qt.TextFormat.RichText)
@@ -2289,7 +2043,11 @@ class UsageDialog(_FramelessCardDialog):
         lay.addSpacing(6)
 
         # remaining text
-        rem_text = f"\uB0A8\uC740 \uD69F\uC218: {remaining}" if remaining > 0 else "\uC0AC\uC6A9 \uD55C\uB3C4\uC5D0 \uB3C4\uB2EC\uD588\uC2B5\uB2C8\uB2E4"
+        rem_text = (
+            f"\uB0A8\uC740 \uD1A0\uD070: {remaining:,}"
+            if remaining > 0
+            else "\uC0AC\uC6A9 \uD55C\uB3C4\uC5D0 \uB3C4\uB2EC\uD588\uC2B5\uB2C8\uB2E4"
+        )
         rem = QLabel(rem_text)
         rem.setAlignment(Qt.AlignmentFlag.AlignCenter)
         rem.setStyleSheet(
@@ -2690,7 +2448,9 @@ class SidebarWidget(QFrame):
             """)
             self._usage_bar.setVisible(True)
             self._usage_label.setText(
-                f"{usage}/{limit} \uC0AC\uC6A9" if rem > 0 else "\uD55C\uB3C4 \uB3C4\uB2EC"
+                f"{usage:,}/{limit:,} \uD1A0\uD070 \uC0AC\uC6A9"
+                if rem > 0
+                else "\uD55C\uB3C4 \uB3C4\uB2EC"
             )
             self._usage_label.setVisible(True)
             self._login_btn.setVisible(False)
@@ -3547,21 +3307,27 @@ class NovaAILiteWindow(QWidget):
         _h_lay.addWidget(self._menu_btn)
 
         _header_mode_btn_css = (
-            "QPushButton { background: transparent; color: #9ca3af; border: none;"
-            "  padding: 0 6px; font-size: 12px; font-weight: 700; }"
-            "QPushButton:hover { color: #6b7280; }"
-            "QPushButton:pressed { color: #4f46e5; }"
+            "QPushButton { background-color: #ffffff; border: 1px solid #e5e7eb;"
+            "  border-radius: 10px; }"
+            "QPushButton:hover { background-color: #f8fafc; border-color: #d1d5db; }"
+            "QPushButton:pressed { background-color: #eef2ff; border-color: #c7d2fe; }"
         )
-        self._header_typing_btn = QPushButton("타이핑 모드")
+        self._header_typing_btn = QPushButton()
         self._header_typing_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._header_typing_btn.setFixedHeight(24)
+        self._header_typing_btn.setFixedSize(32, 32)
+        self._header_typing_btn.setIconSize(QSize(18, 18))
+        self._header_typing_btn.setToolTip("타이핑 화면을 엽니다.")
         self._header_typing_btn.setStyleSheet(_header_mode_btn_css)
         self._header_typing_btn.clicked.connect(self._on_header_typing_clicked)
-        self._header_chat_btn = QPushButton("채팅 편집 모드")
+        self._header_typing_btn.setVisible(False)
+        self._header_chat_btn = QPushButton()
         self._header_chat_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._header_chat_btn.setFixedHeight(24)
+        self._header_chat_btn.setFixedSize(32, 32)
+        self._header_chat_btn.setIconSize(QSize(18, 18))
+        self._header_chat_btn.setToolTip("채팅 편집 화면을 엽니다.")
         self._header_chat_btn.setStyleSheet(_header_mode_btn_css)
         self._header_chat_btn.clicked.connect(self._on_header_chat_clicked)
+        self._header_chat_btn.setVisible(False)
         _h_lay.addStretch(1)
         self._replay_selected_btn = QPushButton("선택 코드 재생")
         self._replay_selected_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -3577,17 +3343,19 @@ class NovaAILiteWindow(QWidget):
         _h_lay.addWidget(self._replay_selected_btn)
         _h_lay.addSpacing(6)
         _h_lay.addWidget(self._header_typing_btn)
-        _h_lay.addSpacing(6)
+        _h_lay.addSpacing(4)
         _h_lay.addWidget(self._header_chat_btn)
         _h_lay.addSpacing(8)
 
         # Right side header area (name and plan badge).
         self._header_user_area = QWidget()
+        self._header_user_area.setObjectName("headerUserArea")
         self._header_user_area.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._header_user_area.setStyleSheet("background: transparent;")
+        self._header_user_area.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
+        self._header_user_area.setMinimumHeight(32)
         self._header_user_area.installEventFilter(self)
         _hu_lay = QHBoxLayout(self._header_user_area)
-        _hu_lay.setContentsMargins(6, 4, 10, 4)
+        _hu_lay.setContentsMargins(12, 4, 12, 4)
         _hu_lay.setSpacing(8)
 
         # ??? + ??? ?????
@@ -3606,6 +3374,7 @@ class NovaAILiteWindow(QWidget):
 
         _hu_lay.addWidget(self._header_name)
         _hu_lay.addWidget(self._header_plan)
+        _h_lay.addWidget(self._header_user_area)
 
         # ??? ??????? ??? ??? ?? ??????
         self._header_user_btn = QPushButton(self._header_user_area)
@@ -3615,8 +3384,11 @@ class NovaAILiteWindow(QWidget):
         )
         self._header_user_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._header_user_btn.clicked.connect(self._on_header_user_clicked)
-        # Hide header profile summary; keep sidebar/profile access through menu.
-        self._header_user_area.setVisible(False)
+        self._header_user_btn.raise_()
+        self._set_header_user_area_style()
+        self._header_user_btn.setGeometry(
+            0, 0, self._header_user_area.width(), self._header_user_area.height()
+        )
 
         self._code_view_dialog = CodeViewDialog(self)
 
@@ -3836,9 +3608,17 @@ class NovaAILiteWindow(QWidget):
             }
             accent = _tier_colors.get(tier, "#6366f1")
             self._header_name.setText(self.profile_display_name or "\uC0AC\uC6A9\uC790")
-            self._header_plan.setText(t_label)
-            self._header_plan.setVisible(False)
-            self._header_user_area.setVisible(False)
+            self._header_plan.setText(t_label if "플랜" in str(t_label) else f"{t_label} 플랜")
+            self._header_plan.setStyleSheet(
+                f"font-size: 9px; font-weight: 600; color: {accent};"
+                f"background-color: rgba({int(accent[1:3],16)},{int(accent[3:5],16)},{int(accent[5:7],16)},0.10);"
+                "border-radius: 4px; padding: 1px 6px;"
+            )
+            self._header_plan.setVisible(True)
+            self._header_user_area.setToolTip("회원정보와 남은 사용량을 확인합니다.")
+            self._header_user_area.setVisible(True)
+            self._set_header_user_area_style()
+            self._sync_header_user_button_geometry()
             if refresh:
                 self._schedule_profile_refresh()
         else:
@@ -3849,7 +3629,10 @@ class NovaAILiteWindow(QWidget):
             self._header_name.setText("\uB85C\uADF8\uC778")
             self._header_plan.setText("")
             self._header_plan.setVisible(False)
-            self._header_user_area.setVisible(False)
+            self._header_user_area.setToolTip("로그인합니다.")
+            self._header_user_area.setVisible(True)
+            self._set_header_user_area_style()
+            self._sync_header_user_button_geometry()
         self._update_send_button_state()
 
     def _on_login_clicked(self) -> None:
@@ -3934,19 +3717,43 @@ class NovaAILiteWindow(QWidget):
     def _on_header_chat_clicked(self) -> None:
         self._set_main_mode("chat")
 
+    def _set_header_user_area_style(self, hovered: bool = False) -> None:
+        if not hasattr(self, "_header_user_area") or not hasattr(self, "_header_name"):
+            return
+        logged_in = bool(getattr(self, "profile_uid", None))
+        background = "#eef2ff" if hovered else "#ffffff"
+        name_color = "#4338ca" if hovered else ("#111827" if logged_in else "#6366f1")
+        self._header_user_area.setStyleSheet(
+            f"QWidget#headerUserArea {{ background-color: {background};"
+            " border: none; border-radius: 16px; }}"
+        )
+        self._header_name.setStyleSheet(
+            f"font-size: 12px; font-weight: 600; color: {name_color}; background: transparent;"
+        )
+
+    def _sync_header_user_button_geometry(self) -> None:
+        if not hasattr(self, "_header_user_btn") or not hasattr(self, "_header_user_area"):
+            return
+        self._header_user_btn.setGeometry(
+            0,
+            0,
+            self._header_user_area.width(),
+            self._header_user_area.height(),
+        )
+
     def _header_mode_button_style(self, *, active: bool) -> str:
         if active:
             return (
-                "QPushButton { background: transparent; color: #6366f1; border: none;"
-                "  padding: 0 6px; font-size: 12px; font-weight: 800; }"
-                "QPushButton:hover { color: #4f46e5; }"
-                "QPushButton:pressed { color: #4338ca; }"
+                "QPushButton { background-color: #eef2ff; border: 1px solid #c7d2fe;"
+                "  border-radius: 10px; }"
+                "QPushButton:hover { background-color: #e0e7ff; border-color: #a5b4fc; }"
+                "QPushButton:pressed { background-color: #c7d2fe; border-color: #818cf8; }"
             )
         return (
-            "QPushButton { background: transparent; color: #9ca3af; border: none;"
-            "  padding: 0 6px; font-size: 12px; font-weight: 700; }"
-            "QPushButton:hover { color: #6b7280; }"
-            "QPushButton:pressed { color: #6366f1; }"
+            "QPushButton { background-color: #ffffff; border: 1px solid #e5e7eb;"
+            "  border-radius: 10px; }"
+            "QPushButton:hover { background-color: #f8fafc; border-color: #d1d5db; }"
+            "QPushButton:pressed { background-color: #eef2ff; border-color: #c7d2fe; }"
         )
 
     def _refresh_header_mode_buttons(self) -> None:
@@ -3959,6 +3766,12 @@ class NovaAILiteWindow(QWidget):
         chat_active = getattr(self, "_main_mode", "typing") == "chat"
         self._header_typing_btn.setStyleSheet(self._header_mode_button_style(active=typing_active))
         self._header_chat_btn.setStyleSheet(self._header_mode_button_style(active=chat_active))
+        self._header_typing_btn.setIcon(
+            _material_icon(_MI_CODE, 18, QColor("#6366f1" if typing_active else "#9ca3af"))
+        )
+        self._header_chat_btn.setIcon(
+            _material_icon(_MI_CHAT, 18, QColor("#6366f1" if chat_active else "#9ca3af"))
+        )
 
     def _refresh_typing_mode_labels(self) -> None:
         mode = getattr(self, "_typing_generation_mode", "problem")
@@ -3986,15 +3799,18 @@ class NovaAILiteWindow(QWidget):
 
     @staticmethod
     def _typing_generation_base_cost(mode_key: str) -> int:
-        return 2 if mode_key == "problem_and_explanation" else 1
+        return (
+            ESTIMATED_TOKENS_PER_PROBLEM * 2
+            if mode_key == "problem_and_explanation"
+            else ESTIMATED_TOKENS_PER_PROBLEM
+        )
 
     @classmethod
     def _typing_generation_mode_text(cls, mode_key: str) -> str:
-        cost = cls._typing_generation_base_cost(mode_key)
         mapping = {
-            "problem": f"문제만 타이핑하기 ({cost}크레딧)",
-            "explanation": f"해설만 타이핑하기 ({cost}크레딧)",
-            "problem_and_explanation": f"문제+해설 타이핑하기 ({cost}크레딧)",
+            "problem": "문제만 타이핑하기",
+            "explanation": "해설만 타이핑하기",
+            "problem_and_explanation": "문제+해설 타이핑하기",
         }
         return mapping.get(mode_key, mapping["problem"])
 
@@ -4506,7 +4322,7 @@ class NovaAILiteWindow(QWidget):
 
     @staticmethod
     def _chat_edit_credit_cost() -> int:
-        return 1
+        return ESTIMATED_TOKENS_PER_PROBLEM
 
     def _ensure_chat_edit_credit_available(self) -> bool:
         uid = (self.profile_uid or "").strip()
@@ -4521,10 +4337,10 @@ class NovaAILiteWindow(QWidget):
         QMessageBox.warning(
             self,
             "알림",
-            f"채팅 편집 명령을 실행하려면 {amount}크레딧이 필요합니다.\n"
-            f"(남음: {remaining}, 한도: {limit})",
+            f"채팅 편집 명령을 실행하려면 약 {amount:,}토큰이 필요합니다.\n"
+            f"(남음: {remaining:,}, 한도: {limit:,})",
         )
-        self._update_chat_pipeline_status("남은 크레딧이 부족해 편집을 실행하지 못했습니다.", finished=True)
+        self._update_chat_pipeline_status("남은 토큰이 부족해 편집을 실행하지 못했습니다.", finished=True)
         return False
 
     def _consume_chat_edit_credit(self) -> None:
@@ -5353,7 +5169,7 @@ class NovaAILiteWindow(QWidget):
         mapping = {
             "no_image": "이미지 없이 생성하기",
             "crop": "이미지 크롭해서 생성하기",
-            "ai_generate": "AI 이미지 생성하기 (성공 건당 +1크레딧)",
+            "ai_generate": "AI 이미지 생성하기",
         }
         return mapping.get(mode_key, mapping["crop"])
 
@@ -5381,22 +5197,16 @@ class NovaAILiteWindow(QWidget):
         self._refresh_typing_cost_hint_labels()
 
     def _current_typing_cost_hint_text(self) -> str:
-        mode = getattr(self, "_typing_generation_mode", "problem")
-        image_mode = getattr(self, "_image_mode", "crop")
-        base_cost = self._typing_generation_base_cost(mode)
-        if image_mode == "ai_generate":
-            return (
-                f"기본 차감: {base_cost}크레딧. "
-                "AI 이미지 생성이 실제로 성공한 경우에만 이미지 1건당 1크레딧이 추가 차감됩니다."
-            )
-        return f"기본 차감: {base_cost}크레딧."
+        return ""
 
     def _refresh_typing_cost_hint_labels(self) -> None:
         text = self._current_typing_cost_hint_text()
         if hasattr(self, "_typing_cost_hint_label"):
             self._typing_cost_hint_label.setText(text)
+            self._typing_cost_hint_label.setVisible(bool(text))
         if hasattr(self, "_typing_cost_hint_label_compact"):
             self._typing_cost_hint_label_compact.setText(text)
+            self._typing_cost_hint_label_compact.setVisible(bool(text))
 
     def _on_image_mode_changed(self) -> None:
         if not hasattr(self, "_image_mode_combo"):
@@ -5665,13 +5475,9 @@ class NovaAILiteWindow(QWidget):
         try:
             if obj is getattr(self, "_header_user_area", None):
                 if event.type() == QEvent.Type.Enter:
-                    self._header_name.setStyleSheet(
-                        "font-size: 12px; font-weight: 600; color: #6366f1; background: transparent;"
-                    )
+                    self._set_header_user_area_style(hovered=True)
                 elif event.type() == QEvent.Type.Leave:
-                    self._header_name.setStyleSheet(
-                        "font-size: 12px; font-weight: 600; color: #1a1a2e; background: transparent;"
-                    )
+                    self._set_header_user_area_style(hovered=False)
             if event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Escape:
                 self._cancel_typing()
                 return True
@@ -6171,6 +5977,7 @@ class TypingWorker(QThread):
         self._q: "queue.Queue[tuple[int, str, str | None, str | None]]" = queue.Queue()
         self._cancel = threading.Event()
         self._style_lock = threading.Lock()
+        self._prepared_image_crops_by_source: dict[str, list[dict[str, object]]] = {}
         self._text_font_name = "한컴 윤고딕 720"
         self._text_font_size_pt = 8.0
         self._eq_font_name = "HYhwpEQ"
@@ -6209,6 +6016,217 @@ class TypingWorker(QThread):
         if not script.strip():
             return
         self._q.put((idx, script, target_filename, source_image_path))
+
+    @staticmethod
+    def _source_image_cache_key(source_image_path: str) -> str:
+        normalized = str(source_image_path or "").strip()
+        if not normalized:
+            return ""
+        path = Path(normalized)
+        try:
+            resolved = str(path.resolve())
+        except Exception:
+            resolved = normalized
+        try:
+            stat = path.stat()
+            return f"{resolved}|{stat.st_mtime_ns}|{stat.st_size}"
+        except OSError:
+            return resolved
+
+    @staticmethod
+    def _region_box_to_tuple(box: object) -> tuple[float, float, float, float] | None:
+        if not isinstance(box, dict):
+            return None
+        try:
+            ymin = float(box.get("ymin", 0.0))
+            xmin = float(box.get("xmin", 0.0))
+            ymax = float(box.get("ymax", 0.0))
+            xmax = float(box.get("xmax", 0.0))
+        except Exception:
+            return None
+        ymin, ymax = sorted((max(0.0, min(1000.0, ymin)), max(0.0, min(1000.0, ymax))))
+        xmin, xmax = sorted((max(0.0, min(1000.0, xmin)), max(0.0, min(1000.0, xmax))))
+        if xmax <= xmin or ymax <= ymin:
+            return None
+        return (xmin, ymin, xmax, ymax)
+
+    @staticmethod
+    def _normalized_box_to_absolute_bbox(
+        image_size: tuple[int, int],
+        box_1000: tuple[float, float, float, float],
+    ) -> tuple[int, int, int, int]:
+        img_w, img_h = image_size
+        xmin, ymin, xmax, ymax = box_1000
+        x1 = max(0, min(int(round((xmin / 1000.0) * img_w)), max(0, img_w - 1)))
+        y1 = max(0, min(int(round((ymin / 1000.0) * img_h)), max(0, img_h - 1)))
+        x2 = max(x1 + 1, min(int(round((xmax / 1000.0) * img_w)), img_w))
+        y2 = max(y1 + 1, min(int(round((ymax / 1000.0) * img_h)), img_h))
+        return (x1, y1, max(1, x2 - x1), max(1, y2 - y1))
+
+    @staticmethod
+    def _box_iou(
+        a: tuple[float, float, float, float],
+        b: tuple[float, float, float, float],
+    ) -> float:
+        ax1, ay1, ax2, ay2 = a
+        bx1, by1, bx2, by2 = b
+        ix1 = max(ax1, bx1)
+        iy1 = max(ay1, by1)
+        ix2 = min(ax2, bx2)
+        iy2 = min(ay2, by2)
+        iw = max(0.0, ix2 - ix1)
+        ih = max(0.0, iy2 - iy1)
+        inter = iw * ih
+        if inter <= 0:
+            return 0.0
+        area_a = max(1.0, (ax2 - ax1) * (ay2 - ay1))
+        area_b = max(1.0, (bx2 - bx1) * (by2 - by1))
+        union = max(1.0, area_a + area_b - inter)
+        return inter / union
+
+    @staticmethod
+    def _box_contains(
+        outer: tuple[float, float, float, float],
+        inner: tuple[float, float, float, float],
+        *,
+        pad: float = 0.0,
+    ) -> bool:
+        ox1, oy1, ox2, oy2 = outer
+        ix1, iy1, ix2, iy2 = inner
+        return (
+            (ox1 - pad) <= ix1 <= (ox2 + pad)
+            and (oy1 - pad) <= iy1 <= (oy2 + pad)
+            and (ox1 - pad) <= ix2 <= (ox2 + pad)
+            and (oy1 - pad) <= iy2 <= (oy2 + pad)
+        )
+
+    def _prepare_detected_image_crops(
+        self,
+        source_image_path: str,
+    ) -> list[dict[str, object]]:
+        cache_key = self._source_image_cache_key(source_image_path)
+        if cache_key in self._prepared_image_crops_by_source:
+            return self._prepared_image_crops_by_source[cache_key]
+
+        normalized = str(source_image_path or "").strip()
+        if not normalized or not Path(normalized).exists():
+            self._prepared_image_crops_by_source[cache_key] = []
+            return []
+
+        image_size = (0, 0)
+        try:
+            img = load_pil_image(normalized, mode="RGB")
+            image_size = img.size
+            try:
+                img.close()
+            except Exception:
+                pass
+        except Exception:
+            self._prepared_image_crops_by_source[cache_key] = []
+            return []
+
+        try:
+            client = AIClient(check_usage=False)
+            regions = client.detect_regions_for_image(
+                normalized,
+                allowed_types=("image",),
+            )
+        except Exception:
+            self._prepared_image_crops_by_source[cache_key] = []
+            return []
+
+        prepared: list[dict[str, object]] = []
+        for region_idx, region in enumerate(regions):
+            box_1000 = self._region_box_to_tuple(region.get("box"))
+            if box_1000 is None:
+                continue
+            try:
+                bbox = self._normalized_box_to_absolute_bbox(image_size, box_1000)
+                crop_path = AIWorker._crop_absolute_bbox_to_file(
+                    normalized,
+                    bbox,
+                    idx=region_idx,
+                    label="detected_image",
+                )
+            except Exception:
+                continue
+            prepared.append(
+                {
+                    "box_1000": box_1000,
+                    "crop_path": crop_path,
+                }
+            )
+        self._prepared_image_crops_by_source[cache_key] = prepared
+        return prepared
+
+    def _find_prepared_crop_path(
+        self,
+        prepared_regions: list[dict[str, object]],
+        target_box_1000: tuple[float, float, float, float],
+    ) -> str | None:
+        best_score = 0.0
+        best_path: str | None = None
+        for region in prepared_regions:
+            region_box = region.get("box_1000")
+            crop_path = str(region.get("crop_path") or "").strip()
+            if (
+                not isinstance(region_box, tuple)
+                or len(region_box) != 4
+                or not crop_path
+                or not Path(crop_path).exists()
+            ):
+                continue
+            candidate_box = tuple(float(v) for v in region_box)
+            iou = self._box_iou(target_box_1000, candidate_box)
+            contains = (
+                self._box_contains(target_box_1000, candidate_box, pad=40.0)
+                or self._box_contains(candidate_box, target_box_1000, pad=40.0)
+            )
+            if iou < 0.08 and not contains:
+                continue
+            score = iou + (0.35 if contains else 0.0)
+            if score > best_score:
+                best_score = score
+                best_path = crop_path
+        return best_path
+
+    def _replace_crop_calls_with_prepared_images(
+        self,
+        script: str,
+        source_image_path: str | None,
+    ) -> str:
+        normalized = str(source_image_path or "").strip()
+        if not normalized or "insert_cropped_image(" not in (script or ""):
+            return script
+
+        prepared_regions = self._prepare_detected_image_crops(normalized)
+        if not prepared_regions:
+            return script
+
+        crop_pattern = re.compile(r"^(\s*)insert_cropped_image\((.+)\)\s*$")
+        replaced_lines = script.splitlines()
+        replaced_count = 0
+        for line_idx, line in enumerate(replaced_lines):
+            match = crop_pattern.match(line)
+            if not match:
+                continue
+            coords = AIWorker._parse_crop_call_args(match.group(2))
+            if coords is None:
+                continue
+            try:
+                target_box_1000, _legacy_ratio = HwpController._normalize_crop_box_1000(*coords)
+            except Exception:
+                continue
+            prepared_path = self._find_prepared_crop_path(prepared_regions, target_box_1000)
+            if not prepared_path:
+                continue
+            replaced_lines[line_idx] = (
+                f"{match.group(1)}insert_generated_image({prepared_path!r})"
+            )
+            replaced_count += 1
+        if replaced_count <= 0:
+            return script
+        return "\n".join(replaced_lines)
 
     def cancel(self) -> None:
         self._cancel.set()
@@ -6259,6 +6277,15 @@ class TypingWorker(QThread):
                     return
 
                 try:
+                    prepared_script = script
+                    if source_image_path:
+                        try:
+                            prepared_script = self._replace_crop_calls_with_prepared_images(
+                                script,
+                                source_image_path,
+                            )
+                        except Exception:
+                            prepared_script = script
                     resolved_target = (
                         target_filename
                         or HwpController.get_foreground_document_name()
@@ -6303,7 +6330,11 @@ class TypingWorker(QThread):
 
                     self.item_started.emit(idx)
                     assert runner is not None
-                    runner.run(script, cancel_check=self._cancel.is_set, source_image_path=source_image_path)
+                    runner.run(
+                        prepared_script,
+                        cancel_check=self._cancel.is_set,
+                        source_image_path=source_image_path,
+                    )
                 except ScriptCancelled:
                     self.cancelled.emit()
                     return
@@ -6325,7 +6356,11 @@ class TypingWorker(QThread):
                             last_resolved_target = resolved_target
                             last_style_snapshot = style_snapshot
                             runner = ScriptRunner(controller)
-                            runner.run(script, cancel_check=self._cancel.is_set, source_image_path=source_image_path)
+                            runner.run(
+                                prepared_script,
+                                cancel_check=self._cancel.is_set,
+                                source_image_path=source_image_path,
+                            )
                         except Exception as retry_exc:
                             self.error.emit(_normalize_runtime_error_message(str(retry_exc)))
                             return
@@ -6350,7 +6385,11 @@ class TypingWorker(QThread):
                             last_resolved_target = resolved_target
                             last_style_snapshot = style_snapshot
                             runner = ScriptRunner(controller)
-                            runner.run(script, cancel_check=self._cancel.is_set, source_image_path=source_image_path)
+                            runner.run(
+                                prepared_script,
+                                cancel_check=self._cancel.is_set,
+                                source_image_path=source_image_path,
+                            )
                         except Exception as retry_exc:
                             self.error.emit(_normalize_runtime_error_message(str(retry_exc)))
                             return

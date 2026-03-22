@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import getFirebaseAdmin from "@/lib/firebaseAdmin";
-import { getTierLimit } from "@/lib/tierLimits";
 import {
     buildUsageResetFields,
+    getStoredUsageTokens,
     inferPaidPlanFromPayment,
+    needsUsageResetFromLimitMigration,
     needsUsageResetFromPayment,
+    resolveEffectiveUsageLimit,
     resolveEffectiveUsagePlan,
 } from "@/lib/aiUsage";
 
@@ -22,11 +24,11 @@ function shouldProxyUsageRequest(baseUrl: string): boolean {
 /**
  * Increment AI usage counter
  * POST /api/ai/increment-usage
- * Body: { userId: string }
+ * Body: { userId: string, amount?: number }
  */
 export async function POST(request: NextRequest) {
     try {
-        const { userId } = await request.json();
+        const { userId, amount } = await request.json();
 
         if (!userId) {
             return NextResponse.json(
@@ -44,7 +46,7 @@ export async function POST(request: NextRequest) {
                 headers: {
                     "Content-Type": "application/json",
                 },
-                body: JSON.stringify({ userId }),
+                body: JSON.stringify({ userId, amount }),
             });
             const body = await upstream.text();
             return new NextResponse(body, {
@@ -60,9 +62,15 @@ export async function POST(request: NextRequest) {
         const admin = await getFirebaseAdmin();
         const db = admin.firestore();
         const userRef = db.collection("users").doc(userId);
+        const requestedAmount = Number(amount);
+        const usageAmount =
+            Number.isFinite(requestedAmount) && requestedAmount > 0
+                ? Math.floor(requestedAmount)
+                : 25000;
         const result = await db.runTransaction(async (tx) => {
             const userDoc = await tx.get(userRef);
             const nowIso = new Date().toISOString();
+            const now = new Date();
             let plan: "free" | "go" | "plus" | "pro" = "free";
             let inferredResetAt: string | undefined;
             let userData: Record<string, any> = {};
@@ -103,7 +111,7 @@ export async function POST(request: NextRequest) {
 
             if (!userDoc.exists) {
                 plan = await inferPlanFromPayments();
-                const limit = getTierLimit(plan);
+                const limit = resolveEffectiveUsageLimit({}, plan, now);
                 if (limit <= 0) {
                     return {
                         exceeded: true as const,
@@ -117,7 +125,8 @@ export async function POST(request: NextRequest) {
                     {
                         plan,
                         tier: plan,
-                        aiCallUsage: 1,
+                        aiCallUsage: usageAmount,
+                        aiUsageMode: "tokens",
                         lastAiCallAt: nowIso,
                         usageResetAt: inferredResetAt || nowIso,
                         createdAt: nowIso,
@@ -128,7 +137,7 @@ export async function POST(request: NextRequest) {
                 return {
                     exceeded: false as const,
                     plan,
-                    currentUsage: 1,
+                    currentUsage: usageAmount,
                     limit,
                 };
             }
@@ -138,20 +147,35 @@ export async function POST(request: NextRequest) {
             if (plan === "free") {
                 plan = await inferPlanFromPayments();
             }
-            const limit = getTierLimit(plan);
-            let currentUsage = Number(userData.aiCallUsage || 0);
+            let currentUsage = getStoredUsageTokens(userData as Record<string, any>);
 
             const resetDecision = needsUsageResetFromPayment(
                 userData as Record<string, any>,
                 plan,
             );
-            const resetFields = resetDecision.shouldReset
-                ? buildUsageResetFields(resetDecision.resetAt || inferredResetAt)
+            const migrationResetDecision = needsUsageResetFromLimitMigration(
+                userData as Record<string, any>,
+                now,
+            );
+            const shouldReset =
+                migrationResetDecision.shouldReset || resetDecision.shouldReset;
+            const resetFields = shouldReset
+                ? buildUsageResetFields(
+                      migrationResetDecision.resetAt ||
+                          resetDecision.resetAt ||
+                          inferredResetAt,
+                  )
                 : {};
 
-            if (resetDecision.shouldReset) {
+            if (shouldReset) {
                 currentUsage = 0;
             }
+
+            const limit = resolveEffectiveUsageLimit(
+                userData as Record<string, any>,
+                plan,
+                now,
+            );
 
             if (currentUsage >= limit) {
                 return {
@@ -162,10 +186,11 @@ export async function POST(request: NextRequest) {
                 };
             }
 
-            const newUsage = currentUsage + 1;
+            const newUsage = currentUsage + usageAmount;
             tx.update(userRef, {
                 ...resetFields,
                 aiCallUsage: newUsage,
+                aiUsageMode: "tokens",
                 lastAiCallAt: new Date().toISOString(),
             });
 
@@ -196,6 +221,7 @@ export async function POST(request: NextRequest) {
             currentUsage: result.currentUsage,
             limit: result.limit,
             remaining: Math.max(0, result.limit - result.currentUsage),
+            usageUnit: "tokens",
         });
     } catch (error) {
         console.error("Error incrementing AI usage:", error);

@@ -3,7 +3,11 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAdmin, admin } from "@/lib/adminAuth";
 import { getTierLimit } from "@/lib/tierLimits";
-import { resolveEffectiveUsagePlan } from "@/lib/aiUsage";
+import {
+    getStoredUsageTokens,
+    resolveEffectiveUsageLimit,
+    resolveEffectiveUsagePlan,
+} from "@/lib/aiUsage";
 
 const db = admin.firestore();
 const ALLOWED_PLANS = ["free", "go", "plus", "pro"] as const;
@@ -85,10 +89,12 @@ export async function PATCH(
         }
 
         const userData = (userDoc.data() || {}) as Record<string, any>;
-        const currentUsage = Math.max(0, Number(userData.aiCallUsage || 0));
+        const currentUsage = getStoredUsageTokens(userData);
         const effectivePlan = resolveEffectiveUsagePlan(userData);
         const nextPlan = requestedPlan || effectivePlan;
-        const usageLimit = getTierLimit(nextPlan);
+        const usageLimit = requestedPlan
+            ? getTierLimit(nextPlan)
+            : resolveEffectiveUsageLimit(userData, nextPlan);
 
         let nextUsage = Math.min(currentUsage, usageLimit);
         if (hasRemainingUsage) {

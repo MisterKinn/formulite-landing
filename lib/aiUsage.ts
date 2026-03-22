@@ -1,5 +1,10 @@
 import { inferPlanFromAmount } from "@/lib/userData";
-import { PlanTier } from "@/lib/tierLimits";
+import {
+    estimateTokensFromProblemCount,
+    getTierLimit,
+    LEGACY_LIMIT_OVERRIDE_UNTIL,
+    PlanTier,
+} from "@/lib/tierLimits";
 
 type PlainObject = Record<string, any>;
 
@@ -159,6 +164,19 @@ function parseDate(value: unknown): Date | null {
     return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+function normalizeStoredTokenLikeValue(value: unknown): number {
+    const numeric = Number(value || 0);
+    if (!Number.isFinite(numeric) || numeric <= 0) {
+        return 0;
+    }
+
+    if (numeric < 10000) {
+        return estimateTokensFromProblemCount(numeric);
+    }
+
+    return Math.floor(numeric);
+}
+
 export function getUsageResetAnchor(userData: PlainObject): string | null {
     const lastPaymentDate = parseDate(userData.subscription?.lastPaymentDate);
     if (lastPaymentDate) return lastPaymentDate.toISOString();
@@ -170,6 +188,10 @@ export function getUsageResetAnchor(userData: PlainObject): string | null {
     if (startDate) return startDate.toISOString();
 
     return null;
+}
+
+export function getStoredUsageTokens(userData: PlainObject): number {
+    return normalizeStoredTokenLikeValue(userData.aiCallUsage);
 }
 
 export function needsUsageResetFromPayment(
@@ -190,10 +212,59 @@ export function needsUsageResetFromPayment(
     return { shouldReset: false };
 }
 
+export function resolveEffectiveUsageLimit(
+    userData: PlainObject,
+    plan: PlanTier,
+    now = new Date(),
+): number {
+    const overrideLimit = normalizeStoredTokenLikeValue(userData.aiLimitOverride);
+    const overrideUntil = parseDate(userData.aiLimitOverrideUntil);
+
+    if (
+        Number.isFinite(overrideLimit) &&
+        overrideLimit > 0 &&
+        overrideUntil &&
+        now.getTime() < overrideUntil.getTime()
+    ) {
+        return overrideLimit;
+    }
+
+    return getTierLimit(plan);
+}
+
+export function needsUsageResetFromLimitMigration(
+    userData: PlainObject,
+    now = new Date(),
+): { shouldReset: boolean; resetAt?: string } {
+    const overrideLimit = normalizeStoredTokenLikeValue(userData.aiLimitOverride);
+    const overrideUntil =
+        parseDate(userData.aiLimitOverrideUntil) ||
+        parseDate(LEGACY_LIMIT_OVERRIDE_UNTIL);
+
+    if (!Number.isFinite(overrideLimit) || overrideLimit <= 0 || !overrideUntil) {
+        return { shouldReset: false };
+    }
+
+    if (now.getTime() < overrideUntil.getTime()) {
+        return { shouldReset: false };
+    }
+
+    const usageResetAt = parseDate(userData.usageResetAt);
+    if (!usageResetAt || usageResetAt.getTime() < overrideUntil.getTime()) {
+        return {
+            shouldReset: true,
+            resetAt: overrideUntil.toISOString(),
+        };
+    }
+
+    return { shouldReset: false };
+}
+
 export function buildUsageResetFields(resetAt?: string): Record<string, any> {
     const iso = resetAt || new Date().toISOString();
     return {
         aiCallUsage: 0,
+        aiUsageMode: "tokens",
         usageResetAt: iso,
     };
 }

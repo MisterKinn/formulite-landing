@@ -3603,6 +3603,101 @@ class HwpController:
     # Max pixel width for cropped images before gentle downscaling.
     _CROP_MAX_WIDTH = 900
 
+    @staticmethod
+    def _normalize_crop_box_1000(
+        x1: float,
+        y1: float,
+        x2: float,
+        y2: float,
+    ) -> tuple[tuple[float, float, float, float], bool]:
+        max_coord = max(abs(float(x1)), abs(float(y1)), abs(float(x2)), abs(float(y2)))
+        legacy_ratio_input = max_coord <= 1.5
+        scale = 1000.0 if legacy_ratio_input else 1.0
+        xmin, xmax = sorted((float(x1) * scale, float(x2) * scale))
+        ymin, ymax = sorted((float(y1) * scale, float(y2) * scale))
+        xmin = max(0.0, min(1000.0, xmin))
+        ymin = max(0.0, min(1000.0, ymin))
+        xmax = max(0.0, min(1000.0, xmax))
+        ymax = max(0.0, min(1000.0, ymax))
+        if xmax <= xmin:
+            xmax = min(1000.0, xmin + 1.0)
+        if ymax <= ymin:
+            ymax = min(1000.0, ymin + 1.0)
+        if xmax <= xmin or ymax <= ymin:
+            raise HwpControllerError(
+                "insert_cropped_image 실패: 유효한 정규화 좌표를 만들 수 없습니다."
+            )
+        return ((xmin, ymin, xmax, ymax), legacy_ratio_input)
+
+    @staticmethod
+    def _normalized_box_1000_to_pixels(
+        image_size: tuple[int, int],
+        box_1000: tuple[float, float, float, float],
+    ) -> tuple[int, int, int, int]:
+        img_w, img_h = image_size
+        xmin, ymin, xmax, ymax = box_1000
+        x1 = max(0, min(int(round((xmin / 1000.0) * img_w)), img_w - 1))
+        y1 = max(0, min(int(round((ymin / 1000.0) * img_h)), img_h - 1))
+        x2 = max(x1 + 1, min(int(round((xmax / 1000.0) * img_w)), img_w))
+        y2 = max(y1 + 1, min(int(round((ymax / 1000.0) * img_h)), img_h))
+        return (x1, y1, x2, y2)
+
+    @staticmethod
+    def _pixel_rect_to_normalized_1000(
+        image_size: tuple[int, int],
+        rect: tuple[int, int, int, int],
+    ) -> tuple[float, float, float, float]:
+        img_w, img_h = image_size
+        x1, y1, x2, y2 = rect
+        if img_w <= 0 or img_h <= 0:
+            return (0.0, 0.0, 1000.0, 1000.0)
+        return (
+            max(0.0, min(1000.0, (x1 / img_w) * 1000.0)),
+            max(0.0, min(1000.0, (y1 / img_h) * 1000.0)),
+            max(0.0, min(1000.0, (x2 / img_w) * 1000.0)),
+            max(0.0, min(1000.0, (y2 / img_h) * 1000.0)),
+        )
+
+    def _render_percent_crop_image(
+        self,
+        src: str,
+        box_1000: tuple[float, float, float, float],
+    ) -> str:
+        """
+        Render a crop using the same idea as CSS percent-based viewport cropping:
+        scale the full image, shift it by normalized offsets, and clip it to the
+        target viewport instead of pre-cutting by raw pixel coordinates.
+        """
+        try:
+            from PIL import Image
+        except ImportError as exc:
+            raise HwpControllerError(
+                "insert_cropped_image 실패: Pillow 라이브러리가 필요합니다."
+            ) from exc
+
+        img = load_pil_image(src, mode="RGB")
+        img_w, img_h = img.size
+        xmin, ymin, xmax, ymax = box_1000
+        crop_w_norm = max(1.0, xmax - xmin)
+        crop_h_norm = max(1.0, ymax - ymin)
+        raw_crop_w = max(1.0, img_w * (crop_w_norm / 1000.0))
+        scale = min(1.0, float(self._CROP_MAX_WIDTH) / raw_crop_w)
+        scaled_full_w = max(1, int(round(img_w * scale)))
+        scaled_full_h = max(1, int(round(img_h * scale)))
+        viewport_w = max(1, int(round((crop_w_norm / 1000.0) * scaled_full_w)))
+        viewport_h = max(1, int(round((crop_h_norm / 1000.0) * scaled_full_h)))
+        offset_x = -int(round((xmin / 1000.0) * scaled_full_w))
+        offset_y = -int(round((ymin / 1000.0) * scaled_full_h))
+
+        resized = img.resize((scaled_full_w, scaled_full_h), Image.LANCZOS)
+        canvas = Image.new("RGB", (viewport_w, viewport_h), (255, 255, 255))
+        canvas.paste(resized, (offset_x, offset_y))
+        tmp_dir = Path(tempfile.gettempdir()) / "nova_ai"
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        tmp_path = tmp_dir / f"crop_css_{os.getpid()}_{id(canvas)}.png"
+        canvas.save(str(tmp_path), format="PNG")
+        return str(tmp_path)
+
     def _extract_ocr_line_boxes(self, src: str) -> list[tuple[int, int, int, int, str]]:
         try:
             import os
@@ -4104,76 +4199,41 @@ class HwpController:
         y2_pct: float,
     ) -> None:
         """
-        Crop a region from the source image and insert it into the HWP document.
+        Insert a region from the source image into the HWP document.
 
-        Parameters are percentages (0.0-1.0) of the original image dimensions:
-            x1_pct, y1_pct = top-left corner
-            x2_pct, y2_pct = bottom-right corner
-
-        The cropped region is already a small portion of the original, so we
-        only downscale when it exceeds _CROP_MAX_WIDTH pixels.
+        Preferred coordinates are normalized 0-1000 values, matching Gemini
+        responseSchema output. Legacy 0.0-1.0 ratios are still accepted.
+        The final inserted image is rendered with CSS-style percent cropping
+        math and then placed into an invisible 1x1 table cell.
         """
         src = self._source_image_path
         if not src or not Path(src).exists():
             raise HwpControllerError(
                 "insert_cropped_image 실패: 원본 이미지 경로가 설정되지 않았거나 파일이 없습니다."
             )
-
-        try:
-            from PIL import Image
-        except ImportError:
-            raise HwpControllerError(
-                "insert_cropped_image 실패: Pillow 라이브러리가 필요합니다."
+        box_1000, legacy_ratio_input = self._normalize_crop_box_1000(
+            x1_pct,
+            y1_pct,
+            x2_pct,
+            y2_pct,
+        )
+        img = load_pil_image(src, mode="RGB")
+        if legacy_ratio_input:
+            px1, py1, px2, py2 = self._normalized_box_1000_to_pixels(img.size, box_1000)
+            rx1, ry1, rx2, ry2 = self._refine_crop_rect(src, (px1, py1, px2, py2))
+            box_1000 = self._pixel_rect_to_normalized_1000(
+                img.size,
+                (rx1, ry1, rx2, ry2),
             )
+        rendered_path = self._render_percent_crop_image(src, box_1000)
 
-        img = load_pil_image(src)
-        w, h = img.size
-
-        # Be tolerant of model output: swapped/equal percentages are auto-normalized.
-        lx_pct, rx_pct = sorted((float(x1_pct), float(x2_pct)))
-        ty_pct, by_pct = sorted((float(y1_pct), float(y2_pct)))
-
-        x1 = max(0, min(int(lx_pct * w), w))
-        y1 = max(0, min(int(ty_pct * h), h))
-        x2 = max(0, min(int(rx_pct * w), w))
-        y2 = max(0, min(int(by_pct * h), h))
-
-        if x2 <= x1:
-            x2 = min(w, x1 + 1)
-        if y2 <= y1:
-            y2 = min(h, y1 + 1)
-        if x2 <= x1 or y2 <= y1:
-            raise HwpControllerError(
-                f"insert_cropped_image 실패: 유효한 좌표를 만들 수 없습니다 "
-                f"({x1_pct},{y1_pct})-({x2_pct},{y2_pct})"
-            )
-
-        x1, y1, x2, y2 = self._refine_crop_rect(src, (x1, y1, x2, y2))
-
-        cropped = img.crop((x1, y1, x2, y2))
-
-        cw, ch = cropped.size
-        if cw > self._CROP_MAX_WIDTH:
-            scale = self._CROP_MAX_WIDTH / cw
-            cropped = cropped.resize(
-                (self._CROP_MAX_WIDTH, max(1, int(ch * scale))),
-                Image.LANCZOS,
-            )
-
-        tmp_dir = Path(tempfile.gettempdir()) / "nova_ai"
-        tmp_dir.mkdir(parents=True, exist_ok=True)
-        tmp_path = tmp_dir / f"crop_{os.getpid()}_{id(cropped)}.png"
-        cropped.save(str(tmp_path), format="PNG")
-
-        # Insert directly into 1x1 table WITHOUT the 0.3x resize.
-        # The crop itself already produces a reasonably sized image.
         self._insert_1x1_table()
         self._set_current_table_border_none()
         try:
             self._set_paragraph_align("center")
         except Exception:
             pass
-        self._raw_insert_picture(str(tmp_path))
+        self._raw_insert_picture(rendered_path)
         self._exit_table_after_image()
 
     def insert_generated_image(self, image_path: str) -> None:

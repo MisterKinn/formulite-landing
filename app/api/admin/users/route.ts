@@ -4,7 +4,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyAdmin, admin } from "@/lib/adminAuth";
 import { getTierLimit, PlanTier } from "@/lib/tierLimits";
 import { normalizeCreatedAt } from "@/lib/userData";
-import { resolveEffectiveUsagePlan } from "@/lib/aiUsage";
+import {
+    getStoredUsageTokens,
+    resolveEffectiveUsageLimit,
+    resolveEffectiveUsagePlan,
+} from "@/lib/aiUsage";
 
 const db = admin.firestore();
 
@@ -137,8 +141,8 @@ export async function GET(request: NextRequest) {
             const subscription = data.subscription || {};
             const plan = resolveEffectiveUsagePlan(data) as PlanTier;
             const status = String(subscription.status || "none");
-            const cycleUsage = Number(data.aiCallUsage || 0);
-            const usageLimit = getTierLimit(plan);
+            const cycleUsage = getStoredUsageTokens(data);
+            const usageLimit = resolveEffectiveUsageLimit(data, plan);
             const cycleRemaining = Math.max(0, usageLimit - cycleUsage);
 
             mergedUsers.set(doc.id, {

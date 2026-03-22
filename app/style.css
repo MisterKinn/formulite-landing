@@ -4259,6 +4259,7 @@ nextjs-portal {
     align-items: center;
     justify-content: flex-start;
     padding-left: clamp(96px, 12vw, 220px);
+    padding-right: 24px;
     background: transparent;
     animation: popupFadeIn 0.25s ease-out;
     opacity: 1;
@@ -4290,6 +4291,13 @@ nextjs-portal {
         opacity 0.3s ease,
         transform 0.3s ease;
     will-change: opacity, transform;
+}
+
+.event-popup-stack {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 16px;
 }
 
 .event-popup-overlay--hidden {
@@ -4770,5 +4778,9 @@ nextjs-portal {
         justify-content: center;
         padding-left: 0;
         padding-right: 0;
+    }
+
+    .event-popup-stack {
+        justify-content: center;
     }
 }

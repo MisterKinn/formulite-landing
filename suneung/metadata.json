@@ -1,0 +1,5 @@
+{
+  "name": "Suneung Scanner",
+  "description": "Upload a CSAT image to automatically detect and highlight problem and text areas.",
+  "requestFramePermissions": []
+}

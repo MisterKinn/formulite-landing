@@ -13,6 +13,10 @@ import "../mobile.css";
 import { Navbar } from "../../components/Navbar";
 import Footer from "../../components/Footer";
 import dynamic from "next/dynamic";
+import {
+    ESTIMATED_TOKENS_PER_PROBLEM,
+    TIER_LIMITS,
+} from "../../lib/tierLimits";
 const Sidebar = dynamic(() => import("../../components/Sidebar"), {
     ssr: false,
 });
@@ -112,6 +116,29 @@ interface PlanData {
     ctaText: string;
 }
 
+interface AiUsageHistoryLog {
+    id: string;
+    model: string;
+    provider: string;
+    feature: string;
+    source: string;
+    promptTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+    createdAt: string;
+}
+
+const formatTokenAllowance = (baseProblems: number, bonusProblems?: number) => {
+    const baseTokens = baseProblems * ESTIMATED_TOKENS_PER_PROBLEM;
+
+    if (!bonusProblems) {
+        return `총 ${baseTokens.toLocaleString("ko-KR")}토큰 AI 타이핑 생성`;
+    }
+
+    const bonusTokens = bonusProblems * ESTIMATED_TOKENS_PER_PROBLEM;
+    return `월 ${baseTokens.toLocaleString("ko-KR")}토큰+${bonusTokens.toLocaleString("ko-KR")}토큰 AI 타이핑 생성`;
+};
+
 // 플랜 데이터
 const plansData: PlanData[] = [
     {
@@ -122,7 +149,7 @@ const plansData: PlanData[] = [
         yearlyPrice: 0,
         icon: <SparklesIcon />,
         features: [
-            { text: "총 5회 AI 타이핑 생성", included: true },
+            { text: formatTokenAllowance(3), included: true },
             { text: "기본 수식 자동화", included: true },
             { text: "광고 없는 경험", included: true },
             { text: "커뮤니티 지원", included: true },
@@ -141,7 +168,7 @@ const plansData: PlanData[] = [
         icon: <ZapIcon />,
         popular: true,
         features: [
-            { text: "월 300회+30회 AI 타이핑 생성", included: true },
+            { text: formatTokenAllowance(200, 20), included: true },
             { text: "고급 AI 모델", included: true },
             { text: "팀 공유 기능", included: true },
             { text: "우선 지원 서비스", included: true },
@@ -160,7 +187,10 @@ const plansData: PlanData[] = [
         icon: <ZapIcon />,
         features: [
             { text: "1분 주기 테스트 결제", included: true },
-            { text: "Plus와 동일 사용량 한도", included: true },
+            {
+                text: `Plus와 동일 사용량 한도 (${formatTokenAllowance(200, 20)})`,
+                included: true,
+            },
             { text: "결제 플로우 점검", included: true },
             { text: "팀 공유 기능", included: false },
             { text: "전담 지원 서비스", included: false },
@@ -177,7 +207,7 @@ const plansData: PlanData[] = [
         yearlyPrice: 69300,
         icon: <CrownIcon />,
         features: [
-            { text: "월 2000+200회 AI 타이핑 생성", included: true },
+            { text: formatTokenAllowance(1200, 120), included: true },
             { text: "고급 AI 모델", included: true },
             { text: "팀 협업 기능", included: true },
             { text: "API 액세스", included: true },
@@ -189,6 +219,13 @@ const plansData: PlanData[] = [
         ctaText: "Ultra 요금제로 업그레이드",
     },
 ];
+
+function formatTokenCount(value: number | null | undefined): string {
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+        return "-";
+    }
+    return `${Math.max(0, Math.floor(value)).toLocaleString("ko-KR")} 토큰`;
+}
 
 // Helper function to get tier order for comparison
 function getTierOrder(planId: string): number {
@@ -278,6 +315,9 @@ function ProfileContent() {
     } | null>(null);
     const [paymentHistory, setPaymentHistory] = useState<any[]>([]);
     const [loadingPayments, setLoadingPayments] = useState(false);
+    const [usageHistory, setUsageHistory] = useState<AiUsageHistoryLog[]>([]);
+    const [usageHistoryOpen, setUsageHistoryOpen] = useState(false);
+    const [loadingUsageHistory, setLoadingUsageHistory] = useState(false);
 
     // Refresh key for forcing data reload
     const [refreshKey, setRefreshKey] = useState(0);
@@ -350,10 +390,10 @@ function ProfileContent() {
             if (!authUser) return;
             const getLimitByPlan = (rawPlan: unknown) => {
                 const plan = String(rawPlan || "free").toLowerCase();
-                if (plan === "pro" || plan === "ultra") return 2200;
-                if (plan === "go") return 110;
-                if (plan === "plus" || plan === "test") return 330;
-                return 5;
+                if (plan === "pro" || plan === "ultra") return TIER_LIMITS.pro;
+                if (plan === "go") return TIER_LIMITS.go;
+                if (plan === "plus" || plan === "test") return TIER_LIMITS.plus;
+                return TIER_LIMITS.free;
             };
             let resolved = false;
 
@@ -388,13 +428,15 @@ function ProfileContent() {
                                 userData?.subscription?.plan ||
                                 userData?.plan ||
                                 "free";
-                            const currentUsage = Number(
-                                userData?.aiCallUsage ?? 0,
-                            );
+                            const rawUsage = Number(userData?.aiCallUsage ?? 0);
+                            const currentUsage =
+                                Number.isFinite(rawUsage) && rawUsage > 0
+                                    ? rawUsage < 10000
+                                        ? rawUsage * ESTIMATED_TOKENS_PER_PROBLEM
+                                        : rawUsage
+                                    : 0;
                             setAiUsage({
-                                currentUsage: Number.isFinite(currentUsage)
-                                    ? currentUsage
-                                    : 0,
+                                currentUsage,
                                 limit: getLimitByPlan(plan),
                                 plan: String(plan),
                             });
@@ -697,10 +739,10 @@ function ProfileContent() {
     const planExpiryDate = getPlanExpiryDate();
     const fallbackLimitByPlan = (planId: string) => {
         const normalized = planId.toLowerCase();
-        if (normalized === "pro" || normalized === "ultra") return 2200;
-        if (normalized === "go") return 110;
-        if (normalized === "plus" || normalized === "test") return 330;
-        return 5;
+        if (normalized === "pro" || normalized === "ultra") return TIER_LIMITS.pro;
+        if (normalized === "go") return TIER_LIMITS.go;
+        if (normalized === "plus" || normalized === "test") return TIER_LIMITS.plus;
+        return TIER_LIMITS.free;
     };
     const fallbackPlanId = effectivePlanId;
     const questionUsage =
@@ -1039,6 +1081,36 @@ function ProfileContent() {
         }
     };
 
+    const handleOpenUsageHistory = async () => {
+        if (!authUser) return;
+
+        setUsageHistoryOpen(true);
+        setLoadingUsageHistory(true);
+        try {
+            const idToken = await authUser.getIdToken();
+            const response = await fetch(
+                `/api/ai/usage-history?userId=${encodeURIComponent(authUser.uid)}&limit=40`,
+                {
+                    headers: {
+                        Authorization: `Bearer ${idToken}`,
+                    },
+                    cache: "no-store",
+                },
+            );
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || !payload?.success) {
+                throw new Error(payload?.error || "토큰 사용 이력을 불러오지 못했습니다.");
+            }
+            setUsageHistory(Array.isArray(payload.logs) ? payload.logs : []);
+        } catch (err: any) {
+            console.error("Failed to load usage history", err);
+            setUsageHistory([]);
+            setError(err?.message || "토큰 사용 이력을 불러오지 못했습니다.");
+        } finally {
+            setLoadingUsageHistory(false);
+        }
+    };
+
     return (
         <>
             <div className="desktop-navbar">
@@ -1194,16 +1266,14 @@ function ProfileContent() {
                                     <p>{subscriptionStatusLabel}</p>
                                 </div>
                                 <div className="profile-stat-card">
-                                    <span>남은 질문수</span>
+                                    <span>남은 토큰</span>
                                     <strong>
-                                        {remainingQuestions !== null
-                                            ? `${remainingQuestions}회`
-                                            : "-"}
+                                        {formatTokenCount(remainingQuestions)}
                                     </strong>
                                     <p>
                                         전체 한도{" "}
                                         {questionUsage
-                                            ? `${questionUsage.limit}회`
+                                            ? formatTokenCount(questionUsage.limit)
                                             : "확인 중"}
                                     </p>
                                 </div>
@@ -1317,7 +1387,7 @@ function ProfileContent() {
                                         <div>
                                             <h2>구독 및 사용량</h2>
                                             <p>
-                                                플랜 상태와 질문 사용량을 한 번에
+                                                플랜 상태와 토큰 사용량을 한 번에
                                                 관리합니다.
                                             </p>
                                         </div>
@@ -1374,32 +1444,38 @@ function ProfileContent() {
                                             </div>
                                             <div className="profile-info-item compact">
                                                 <span className="profile-info-label">
-                                                    전체 질문 한도
+                                                    전체 토큰 한도
                                                 </span>
                                                 <strong>
                                                     {questionUsage
-                                                        ? `${questionUsage.limit}회`
+                                                        ? formatTokenCount(
+                                                              questionUsage.limit,
+                                                          )
                                                         : "-"}
                                                 </strong>
                                             </div>
                                             <div className="profile-info-item compact">
                                                 <span className="profile-info-label">
-                                                    남은 질문수
+                                                    남은 토큰
                                                 </span>
                                                 <strong>
-                                                    {remainingQuestions !== null
-                                                        ? `${remainingQuestions}회`
-                                                        : "-"}
+                                                    {formatTokenCount(
+                                                        remainingQuestions,
+                                                    )}
                                                 </strong>
                                             </div>
                                         </div>
 
                                         <div className="profile-usage-block">
                                             <div className="profile-usage-head">
-                                                <span>질문 사용량</span>
+                                                <span>토큰 사용량</span>
                                                 <strong>
                                                     {questionUsage
-                                                        ? `${questionUsage.currentUsage} / ${questionUsage.limit}`
+                                                        ? `${questionUsage.currentUsage.toLocaleString(
+                                                              "ko-KR",
+                                                          )} / ${questionUsage.limit.toLocaleString(
+                                                              "ko-KR",
+                                                          )} 토큰`
                                                         : "확인 중"}
                                                 </strong>
                                             </div>
@@ -1421,14 +1497,16 @@ function ProfileContent() {
                                                 <span>
                                                     사용{" "}
                                                     {questionUsage
-                                                        ? `${questionUsage.currentUsage}회`
+                                                        ? formatTokenCount(
+                                                              questionUsage.currentUsage,
+                                                          )
                                                         : "-"}
                                                 </span>
                                                 <span>
                                                     남음{" "}
-                                                    {remainingQuestions !== null
-                                                        ? `${remainingQuestions}회`
-                                                        : "-"}
+                                                    {formatTokenCount(
+                                                        remainingQuestions,
+                                                    )}
                                                 </span>
                                             </div>
                                             {questionUsage &&
@@ -1582,16 +1660,25 @@ function ProfileContent() {
                                                     영구적으로 삭제됩니다.
                                                 </span>
                                             </div>
-                                            <button
-                                                type="button"
-                                                className="danger-btn"
-                                                onClick={handleDeleteAccount}
-                                                disabled={deleting}
-                                            >
-                                                {deleting
-                                                    ? "삭제 중..."
-                                                    : "계정 삭제"}
-                                            </button>
+                                            <div className="danger-actions">
+                                                <button
+                                                    type="button"
+                                                    className="danger-btn danger-btn-secondary"
+                                                    onClick={handleOpenUsageHistory}
+                                                >
+                                                    토큰 보기
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className="danger-btn"
+                                                    onClick={handleDeleteAccount}
+                                                    disabled={deleting}
+                                                >
+                                                    {deleting
+                                                        ? "삭제 중..."
+                                                        : "계정 삭제"}
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
                                 </section>
@@ -1691,12 +1778,12 @@ function ProfileContent() {
                                         </div>
                                         <div className="profile-info-item compact">
                                             <span className="profile-info-label">
-                                                남은 질문수
+                                                남은 토큰
                                             </span>
                                             <strong>
-                                                {remainingQuestions !== null
-                                                    ? `${remainingQuestions}회`
-                                                    : "-"}
+                                                {formatTokenCount(
+                                                    remainingQuestions,
+                                                )}
                                             </strong>
                                         </div>
                                     </div>
@@ -1800,6 +1887,71 @@ function ProfileContent() {
                     </section>
                 </div>
             </main>
+
+            {usageHistoryOpen && (
+                <div
+                    className="profile-modal-overlay"
+                    onClick={() => setUsageHistoryOpen(false)}
+                >
+                    <div
+                        className="profile-modal-card"
+                        onClick={(event) => event.stopPropagation()}
+                    >
+                        <div className="profile-modal-head">
+                            <div>
+                                <h3>토큰 사용 이력</h3>
+                                <p>최근에 어떤 AI 모델을 사용했고 얼마나 차감됐는지 확인합니다.</p>
+                            </div>
+                            <button
+                                type="button"
+                                className="profile-modal-close"
+                                onClick={() => setUsageHistoryOpen(false)}
+                            >
+                                닫기
+                            </button>
+                        </div>
+
+                        {loadingUsageHistory ? (
+                            <div className="profile-empty-state">
+                                토큰 사용 이력을 불러오는 중입니다.
+                            </div>
+                        ) : usageHistory.length === 0 ? (
+                            <div className="profile-empty-state">
+                                아직 기록된 토큰 사용 이력이 없습니다.
+                            </div>
+                        ) : (
+                            <div className="profile-usage-history-list">
+                                {usageHistory.map((log) => (
+                                    <article
+                                        key={log.id}
+                                        className="profile-usage-history-row"
+                                    >
+                                        <div className="profile-usage-history-main">
+                                            <strong className="profile-usage-history-title">
+                                                {log.model || "알 수 없는 모델"}
+                                            </strong>
+                                            <p className="profile-usage-history-meta">
+                                                {formatDateLabel(log.createdAt, true)}
+                                                {log.feature ? ` · ${log.feature}` : ""}
+                                                {log.source ? ` · ${log.source}` : ""}
+                                            </p>
+                                            <p className="profile-usage-history-meta">
+                                                입력 {log.promptTokens.toLocaleString("ko-KR")} · 출력{" "}
+                                                {log.outputTokens.toLocaleString("ko-KR")} 토큰
+                                            </p>
+                                        </div>
+                                        <div className="profile-usage-history-side">
+                                            <strong>
+                                                {log.totalTokens.toLocaleString("ko-KR")} 토큰
+                                            </strong>
+                                        </div>
+                                    </article>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
 
             <Footer />
         </>
