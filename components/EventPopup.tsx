@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState, type MouseEvent } from "react";
 import { ENABLE_UPDATE_NOTICE } from "@/lib/featureFlags";
 import billingUpdatePopupImage from "../nova-ai/2.1.1.png";
-import serverUpdatePopupImage from "../nova-ai/update.png";
+import serverUpdatePopupImage from "../nova-ai/update2.png";
 
 const EVENT_POPUPS = [
     {

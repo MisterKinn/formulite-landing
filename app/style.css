@@ -2100,19 +2100,6 @@ nextjs-portal {
     color: #fff;
 }
 
-.pricing-card-v2__token-helper {
-    margin: 0.35rem 0 0;
-    font-size: 0.8rem;
-    font-weight: 600;
-    color: #9ea3af;
-    line-height: 1.4;
-    letter-spacing: -0.01em;
-}
-
-.pricing-card-v2--popular .pricing-card-v2__token-helper {
-    color: rgba(232, 234, 255, 0.78);
-}
-
 .pricing-card-v2__check-wrap {
     display: flex;
     align-items: center;

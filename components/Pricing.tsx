@@ -14,7 +14,6 @@ interface PricingTokenLine {
 interface PricingTokenInfo {
     label: string;
     lines: PricingTokenLine[];
-    helperText: string;
 }
 
 interface PricingPlan {
@@ -35,13 +34,6 @@ type BillingCycle = "monthly" | "yearly";
 const TOKENS_PER_PROBLEM = 25000;
 
 const formatTokenNumber = (count: number) => count.toLocaleString();
-const formatApproxTypingCount = (baseProblems: number, bonusProblems?: number) => {
-    if (!bonusProblems) {
-        return `약 총 ${baseProblems.toLocaleString()}회 타이핑 가능`;
-    }
-
-    return `약 월 ${baseProblems.toLocaleString()}+${bonusProblems.toLocaleString()}회 타이핑 가능`;
-};
 
 const formatTokenAllowance = (baseProblems: number, bonusProblems?: number) => {
     const baseTokens = baseProblems * TOKENS_PER_PROBLEM;
@@ -54,7 +46,6 @@ const formatTokenAllowance = (baseProblems: number, bonusProblems?: number) => {
                     suffix: "토큰",
                 },
             ],
-            helperText: formatApproxTypingCount(baseProblems),
         };
     }
 
@@ -71,7 +62,6 @@ const formatTokenAllowance = (baseProblems: number, bonusProblems?: number) => {
                 suffix: "추가토큰",
             },
         ],
-        helperText: formatApproxTypingCount(baseProblems, bonusProblems),
     };
 };
 
@@ -364,9 +354,6 @@ export default function Pricing() {
                                             </span>
                                         ))}
                                     </div>
-                                    <p className="pricing-card-v2__token-helper">
-                                        {plan.tokenInfo.helperText}
-                                    </p>
                                 </div>
                             </div>
                         </div>
