@@ -10,12 +10,14 @@ const EVENT_POPUPS = [
         storageKey: "eventPopupHideUntil:billing-update-211",
         image: billingUpdatePopupImage,
         alt: "결제 및 업데이트 공지",
+        enabled: true,
     },
     {
         id: "server-update-20260322",
         storageKey: "eventPopupHideUntil:server-update-20260322",
         image: serverUpdatePopupImage,
         alt: "서버 업데이트 공지",
+        enabled: false,
     },
 ] as const;
 
@@ -28,6 +30,7 @@ export default function EventPopup() {
     useEffect(() => {
         try {
             const nextVisiblePopups = EVENT_POPUPS.filter((popup) => {
+                if (!popup.enabled) return false;
                 const hideUntil = localStorage.getItem(popup.storageKey);
                 return !hideUntil || Date.now() >= Number(hideUntil);
             }).map((popup) => popup.id);
