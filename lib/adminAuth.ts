@@ -1,5 +1,5 @@
+import "server-only";
 import crypto from "crypto";
-import { ADMIN_EMAILS, ADMIN_EMAIL } from "@/lib/adminPortal";
 import getFirebaseAdmin from "@/lib/firebaseAdmin";
 
 const admin = getFirebaseAdmin();
@@ -21,12 +21,39 @@ interface AdminSessionPayload {
     exp: number;
 }
 
-function getAdminSessionSecret() {
-    return (
-        process.env.ADMIN_PORTAL_SECRET ||
-        process.env.ADMIN_SECRET ||
-        "nova-admin-session-secret-change-me"
+function parseValues(rawValue: string | undefined) {
+    return Array.from(
+        new Set(
+            String(rawValue || "")
+                .split(/[,\s]+/)
+                .map((value) => value.trim())
+                .filter(Boolean),
+        ),
     );
+}
+
+function getAdminEmails() {
+    return parseValues(
+        process.env.ADMIN_EMAILS ||
+            process.env.ADMIN_EMAIL ||
+            process.env.NEXT_PUBLIC_ADMIN_EMAILS ||
+            process.env.NEXT_PUBLIC_ADMIN_EMAIL,
+    ).map((value) => value.toLowerCase());
+}
+
+export function getPrimaryAdminEmail() {
+    return getAdminEmails()[0] || "";
+}
+
+export function getAdminPasswordAliases() {
+    const adminPassword = String(process.env.ADMIN_PASSWORD || "").trim();
+    return parseValues(process.env.ADMIN_PASSWORD_ALIASES || adminPassword);
+}
+
+function getAdminSessionSecret() {
+    const secret =
+        process.env.ADMIN_PORTAL_SECRET || process.env.ADMIN_SECRET || "";
+    return secret.trim() || null;
 }
 
 function base64UrlEncode(input: string) {
@@ -38,8 +65,12 @@ function base64UrlDecode(input: string) {
 }
 
 function signAdminPayload(encodedPayload: string) {
+    const secret = getAdminSessionSecret();
+    if (!secret) {
+        throw new Error("admin_portal_secret_not_configured");
+    }
     return crypto
-        .createHmac("sha256", getAdminSessionSecret())
+        .createHmac("sha256", secret)
         .update(encodedPayload)
         .digest("base64url");
 }
@@ -56,11 +87,15 @@ function safeCompare(a: string, b: string) {
 }
 
 export function createAdminSessionToken() {
+    const adminEmail = getPrimaryAdminEmail();
+    if (!adminEmail) {
+        throw new Error("admin_email_not_configured");
+    }
     const now = Date.now();
     const payload: AdminSessionPayload = {
         v: ADMIN_TOKEN_VERSION,
         type: "admin-portal",
-        email: ADMIN_EMAIL,
+        email: adminEmail,
         iat: now,
         exp: now + ADMIN_SESSION_TTL_MS,
     };
@@ -70,6 +105,7 @@ export function createAdminSessionToken() {
 }
 
 export function verifyAdminSessionToken(token: string): AdminUser | null {
+    if (!getAdminSessionSecret()) return null;
     const parts = token.split(".");
     if (parts.length !== 2) return null;
     const [encodedPayload, signature] = parts;
@@ -80,9 +116,10 @@ export function verifyAdminSessionToken(token: string): AdminUser | null {
         const payload = JSON.parse(
             base64UrlDecode(encodedPayload),
         ) as AdminSessionPayload;
+        const adminEmails = getAdminEmails();
         if (payload.v !== ADMIN_TOKEN_VERSION) return null;
         if (payload.type !== "admin-portal") return null;
-        if (!payload.email || !ADMIN_EMAILS.includes(payload.email)) return null;
+        if (!payload.email || !adminEmails.includes(payload.email)) return null;
         if (!payload.exp || payload.exp < Date.now()) return null;
         return {
             uid: "admin-portal",
@@ -115,8 +152,9 @@ export async function verifyAdmin(
     try {
         const decodedToken = await admin.auth().verifyIdToken(token);
         const email = decodedToken.email?.toLowerCase();
+        const adminEmails = getAdminEmails();
 
-        if (!email || !ADMIN_EMAILS.includes(email)) {
+        if (!email || !adminEmails.includes(email)) {
             return null;
         }
 
@@ -134,7 +172,7 @@ export async function verifyAdmin(
  * Check if an email is an admin email
  */
 export function isAdminEmail(email: string | null | undefined): boolean {
-    return !!email && ADMIN_EMAILS.includes(email.toLowerCase());
+    return !!email && getAdminEmails().includes(email.toLowerCase());
 }
 
 export { admin };

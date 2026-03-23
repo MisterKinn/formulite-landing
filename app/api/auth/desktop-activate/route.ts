@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import getFirebaseAdmin from "@/lib/firebaseAdmin";
-import { ADMIN_EMAIL } from "@/lib/adminPortal";
+import { isAdminEmail } from "@/lib/adminAuth";
 import { normalizePlanLike } from "@/lib/userData";
 
 const SINGLE_DEVICE_PLANS = new Set(["free", "plus", "test"]);
@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        const isAdmin = email === ADMIN_EMAIL;
+        const isAdmin = isAdminEmail(email);
         const enforceSingleDevice = !isAdmin && SINGLE_DEVICE_PLANS.has(normalizedPlan);
         if (!enforceSingleDevice) {
             return NextResponse.json({
