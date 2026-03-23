@@ -1,8 +1,7 @@
 "use client";
 import React, { useEffect, useRef, useState } from "react";
-import processImage1 from "../int1 (2).png";
-import processImage2 from "../int2.png";
-import processImage3 from "../int3.png";
+import processImage1 from "../nova-ai/a1.png";
+import processImage2 from "../nova-ai/a2.png";
 import HighlightStats from "./HighlightStats";
 
 type OSIconMap = {
@@ -92,28 +91,18 @@ export default function Home() {
     const processSteps = [
         {
             step: "1",
-            label: "1. 사진업로드",
+            label: "1. 완벽한 수식 타이핑",
             image: processImage1.src,
-            alt: "사진 드래그앤드롭",
-            description:
-                "사진을 드래그 앤 드롭 또는 Ctrl C+V로 넣어주세요.\n여러 개의 이미지 파일이 등록 가능합니다.",
+            alt: "완벽한 수식 타이핑 예시",
+            description: "어려운 수식도 높은 정확도로 인식하고 깔끔하게 입력합니다.",
         },
         {
             step: "2",
-            label: "2. AI 코드 생성",
+            label: "2. <보기> 호출",
             image: processImage2.src,
-            alt: "AI 코드 생성 중",
+            alt: "<보기> 호출 및 이미지 삽입 예시",
             description:
-                "보내기 버튼을 누르면 AI 코드가 생성되며,\n글씨와 수식 폰트를 수정할 수 있습니다.",
-        },
-        {
-            step: "3",
-            label: "3. 완성된 문서",
-            image: processImage3.src,
-            alt: "한글 문서 결과",
-            description:
-                "완벽한 정확도로 완성된 문서를 확인해보세요.\n이것이 노바AI의 기술력입니다.",
-            isHighlightedDescription: true,
+                "<보기> 영역을 자동으로 감지해 호출하고,\n필요한 이미지와 내용을 정확히 삽입합니다.",
         },
     ];
 
@@ -386,12 +375,14 @@ export default function Home() {
                 </div>
             </div>
 
-            {/* Process showcase - 4 step images */}
+            {/* Process showcase - 2 feature images */}
             <div ref={processShowcaseRef} className="process-showcase">
                 <div className="process-showcase-shell">
                     <h2 className="process-showcase-title">노바AI 기능 소개</h2>
                     <p className="process-showcase-subtitle">
-                        독보적인 OCR 인식 성능과 이미지 크롭·삽입 자동화, 그리고 자연어로 바로 수정할 수 있는 채팅 편집 기능까지 한 번에 경험해보세요.
+                        독보적인 OCR 인식 성능과 이미지 크롭/삽입 자동화를 제공합니다
+                        <br />
+                        문제 뿐만 아니라 개념 타이핑도 가능합니다
                     </p>
                     <div
                         ref={processCarouselRef}
