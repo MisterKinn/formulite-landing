@@ -9,4 +9,7 @@ assets
 .venv
 nova-ai/.venv
 nova-ai/output
+nova-ai/build
+nova-ai/dist
+nova-ai/release
 *.exe

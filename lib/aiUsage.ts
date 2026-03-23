@@ -194,6 +194,10 @@ export function getStoredUsageTokens(userData: PlainObject): number {
     return normalizeStoredTokenLikeValue(userData.aiCallUsage);
 }
 
+export function getStoredExtraTokenBalance(userData: PlainObject): number {
+    return normalizeStoredTokenLikeValue(userData.extraTokenBalance);
+}
+
 export function needsUsageResetFromPayment(
     userData: PlainObject,
     plan: PlanTier,
@@ -232,6 +236,106 @@ export function resolveEffectiveUsageLimit(
     return getTierLimit(plan);
 }
 
+export function getRemainingSubscriptionTokens(
+    userData: PlainObject,
+    plan: PlanTier,
+    now = new Date(),
+): number {
+    const limit = resolveEffectiveUsageLimit(userData, plan, now);
+    const currentUsage = getStoredUsageTokens(userData);
+    return Math.max(0, limit - currentUsage);
+}
+
+export function buildInitialUsageFields(
+    userData: PlainObject,
+    resetAt?: string,
+): Record<string, unknown> {
+    const iso = resetAt || new Date().toISOString();
+    return {
+        aiCallUsage: 0,
+        aiUsageMode: "tokens",
+        usageResetAt: iso,
+        extraTokenBalance: getStoredExtraTokenBalance(userData),
+    };
+}
+
+export function buildUsageCycleResetFields(
+    userData: PlainObject,
+    plan: PlanTier,
+    resetAt?: string,
+): {
+    aiCallUsage: number;
+    aiUsageMode: "tokens";
+    usageResetAt: string;
+    extraTokenBalance: number;
+} {
+    const iso = resetAt || new Date().toISOString();
+    const carryOverTokens = getRemainingSubscriptionTokens(userData, plan);
+    return {
+        aiCallUsage: 0,
+        aiUsageMode: "tokens",
+        usageResetAt: iso,
+        extraTokenBalance:
+            getStoredExtraTokenBalance(userData) + carryOverTokens,
+    };
+}
+
+export function buildUsageConsumptionResult(
+    userData: PlainObject,
+    plan: PlanTier,
+    amount: number,
+    now = new Date(),
+):
+    | {
+          canConsume: false;
+          limit: number;
+          totalRemaining: number;
+      }
+    | {
+          canConsume: true;
+          limit: number;
+          nextUsage: number;
+          nextExtraTokenBalance: number;
+          totalRemainingAfter: number;
+      } {
+    const usageAmount =
+        Number.isFinite(amount) && amount > 0 ? Math.floor(amount) : 0;
+    const limit = resolveEffectiveUsageLimit(userData, plan, now);
+    const currentUsage = getStoredUsageTokens(userData);
+    const extraTokenBalance = getStoredExtraTokenBalance(userData);
+    const subscriptionRemaining = Math.max(0, limit - currentUsage);
+    const totalRemaining = subscriptionRemaining + extraTokenBalance;
+
+    if (usageAmount <= 0) {
+        return {
+            canConsume: true,
+            limit,
+            nextUsage: currentUsage,
+            nextExtraTokenBalance: extraTokenBalance,
+            totalRemainingAfter: totalRemaining,
+        };
+    }
+
+    if (usageAmount > totalRemaining) {
+        return {
+            canConsume: false,
+            limit,
+            totalRemaining,
+        };
+    }
+
+    const fromSubscription = Math.min(subscriptionRemaining, usageAmount);
+    const fromExtra = Math.max(0, usageAmount - fromSubscription);
+
+    return {
+        canConsume: true,
+        limit,
+        nextUsage: currentUsage + fromSubscription,
+        nextExtraTokenBalance: Math.max(0, extraTokenBalance - fromExtra),
+        totalRemainingAfter: totalRemaining - usageAmount,
+    };
+}
+
 export function needsUsageResetFromLimitMigration(
     userData: PlainObject,
     now = new Date(),
@@ -260,12 +364,16 @@ export function needsUsageResetFromLimitMigration(
     return { shouldReset: false };
 }
 
-export function buildUsageResetFields(resetAt?: string): Record<string, any> {
+export function buildUsageResetFields(
+    resetAt?: string,
+    extraTokenBalance = 0,
+): Record<string, unknown> {
     const iso = resetAt || new Date().toISOString();
     return {
         aiCallUsage: 0,
         aiUsageMode: "tokens",
         usageResetAt: iso,
+        extraTokenBalance,
     };
 }
 
@@ -294,6 +402,12 @@ export function inferPaidPlanFromPayment(payment: {
     }
 
     const normalizedOrderName = String(payment.orderName || "").toLowerCase();
+    if (
+        normalizedOrderName.includes("추가 토큰") &&
+        normalizedOrderName.includes("단건 결제")
+    ) {
+        return "free";
+    }
     if (normalizedOrderName.includes("ultra") || normalizedOrderName.includes("pro")) {
         return "pro";
     }

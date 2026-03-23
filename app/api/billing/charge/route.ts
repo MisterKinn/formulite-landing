@@ -5,9 +5,15 @@ import {
     query,
     where,
     getDocs,
+    setDoc,
 } from "firebase/firestore";
 import { getFirebaseApp } from "@/firebaseConfig";
-import { saveSubscription, getNextBillingDate } from "@/lib/subscription";
+import { getNextBillingDate, saveSubscription } from "@/lib/subscription";
+import { buildUserRootPatch } from "@/lib/userData";
+import {
+    buildUsageCycleResetFields,
+    resolveEffectiveUsagePlan,
+} from "@/lib/aiUsage";
 
 /**
  * 빌링키를 사용한 자동 결제 API
@@ -190,16 +196,31 @@ export async function PUT(request: NextRequest) {
             const nextBillingDate = getNextBillingDate(
                 subscription.billingCycle || "monthly",
             );
-
-            await saveSubscription(userId, {
-                ...subscription,
-                nextBillingDate,
-                lastPaymentDate: new Date().toISOString(),
-                lastOrderId: orderId,
-                failureCount: 0, // 성공 시 실패 카운트 리셋
-            }, {
-                resetUsageAt: new Date().toISOString(),
-            });
+            const usageFields = buildUsageCycleResetFields(
+                userData as Record<string, unknown>,
+                resolveEffectiveUsagePlan(userData as Record<string, unknown>),
+                result.approvedAt || new Date().toISOString(),
+            );
+            await setDoc(
+                userDoc.ref,
+                buildUserRootPatch({
+                    existingUser: userData as Record<string, unknown>,
+                    subscription: {
+                        ...subscription,
+                        nextBillingDate,
+                        lastPaymentDate: new Date().toISOString(),
+                        lastOrderId: orderId,
+                        failureCount: 0,
+                    },
+                    plan: resolveEffectiveUsagePlan(
+                        userData as Record<string, unknown>,
+                    ),
+                    aiCallUsage: usageFields.aiCallUsage,
+                    usageResetAt: usageFields.usageResetAt,
+                    extraTokenBalance: usageFields.extraTokenBalance,
+                }),
+                { merge: true },
+            );
 
             return NextResponse.json({
                 success: true,

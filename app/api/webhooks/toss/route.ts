@@ -5,6 +5,12 @@ import {
     removeRecentPurchaseFeedItem,
     saveRecentPurchaseFeedItem,
 } from "@/lib/recentPurchaseFeed";
+import {
+    buildUsageCycleResetFields,
+    getStoredExtraTokenBalance,
+    resolveEffectiveUsagePlan,
+} from "@/lib/aiUsage";
+import { canPurchaseTokenPack, resolvePaymentProduct } from "@/lib/tokenPacks";
 
 // Get Firebase Admin instance (uses centralized initialization)
 const admin = getFirebaseAdmin();
@@ -63,7 +69,10 @@ export async function POST(request: NextRequest) {
     }
 }
 
-async function logWebhookEvent(eventType: string, body: any) {
+async function logWebhookEvent(
+    eventType: string,
+    body: Record<string, unknown>,
+) {
     try {
         const webhookLogRef = adminDb.collection("webhookLogs").doc();
         await webhookLogRef.set({
@@ -77,7 +86,7 @@ async function logWebhookEvent(eventType: string, body: any) {
     }
 }
 
-async function handlePaymentStatusChanged(data: any) {
+async function handlePaymentStatusChanged(data: Record<string, unknown>) {
     const { paymentKey, orderId, status, customerKey } = data;
 
     console.log("PAYMENT_STATUS_CHANGED:", status, { paymentKey, orderId });
@@ -111,7 +120,10 @@ async function handlePaymentStatusChanged(data: any) {
     }
 }
 
-async function handlePaymentDone(userId: string, data: any) {
+async function handlePaymentDone(
+    userId: string,
+    data: Record<string, unknown>,
+) {
     const {
         paymentKey,
         orderId,
@@ -121,77 +133,159 @@ async function handlePaymentDone(userId: string, data: any) {
         card,
         orderName,
     } = data;
+    const paymentKeyValue = typeof paymentKey === "string" ? paymentKey : "";
+    const orderIdValue = typeof orderId === "string" ? orderId : "";
+    const orderNameValue = typeof orderName === "string" ? orderName : "";
+    const approvedAtValue =
+        typeof approvedAt === "string" ? approvedAt : new Date().toISOString();
+    const totalAmountValue =
+        typeof totalAmount === "number" ? totalAmount : Number(totalAmount || 0);
+    const methodValue = typeof method === "string" && method ? method : "카드";
+    const cardValue =
+        typeof card === "object" && card !== null
+            ? (card as Record<string, unknown>)
+            : null;
 
     console.log("Payment completed for user", userId, ":", totalAmount);
 
     try {
-        await adminDb
+        const paymentProduct = resolvePaymentProduct({
+            orderName: orderNameValue,
+            amount: totalAmountValue,
+        });
+        if (!paymentKeyValue) {
+            console.error("Missing paymentKey in PAYMENT_STATUS_CHANGED webhook");
+            return;
+        }
+        const paymentRef = adminDb
             .collection("users")
             .doc(userId)
             .collection("payments")
-            .doc(paymentKey)
-            .set({
-                paymentKey,
-                orderId,
-                orderName: orderName || "",
-                amount: totalAmount,
-                method: method || "카드",
+            .doc(paymentKeyValue);
+        const existingPaymentDoc = await paymentRef.get();
+        const entitlementAlreadyApplied =
+            existingPaymentDoc.exists &&
+            !!existingPaymentDoc.data()?.entitlementAppliedAt;
+
+        await paymentRef.set({
+                paymentKey: paymentKeyValue,
+                orderId: orderIdValue,
+                orderName: orderNameValue,
+                amount: totalAmountValue,
+                method: methodValue,
                 status: "DONE",
-                approvedAt,
-                card: card
+                approvedAt: approvedAtValue,
+                card: cardValue
                     ? {
-                          company: card.company || null,
-                          number: card.number || null,
+                          company:
+                              typeof cardValue.company === "string"
+                                  ? cardValue.company
+                                  : null,
+                          number:
+                              typeof cardValue.number === "string"
+                                  ? cardValue.number
+                                  : null,
                       }
                     : null,
+                productType: paymentProduct.kind,
+                tokenPackTier: paymentProduct.tokenPack?.tier || null,
+                tokensGranted: paymentProduct.tokenPack?.tokens || null,
                 createdAt: new Date().toISOString(),
-            });
+            }, { merge: true });
 
         await saveRecentPurchaseFeedItem({
             userId,
-            paymentKey,
-            orderName: orderName || "",
-            amount: Number(totalAmount || 0),
+            paymentKey: paymentKeyValue,
+            orderName: orderNameValue,
+            amount: totalAmountValue,
             status: "DONE",
-            approvedAt: approvedAt || new Date().toISOString(),
+            approvedAt: approvedAtValue,
         });
 
         const userDoc = await adminDb.collection("users").doc(userId).get();
         const userData = userDoc.data();
 
-        if (userData?.subscription?.isRecurring) {
+        if (
+            paymentProduct.kind === "token_pack" &&
+            paymentProduct.tokenPack &&
+            !entitlementAlreadyApplied &&
+            canPurchaseTokenPack(userData as Record<string, unknown>)
+        ) {
+            await adminDb.collection("users").doc(userId).update({
+                extraTokenBalance:
+                    getStoredExtraTokenBalance(
+                        (userData || {}) as Record<string, unknown>,
+                    ) + paymentProduct.tokenPack.tokens,
+                updatedAt: new Date().toISOString(),
+            });
+            await paymentRef.set(
+                {
+                    entitlementAppliedAt: approvedAtValue,
+                },
+                { merge: true },
+            );
+            await updateWebhookLog(paymentKeyValue, true);
+            return;
+        }
+
+        if (
+            paymentProduct.kind !== "token_pack" &&
+            userData?.subscription?.isRecurring &&
+            !entitlementAlreadyApplied
+        ) {
             const billingCycle =
                 userData.subscription.billingCycle || "monthly";
             const nextBillingDate = getNextBillingDate(billingCycle);
+            const usageFields = buildUsageCycleResetFields(
+                (userData || {}) as Record<string, unknown>,
+                resolveEffectiveUsagePlan(
+                    (userData || {}) as Record<string, unknown>,
+                ),
+                approvedAtValue,
+            );
 
             await adminDb.collection("users").doc(userId).update({
                 "subscription.status": "active",
                 "subscription.nextBillingDate": nextBillingDate,
                 "subscription.lastPaymentDate": new Date().toISOString(),
-                "subscription.lastOrderId": orderId,
+                "subscription.lastOrderId": orderIdValue,
                 "subscription.failureCount": 0,
-                aiCallUsage: 0,
-                usageResetAt: approvedAt || new Date().toISOString(),
+                ...usageFields,
             });
+            await paymentRef.set(
+                {
+                    entitlementAppliedAt: approvedAtValue,
+                },
+                { merge: true },
+            );
         }
 
-        await updateWebhookLog(paymentKey, true);
+        await updateWebhookLog(paymentKeyValue, true);
     } catch (err) {
         console.error("Error handling payment done:", err);
     }
 }
 
-async function handlePaymentCanceled(userId: string, data: any) {
+async function handlePaymentCanceled(
+    userId: string,
+    data: Record<string, unknown>,
+) {
     const { paymentKey, orderId, cancels } = data;
+    const paymentKeyValue = typeof paymentKey === "string" ? paymentKey : "";
+    const orderIdValue = typeof orderId === "string" ? orderId : "";
 
     console.log("Payment canceled for user", userId, ":", orderId);
 
     try {
+        if (!paymentKeyValue) {
+            console.error("Missing paymentKey in canceled payment webhook");
+            return;
+        }
         const paymentRef = adminDb
             .collection("users")
             .doc(userId)
             .collection("payments")
-            .doc(paymentKey);
+            .doc(paymentKeyValue);
         const paymentDoc = await paymentRef.get();
 
         if (paymentDoc.exists) {
@@ -202,12 +296,12 @@ async function handlePaymentCanceled(userId: string, data: any) {
             });
         }
 
-        await removeRecentPurchaseFeedItem(paymentKey);
+        await removeRecentPurchaseFeedItem(paymentKeyValue);
 
         const userDoc = await adminDb.collection("users").doc(userId).get();
         const userData = userDoc.data();
 
-        if (userData?.subscription?.lastOrderId === orderId) {
+        if (userData?.subscription?.lastOrderId === orderIdValue) {
             await adminDb.collection("users").doc(userId).update({
                 "subscription.status": "cancelled",
                 "subscription.cancelledAt": new Date().toISOString(),
@@ -218,7 +312,7 @@ async function handlePaymentCanceled(userId: string, data: any) {
     }
 }
 
-async function handleCancelStatusChanged(data: any) {
+async function handleCancelStatusChanged(data: Record<string, unknown>) {
     const { paymentKey, orderId, cancelStatus } = data;
 
     console.log("CANCEL_STATUS_CHANGED:", cancelStatus, {
@@ -233,7 +327,7 @@ async function handleCancelStatusChanged(data: any) {
     }
 }
 
-async function handleBillingDeleted(data: any) {
+async function handleBillingDeleted(data: Record<string, unknown>) {
     const { billingKey, customerKey } = data;
 
     console.log("BILLING_DELETED:", { billingKey, customerKey });
@@ -260,7 +354,7 @@ async function handleBillingDeleted(data: any) {
     }
 }
 
-async function handleDepositCallback(data: any) {
+async function handleDepositCallback(data: Record<string, unknown>) {
     const { orderId, status } = data;
 
     console.log("DEPOSIT_CALLBACK:", status, { orderId });
@@ -287,13 +381,13 @@ async function updateWebhookLog(paymentKey: string, processed: boolean) {
                 processedAt: new Date().toISOString(),
             });
         }
-    } catch (err) {
+    } catch {
         // Ignore log update failures
     }
 }
 
-function extractUserId(customerKey: string | undefined): string | null {
-    if (!customerKey) return null;
+function extractUserId(customerKey: unknown): string | null {
+    if (typeof customerKey !== "string" || !customerKey) return null;
 
     if (customerKey.startsWith("user_")) {
         return customerKey.slice("user_".length) || null;
