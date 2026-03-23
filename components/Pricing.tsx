@@ -1,9 +1,18 @@
 "use client";
 
-import { MouseEvent, useState } from "react";
+import { MouseEvent, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { loadTossPayments } from "@tosspayments/tosspayments-sdk";
+import {
+    getTokenPackProduct,
+    TokenPackTier,
+} from "@/lib/tokenPacks";
+import {
+    isValidOneTimeTossClientKey,
+    resolveBillingTossClientKey,
+    resolveOneTimeTossClientKey,
+} from "@/lib/tossClientKeys";
 
 interface PricingTokenLine {
     prefix?: string;
@@ -29,7 +38,8 @@ interface PricingPlan {
     tier: "free" | "go" | "plus" | "pro";
 }
 
-type BillingCycle = "monthly" | "yearly";
+type BillingCycle = "monthly" | "yearly" | "tokenPack";
+type SubscriptionBillingCycle = Exclude<BillingCycle, "tokenPack">;
 
 const TOKENS_PER_PROBLEM = 25000;
 
@@ -130,7 +140,7 @@ export default function Pricing() {
 
     const paymentMetaByTier: Record<
         "go" | "plus" | "pro",
-        Record<BillingCycle, { amount: number; orderName: string }>
+        Record<SubscriptionBillingCycle, { amount: number; orderName: string }>
     > = {
         go: {
             monthly: {
@@ -161,9 +171,39 @@ export default function Pricing() {
         },
     };
 
-    const billingLabel = "/월";
+    const tokenPackMetaByTier: Record<TokenPackTier, ReturnType<typeof getTokenPackProduct>> = {
+        go: getTokenPackProduct("go"),
+        plus: getTokenPackProduct("plus"),
+        pro: getTokenPackProduct("pro"),
+    };
+    const getDisplayTokenInfo = (plan: PricingPlan) => {
+        if (billingCycle !== "tokenPack") {
+            return plan.tokenInfo;
+        }
+
+        const tokenPack = tokenPackMetaByTier[plan.tier as TokenPackTier];
+        return {
+            label: "충전 토큰",
+            lines: [
+                {
+                    prefix: "총",
+                    suffix: "토큰",
+                    value: formatTokenNumber(tokenPack.tokens),
+                },
+            ],
+        };
+    };
+
+    const billingLabel = billingCycle === "tokenPack" ? "/회" : "/월";
     const formatTotalPriceLabel = (amount: number) =>
         `총 ${amount.toLocaleString()}원 결제`;
+    const displayPlans = useMemo(
+        () =>
+            billingCycle === "tokenPack"
+                ? plans.filter((plan) => plan.tier !== "free")
+                : plans,
+        [billingCycle],
+    );
 
     const handlePlanClick = async (
         event: MouseEvent<HTMLButtonElement>,
@@ -177,6 +217,85 @@ export default function Pricing() {
         }
 
         if (loading || isPaying) return;
+
+        if (billingCycle === "tokenPack") {
+            const tokenPack = tokenPackMetaByTier[tier as TokenPackTier];
+            if (!tokenPack) {
+                window.alert("선택한 토큰 상품 정보를 찾을 수 없습니다.");
+                return;
+            }
+
+            if (!isAuthenticated) {
+                const loginParams = new URLSearchParams({
+                    postLoginAction: "payment",
+                    amount: String(tokenPack.amount),
+                    orderName: tokenPack.orderName,
+                    purchaseType: "token_pack",
+                    tokenPackTier: tokenPack.tier,
+                });
+                router.push(`/login?${loginParams.toString()}`);
+                return;
+            }
+
+            if (!user?.uid) {
+                window.alert("로그인 정보를 확인한 후 다시 시도해주세요.");
+                return;
+            }
+
+            try {
+                setIsPaying(true);
+                const eligibilityResponse = await fetch(
+                    `/api/token-packs/eligibility?userId=${encodeURIComponent(user.uid)}`,
+                    { cache: "no-store" },
+                );
+                const eligibilityData = await eligibilityResponse.json();
+
+                if (!eligibilityResponse.ok || !eligibilityData?.eligible) {
+                    window.alert(
+                        eligibilityData?.message ||
+                            eligibilityData?.error ||
+                            "활성 유료 구독 중인 선생님만 추가 토큰을 구매할 수 있습니다.",
+                    );
+                    return;
+                }
+
+                const clientKey = resolveOneTimeTossClientKey();
+                if (!isValidOneTimeTossClientKey(clientKey)) {
+                    window.alert(
+                        "토스 단건 결제 클라이언트 키 형식이 올바르지 않습니다. 설정을 확인해주세요.",
+                    );
+                    return;
+                }
+
+                const tossPayments = await loadTossPayments(clientKey);
+                const payment = tossPayments.payment({
+                    customerKey: `user_${user.uid
+                        .replace(/[^a-zA-Z0-9\-_=.@]/g, "")
+                        .substring(0, 40)}`,
+                });
+
+                await payment.requestPayment({
+                    method: "CARD",
+                    amount: {
+                        value: tokenPack.amount,
+                        currency: "KRW",
+                    },
+                    orderId: `order_${Date.now()}`,
+                    orderName: tokenPack.orderName,
+                    successUrl: `${window.location.origin}/payment/success?uid=${encodeURIComponent(
+                        user.uid,
+                    )}&purchaseType=token_pack&tokenPackTier=${encodeURIComponent(
+                        tokenPack.tier,
+                    )}`,
+                    failUrl: `${window.location.origin}/payment/fail`,
+                    customerEmail: user.email || "customer@example.com",
+                    customerName: user.displayName || "고객",
+                });
+            } finally {
+                setIsPaying(false);
+            }
+            return;
+        }
 
         const paymentMeta = paymentMetaByTier[tier][billingCycle];
 
@@ -199,10 +318,7 @@ export default function Pricing() {
         try {
             setIsPaying(true);
 
-            const clientKey =
-                process.env.NEXT_PUBLIC_TOSS_BILLING_CLIENT_KEY?.trim() ||
-                process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY?.trim() ||
-                "";
+            const clientKey = resolveBillingTossClientKey();
 
             const tossPayments = await loadTossPayments(clientKey);
             const customerKey = `user_${user.uid
@@ -268,107 +384,157 @@ export default function Pricing() {
                                 연간 결제
                             </button>
                         </div>
+                        <div className="pricing-billing-toggle__subscriber-wrap">
+                            <span className="pricing-billing-toggle__subscriber-badge">
+                                구독자 전용
+                            </span>
+                            <button
+                                type="button"
+                                role="tab"
+                                aria-selected={billingCycle === "tokenPack"}
+                                className={`pricing-billing-toggle__btn ${
+                                    billingCycle === "tokenPack"
+                                        ? "pricing-billing-toggle__btn--active"
+                                        : ""
+                                }`}
+                                onClick={() => setBillingCycle("tokenPack")}
+                            >
+                                토큰 결제
+                            </button>
+                        </div>
                     </div>
                 </div>
 
-                <div className="pricing-cards-wrapper">
-                    {plans.map((plan) => (
-                        <div
-                            key={plan.name}
-                            className={`pricing-card-v2 pricing-card-v2--${plan.tier} ${
-                                plan.popular ? "pricing-card-v2--popular" : ""
-                            }`}
-                        >
-                            <div className="pricing-card-v2__content">
-                                <div className="pricing-card-v2__header">
-                                    <div className="pricing-card-v2__title-row">
-                                        <h3 className="pricing-card-v2__name">
-                                            {plan.name}
-                                        </h3>
-                                        {plan.popular && (
-                                            <div className="pricing-badge-v2">
-                                                <span>가장 많이 선택</span>
+                <div
+                    className={`pricing-cards-wrapper ${
+                        billingCycle === "tokenPack"
+                            ? "pricing-cards-wrapper--token-pack"
+                            : ""
+                    }`}
+                >
+                    {displayPlans.map((plan) => {
+                        const tokenPack =
+                            billingCycle === "tokenPack"
+                                ? tokenPackMetaByTier[plan.tier as TokenPackTier]
+                                : null;
+                        const tokenInfo = getDisplayTokenInfo(plan);
+
+                        return (
+                            <div
+                                key={plan.name}
+                                className={`pricing-card-v2 pricing-card-v2--${plan.tier} ${
+                                    plan.popular ? "pricing-card-v2--popular" : ""
+                                }`}
+                            >
+                                <div className="pricing-card-v2__content">
+                                    <div className="pricing-card-v2__header">
+                                        <div className="pricing-card-v2__title-row">
+                                            <h3 className="pricing-card-v2__name">
+                                                {billingCycle === "tokenPack"
+                                                    ? tokenPack?.title
+                                                    : plan.name}
+                                            </h3>
+                                            {plan.popular && (
+                                                <div className="pricing-badge-v2">
+                                                    <span>가장 많이 선택</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div className="pricing-card-v2__price-block">
+                                        <div className="pricing-card-v2__price-row">
+                                            {(billingCycle === "tokenPack"
+                                                ? String(tokenPack?.amount || 0)
+                                                : plan.prices[billingCycle]) !== "0" && (
+                                                <span className="pricing-card-v2__currency">
+                                                    ₩
+                                                </span>
+                                            )}
+                                            <span className="pricing-card-v2__price">
+                                                {(billingCycle === "tokenPack"
+                                                    ? String(tokenPack?.amount || 0)
+                                                    : plan.prices[billingCycle]) === "0"
+                                                    ? "Free"
+                                                    : billingCycle === "tokenPack"
+                                                      ? tokenPack?.amount.toLocaleString("ko-KR")
+                                                      : plan.prices[billingCycle]}
+                                            </span>
+                                            {(billingCycle === "tokenPack"
+                                                ? String(tokenPack?.amount || 0)
+                                                : plan.prices[billingCycle]) !== "0" && (
+                                                <span className="pricing-card-v2__unit">
+                                                    {billingLabel}
+                                                </span>
+                                            )}
+                                        </div>
+                                        {billingCycle === "yearly" &&
+                                            plan.tier !== "free" && (
+                                                <p className="pricing-card-v2__price-total">
+                                                    {formatTotalPriceLabel(
+                                                        paymentMetaByTier[plan.tier]
+                                                            .yearly.amount,
+                                                    )}
+                                                </p>
+                                            )}
+                                    </div>
+
+                                    <div className="pricing-card-v2__cta-wrap">
+                                        <button
+                                            type="button"
+                                            onClick={(event) => handlePlanClick(event, plan.tier)}
+                                            className={`pricing-cta-v2 pricing-cta-v2--${plan.tier}`}
+                                        >
+                                            {billingCycle === "tokenPack"
+                                                ? "토큰 충전하기"
+                                                : plan.cta}
+                                        </button>
+                                    </div>
+
+                                    <p className="pricing-card-v2__desc">
+                                        {billingCycle === "tokenPack"
+                                            ? "구독 토큰을 먼저 사용한 뒤 남은 작업은 추가 토큰으로 이어서 처리할 수 있습니다. 사용하지 않은 토큰은 다음 달로 이월됩니다."
+                                            : plan.subDescription}
+                                    </p>
+
+                                    {billingCycle !== "tokenPack" && (
+                                        <>
+                                            <div className="pricing-card-v2__divider" />
+                                            <div className="pricing-card-v2__token-block">
+                                                <span className="pricing-card-v2__token-label">
+                                                    {tokenInfo.label}
+                                                </span>
+                                                <div className="pricing-card-v2__token-values">
+                                                        {tokenInfo.lines.map((line, index) => (
+                                                            <span
+                                                                key={`${plan.tier}-token-line-${index}`}
+                                                                className="pricing-card-v2__token-line"
+                                                            >
+                                                                <span className="pricing-card-v2__token-name">
+                                                                    {line.prefix && (
+                                                                        <span className="pricing-card-v2__token-prefix">
+                                                                            {line.prefix}
+                                                                        </span>
+                                                                    )}
+                                                                    {line.suffix && (
+                                                                        <span className="pricing-card-v2__token-suffix">
+                                                                            {line.suffix}
+                                                                        </span>
+                                                                    )}
+                                                                </span>
+                                                                <span className="pricing-card-v2__token-value">
+                                                                    {line.value}
+                                                                </span>
+                                                            </span>
+                                                        ))}
+                                                </div>
                                             </div>
-                                        )}
-                                    </div>
-                                </div>
-
-                                <div className="pricing-card-v2__price-block">
-                                    <div className="pricing-card-v2__price-row">
-                                        {plan.prices[billingCycle] !== "0" && (
-                                            <span className="pricing-card-v2__currency">
-                                                ₩
-                                            </span>
-                                        )}
-                                        <span className="pricing-card-v2__price">
-                                            {plan.prices[billingCycle] === "0"
-                                                ? "Free"
-                                                : plan.prices[billingCycle]}
-                                        </span>
-                                        {plan.prices[billingCycle] !== "0" && (
-                                            <span className="pricing-card-v2__unit">
-                                                {billingLabel}
-                                            </span>
-                                        )}
-                                    </div>
-                                    {billingCycle === "yearly" &&
-                                        plan.tier !== "free" && (
-                                            <p className="pricing-card-v2__price-total">
-                                                {formatTotalPriceLabel(
-                                                    paymentMetaByTier[plan.tier]
-                                                        .yearly.amount,
-                                                )}
-                                            </p>
-                                        )}
-                                </div>
-
-                                <div className="pricing-card-v2__cta-wrap">
-                                    <button
-                                        type="button"
-                                        onClick={(event) => handlePlanClick(event, plan.tier)}
-                                        className={`pricing-cta-v2 pricing-cta-v2--${plan.tier}`}
-                                    >
-                                        {plan.cta}
-                                    </button>
-                                </div>
-
-                                <p className="pricing-card-v2__desc">
-                                    {plan.subDescription}
-                                </p>
-
-                                <div className="pricing-card-v2__divider" />
-                                <div className="pricing-card-v2__token-block">
-                                    <span className="pricing-card-v2__token-label">
-                                        {plan.tokenInfo.label}
-                                    </span>
-                                    <div className="pricing-card-v2__token-values">
-                                        {plan.tokenInfo.lines.map((line, index) => (
-                                            <span
-                                                key={`${plan.tier}-token-line-${index}`}
-                                                className="pricing-card-v2__token-line"
-                                            >
-                                                <span className="pricing-card-v2__token-name">
-                                                    {line.prefix && (
-                                                        <span className="pricing-card-v2__token-prefix">
-                                                            {line.prefix}
-                                                        </span>
-                                                    )}
-                                                    {line.suffix && (
-                                                        <span className="pricing-card-v2__token-suffix">
-                                                            {line.suffix}
-                                                        </span>
-                                                    )}
-                                                </span>
-                                                <span className="pricing-card-v2__token-value">
-                                                    {line.value}
-                                                </span>
-                                            </span>
-                                        ))}
-                                    </div>
+                                        </>
+                                    )}
                                 </div>
                             </div>
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
             </div>
         </section>

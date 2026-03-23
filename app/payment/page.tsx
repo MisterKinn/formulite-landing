@@ -6,6 +6,8 @@ type PaymentPageProps = {
         orderName?: string;
         billingCycle?: string;
         recurring?: string;
+        purchaseType?: string;
+        tokenPackTier?: string;
     };
 };
 
@@ -29,6 +31,14 @@ export default function PaymentPage({ searchParams }: PaymentPageProps) {
 
     if (searchParams?.recurring) {
         homeParams.set("recurring", searchParams.recurring);
+    }
+
+    if (searchParams?.purchaseType) {
+        homeParams.set("purchaseType", searchParams.purchaseType);
+    }
+
+    if (searchParams?.tokenPackTier) {
+        homeParams.set("tokenPackTier", searchParams.tokenPackTier);
     }
 
     redirect(`/?${homeParams.toString()}`);

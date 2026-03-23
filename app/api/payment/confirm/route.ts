@@ -6,12 +6,16 @@ import {
 } from "@/lib/paymentErrors";
 import {
     buildUserRootPatch,
-    inferPlanFromAmount,
     normalizePlanLike,
 } from "@/lib/userData";
 import { savePaymentRecord } from "@/lib/paymentHistory";
 import { saveRecentPurchaseFeedItem } from "@/lib/recentPurchaseFeed";
 import getFirebaseAdmin from "@/lib/firebaseAdmin";
+import { getStoredExtraTokenBalance } from "@/lib/aiUsage";
+import {
+    canPurchaseTokenPack,
+    resolvePaymentProduct,
+} from "@/lib/tokenPacks";
 
 function extractUserIdFromCustomerKey(customerKey?: string | null): string | null {
     if (!customerKey) return null;
@@ -43,7 +47,9 @@ async function saveSubscriptionByAdmin(
     const db = admin.firestore();
     const userRef = db.collection("users").doc(userId);
     const userDoc = await userRef.get();
-    const currentData = userDoc.exists ? (userDoc.data() as Record<string, any>) : {};
+    const currentData = userDoc.exists
+        ? (userDoc.data() as Record<string, unknown>)
+        : {};
     const normalizedPlan = normalizePlanLike(input.plan, "free");
     const subscription = {
         ...(currentData.subscription || {}),
@@ -56,8 +62,86 @@ async function saveSubscriptionByAdmin(
         plan: normalizedPlan,
         aiCallUsage: options?.resetUsageAt ? 0 : undefined,
         usageResetAt: options?.resetUsageAt,
+        extraTokenBalance: getStoredExtraTokenBalance(currentData),
     });
     await userRef.set(patch, { merge: true });
+}
+
+async function applyTokenPackPurchase(params: {
+    userId: string;
+    paymentKey: string;
+    orderId: string;
+    amount: number;
+    orderName: string;
+    method: string;
+    approvedAt: string;
+    card?: { company: string | null; number: string | null } | null;
+    tokenPackTier: "go" | "plus" | "pro";
+    tokensGranted: number;
+}) {
+    const admin = getFirebaseAdmin();
+    const db = admin.firestore();
+    const nowIso = new Date().toISOString();
+    const userRef = db.collection("users").doc(params.userId);
+    const paymentRef = userRef.collection("payments").doc(params.paymentKey);
+
+    return db.runTransaction(async (tx) => {
+        const [userDoc, paymentDoc] = await Promise.all([
+            tx.get(userRef),
+            tx.get(paymentRef),
+        ]);
+        const userData = userDoc.exists
+            ? ((userDoc.data() || {}) as Record<string, unknown>)
+            : {};
+
+        if (!canPurchaseTokenPack(userData)) {
+            throw new Error("ACTIVE_SUBSCRIPTION_REQUIRED_FOR_TOKEN_PACK");
+        }
+
+        if (paymentDoc.exists && paymentDoc.data()?.entitlementAppliedAt) {
+            return {
+                alreadyApplied: true,
+                extraTokenBalance: getStoredExtraTokenBalance(userData),
+            };
+        }
+
+        const nextExtraTokenBalance =
+            getStoredExtraTokenBalance(userData) + params.tokensGranted;
+
+        tx.set(
+            paymentRef,
+            {
+                paymentKey: params.paymentKey,
+                orderId: params.orderId,
+                amount: params.amount,
+                orderName: params.orderName,
+                method: params.method,
+                status: "DONE",
+                approvedAt: params.approvedAt,
+                card: params.card || null,
+                productType: "token_pack",
+                tokenPackTier: params.tokenPackTier,
+                tokensGranted: params.tokensGranted,
+                entitlementAppliedAt: params.approvedAt || nowIso,
+                createdAt: nowIso,
+            },
+            { merge: true },
+        );
+
+        tx.set(
+            userRef,
+            {
+                extraTokenBalance: nextExtraTokenBalance,
+                updatedAt: nowIso,
+            },
+            { merge: true },
+        );
+
+        return {
+            alreadyApplied: false,
+            extraTokenBalance: nextExtraTokenBalance,
+        };
+    });
 }
 
 /**
@@ -142,58 +226,16 @@ export async function POST(request: NextRequest) {
                 const resolvedUserId = passedUserId || null;
                 if (resolvedUserId) {
                     try {
-                        const numericAmount = Number(amount);
-                        const inferredPlan = inferPlanFromAmount(
-                            numericAmount,
-                            "monthly",
-                        );
-                        const plan =
-                            inferredPlan === "go" ||
-                            inferredPlan === "plus" ||
-                            inferredPlan === "pro" ||
-                            inferredPlan === "test"
-                                ? inferredPlan
-                                : null;
-
-                        if (plan) {
-                            await saveSubscriptionByAdmin(
-                                resolvedUserId,
-                                {
-                                plan: plan as any,
-                                amount: numericAmount,
-                                startDate: new Date().toISOString(),
-                                lastPaymentDate: new Date().toISOString(),
-                                status: "active",
-                                isRecurring: false,
-                                billingCycle:
-                                    billingCycle === "yearly" ||
-                                    billingCycle === "test"
-                                        ? billingCycle
-                                        : "monthly",
-                                },
-                                {
-                                    resetUsageAt: new Date().toISOString(),
-                                },
-                            );
-                        }
-
                         await savePaymentRecord(resolvedUserId, {
                             paymentKey,
                             orderId,
-                            amount: numericAmount,
+                            amount: Number(amount),
                             orderName: "",
                             method: "카드",
                             status: "DONE",
                             approvedAt: new Date().toISOString(),
                             card: null,
-                        });
-                        await saveRecentPurchaseFeedItem({
-                            userId: resolvedUserId,
-                            paymentKey,
-                            orderName: "",
-                            amount: numericAmount,
-                            status: "DONE",
-                            approvedAt: new Date().toISOString(),
+                            productType: "unknown",
                         });
                     } catch (recoveryErr) {
                         console.error(
@@ -234,26 +276,45 @@ export async function POST(request: NextRequest) {
 
         /* ------------------ 4. 정상 성공 ------------------ */
         // When available, update user subscription immediately based on customerKey
+        const responseProduct = resolvePaymentProduct({
+            orderName: data?.orderName,
+            amount: data?.totalAmount ?? data?.amount ?? amount,
+            billingCycle,
+        });
         try {
             const customerKey = data?.customerKey;
             const totalAmount = Number(data?.totalAmount ?? data?.amount ?? 0);
+            const orderName = data?.orderName || "";
             const resolvedUserId =
                 passedUserId || extractUserIdFromCustomerKey(customerKey);
             if (resolvedUserId) {
-                // map amount to plan
-                const inferredPlan = inferPlanFromAmount(totalAmount, "monthly");
-                const plan =
-                    inferredPlan === "go" ||
-                    inferredPlan === "plus" ||
-                    inferredPlan === "pro" ||
-                    inferredPlan === "test"
-                        ? inferredPlan
-                        : null;
-                if (plan) {
+                if (responseProduct.kind === "token_pack" && responseProduct.tokenPack) {
+                    await applyTokenPackPurchase({
+                        userId: resolvedUserId,
+                        paymentKey: data?.paymentKey || paymentKey,
+                        orderId: data?.orderId || orderId,
+                        amount: totalAmount,
+                        orderName,
+                        method: data?.method || "카드",
+                        approvedAt:
+                            data?.approvedAt || data?.requestedAt || new Date().toISOString(),
+                        card: data?.card
+                            ? {
+                                  company: data.card.company || null,
+                                  number: data.card.number || null,
+                              }
+                            : null,
+                        tokenPackTier: responseProduct.tokenPack.tier,
+                        tokensGranted: responseProduct.tokenPack.tokens,
+                    });
+                } else if (
+                    responseProduct.kind === "subscription" &&
+                    responseProduct.plan
+                ) {
                     await saveSubscriptionByAdmin(
                         resolvedUserId,
                         {
-                            plan: plan as any,
+                            plan: responseProduct.plan,
                             amount: totalAmount,
                             startDate: new Date().toISOString(),
                             lastPaymentDate: new Date().toISOString(),
@@ -269,28 +330,48 @@ export async function POST(request: NextRequest) {
                             resetUsageAt: new Date().toISOString(),
                         },
                     );
+                    await savePaymentRecord(resolvedUserId, {
+                        paymentKey: data?.paymentKey || paymentKey,
+                        orderId: data?.orderId || orderId,
+                        amount: totalAmount,
+                        orderName,
+                        method: data?.method || "카드",
+                        status: "DONE",
+                        approvedAt:
+                            data?.approvedAt || data?.requestedAt || new Date().toISOString(),
+                        card: data?.card
+                            ? {
+                                  company: data.card.company || null,
+                                  number: data.card.number || null,
+                              }
+                            : null,
+                        productType: "subscription",
+                        entitlementAppliedAt:
+                            data?.approvedAt || data?.requestedAt || new Date().toISOString(),
+                    });
+                } else {
+                    await savePaymentRecord(resolvedUserId, {
+                        paymentKey: data?.paymentKey || paymentKey,
+                        orderId: data?.orderId || orderId,
+                        amount: totalAmount,
+                        orderName,
+                        method: data?.method || "카드",
+                        status: "DONE",
+                        approvedAt:
+                            data?.approvedAt || data?.requestedAt || new Date().toISOString(),
+                        card: data?.card
+                            ? {
+                                  company: data.card.company || null,
+                                  number: data.card.number || null,
+                              }
+                            : null,
+                        productType: "unknown",
+                    });
                 }
-
-                await savePaymentRecord(resolvedUserId, {
-                    paymentKey: data?.paymentKey || paymentKey,
-                    orderId: data?.orderId || orderId,
-                    amount: totalAmount,
-                    orderName: data?.orderName || "",
-                    method: data?.method || "카드",
-                    status: "DONE",
-                    approvedAt:
-                        data?.approvedAt || data?.requestedAt || new Date().toISOString(),
-                    card: data?.card
-                        ? {
-                              company: data.card.company || null,
-                              number: data.card.number || null,
-                          }
-                        : null,
-                });
                 await saveRecentPurchaseFeedItem({
                     userId: resolvedUserId,
                     paymentKey: data?.paymentKey || paymentKey,
-                    orderName: data?.orderName || "",
+                    orderName,
                     amount: totalAmount,
                     status: "DONE",
                     approvedAt:
@@ -303,6 +384,8 @@ export async function POST(request: NextRequest) {
 
         return NextResponse.json({
             success: true,
+            productType: responseProduct.kind,
+            tokensGranted: responseProduct.tokenPack?.tokens || 0,
             data,
         });
     } catch (error) {
@@ -310,6 +393,15 @@ export async function POST(request: NextRequest) {
             error instanceof Error
                 ? error.message
                 : "알 수 없는 오류가 발생했습니다";
+
+        if (errorMessage === "ACTIVE_SUBSCRIPTION_REQUIRED_FOR_TOKEN_PACK") {
+            return NextResponse.json(
+                {
+                    error: "활성 유료 구독 중인 선생님만 추가 토큰을 구매할 수 있습니다.",
+                },
+                { status: 403 },
+            );
+        }
 
         logPaymentError(
             {

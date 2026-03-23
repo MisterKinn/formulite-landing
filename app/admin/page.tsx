@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getAuth, onAuthStateChanged, signOut, User } from "firebase/auth";
+import { doc, getDoc, getFirestore } from "firebase/firestore";
 import {
     CreditCard,
     Home,
@@ -95,9 +96,24 @@ interface UpdateManifestForm {
     releaseNotes: string;
 }
 
+interface TestSubscriptionInfo {
+    plan?: string;
+    status?: string;
+    amount?: number;
+    billingCycle?: string;
+    isRecurring?: boolean;
+    nextBillingDate?: string | null;
+    lastPaymentDate?: string | null;
+    registeredAt?: string | null;
+    cancelledAt?: string | null;
+    billingKey?: string | null;
+}
+
 const EDITABLE_PLANS = ["free", "go", "plus", "pro"] as const;
 type EditablePlan = (typeof EDITABLE_PLANS)[number];
 const USERS_PER_PAGE = 30;
+const TEST_SUBSCRIPTION_AMOUNT = 100;
+const TEST_SUBSCRIPTION_ORDER_NAME = "Nova AI 테스트 정기구독";
 const PLAN_LABELS: Record<string, string> = {
     free: "FREE",
     go: "GO",
@@ -150,6 +166,13 @@ export default function AdminPage() {
     const [updateStatusMessage, setUpdateStatusMessage] = useState("");
     const [updateErrorMessage, setUpdateErrorMessage] = useState("");
     const [forceMandatoryUpdate, setForceMandatoryUpdate] = useState(false);
+    const [testSubscription, setTestSubscription] =
+        useState<TestSubscriptionInfo | null>(null);
+    const [testSubscriptionLoading, setTestSubscriptionLoading] = useState(false);
+    const [testSubscriptionError, setTestSubscriptionError] = useState("");
+    const [testSubscriptionAction, setTestSubscriptionAction] = useState<
+        string | null
+    >(null);
 
     // Delete state
     const [deletingPaymentKey, setDeletingPaymentKey] = useState<string | null>(
@@ -601,6 +624,44 @@ export default function AdminPage() {
         }
     }, [getAdminAuthHeader]);
 
+    const fetchTestSubscription = useCallback(async () => {
+        if (!authUser) {
+            setTestSubscription(null);
+            setTestSubscriptionError("");
+            return;
+        }
+
+        const firebaseApp = getFirebaseAppOrNull();
+        if (!firebaseApp) {
+            setTestSubscription(null);
+            setTestSubscriptionError("Firebase 설정을 찾을 수 없습니다.");
+            return;
+        }
+
+        setTestSubscriptionLoading(true);
+        setTestSubscriptionError("");
+        try {
+            const db = getFirestore(firebaseApp);
+            const userDoc = await getDoc(doc(db, "users", authUser.uid));
+            const data = userDoc.exists()
+                ? (userDoc.data() as Record<string, unknown>)
+                : {};
+            const subscription = (data.subscription || null) as
+                | TestSubscriptionInfo
+                | null;
+            setTestSubscription(subscription);
+        } catch (error) {
+            console.error("Failed to fetch test subscription:", error);
+            setTestSubscriptionError(
+                error instanceof Error
+                    ? error.message
+                    : "테스트 구독 정보를 불러오지 못했습니다.",
+            );
+        } finally {
+            setTestSubscriptionLoading(false);
+        }
+    }, [authUser]);
+
     // Fetch stats
     useEffect(() => {
         if (!authUser && !adminSessionToken) return;
@@ -734,6 +795,11 @@ export default function AdminPage() {
         fetchUpdateManifest();
     }, [authUser, adminSessionToken, fetchUpdateManifest]);
 
+    useEffect(() => {
+        if (activeTab !== "updates") return;
+        void fetchTestSubscription();
+    }, [activeTab, fetchTestSubscription]);
+
     if (loading) {
         return (
             <div className="admin-loading">
@@ -813,6 +879,13 @@ export default function AdminPage() {
         });
     };
 
+    const formatOptionalDateTime = (value?: string | null) => {
+        if (!value) return "-";
+        const parsed = new Date(value);
+        if (Number.isNaN(parsed.getTime())) return "-";
+        return formatDateTime(value);
+    };
+
     const formatPeriodLabel = (subscription: UserData["subscription"]) => {
         if (subscription.plan === "free" || subscription.status === "none") {
             return "없음";
@@ -844,6 +917,92 @@ export default function AdminPage() {
     ) => {
         if (subscription.status !== "cancelled") return "-";
         return formatOptionalDate(subscription.nextBillingDate);
+    };
+
+    const getBillingCycleLabel = (billingCycle?: string | null) => {
+        if (billingCycle === "test") return "1분마다 100원";
+        if (billingCycle === "yearly") return "매년";
+        if (billingCycle === "monthly") return "매월";
+        return "-";
+    };
+
+    const handleStartTestSubscription = () => {
+        if (!authUser) {
+            alert("Firebase 관리자 계정으로 로그인한 뒤 다시 시도해주세요.");
+            return;
+        }
+
+        if (
+            testSubscription?.status === "active" &&
+            testSubscription?.isRecurring &&
+            testSubscription?.billingCycle !== "test"
+        ) {
+            alert(
+                "현재 테스트 외 다른 정기구독이 활성화되어 있습니다. 기존 구독을 해지한 뒤 테스트 구독을 등록해주세요.",
+            );
+            return;
+        }
+
+        const params = new URLSearchParams({
+            amount: String(TEST_SUBSCRIPTION_AMOUNT),
+            orderName: TEST_SUBSCRIPTION_ORDER_NAME,
+            billingCycle: "test",
+        });
+        window.location.href = `/card-registration?${params.toString()}`;
+    };
+
+    const handleCancelTestSubscription = async () => {
+        if (!authUser) {
+            alert("Firebase 관리자 계정으로 로그인한 뒤 다시 시도해주세요.");
+            return;
+        }
+
+        if (!testSubscription?.billingKey || !testSubscription?.isRecurring) {
+            alert("취소할 활성 정기구독이 없습니다.");
+            return;
+        }
+
+        if (
+            !confirm(
+                "현재 등록된 테스트 정기구독을 취소하시겠습니까?\n\n취소 후에는 다음 자동결제가 중단됩니다.",
+            )
+        ) {
+            return;
+        }
+
+        setTestSubscriptionAction("cancel");
+        try {
+            const token = await authUser.getIdToken();
+            const response = await fetch("/api/billing/cancel", {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ userId: authUser.uid }),
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || "정기구독 취소에 실패했습니다.");
+            }
+            setTestSubscription(
+                (data.subscription || null) as TestSubscriptionInfo | null,
+            );
+            alert(
+                data.message ||
+                    "정기구독이 취소되었습니다. 남은 이용 기간 이후 자동결제가 중단됩니다.",
+            );
+        } catch (error) {
+            console.error("Failed to cancel test subscription:", error);
+            alert(
+                error instanceof Error
+                    ? error.message
+                    : "정기구독 취소에 실패했습니다.",
+            );
+        } finally {
+            setTestSubscriptionAction(null);
+            void fetchTestSubscription();
+        }
     };
 
     const totalUsersPages = Math.max(1, Math.ceil(usersTotal / USERS_PER_PAGE));
@@ -1904,6 +2063,150 @@ export default function AdminPage() {
                                     )}
                                 </form>
                             )}
+
+                            <div className="admin-panel admin-subscription-test-panel">
+                                <div className="admin-panel-head">
+                                    <h3>정기구독 테스트</h3>
+                                    <p>
+                                        토스페이먼츠 테스트 구독을 1분마다 100원으로
+                                        확인합니다.
+                                    </p>
+                                </div>
+
+                                {!authUser ? (
+                                    <div className="admin-test-subscription-message admin-test-subscription-warning">
+                                        이 기능은 Firebase 관리자 계정으로 로그인했을 때만
+                                        사용할 수 있습니다.
+                                    </div>
+                                ) : testSubscriptionLoading ? (
+                                    <div className="admin-loading-inline">
+                                        <div className="admin-spinner" />
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div className="admin-test-subscription-grid">
+                                            <div className="admin-test-subscription-item">
+                                                <span>현재 플랜</span>
+                                                <strong>
+                                                    {testSubscription?.plan
+                                                        ? (PLAN_LABELS[
+                                                              testSubscription.plan
+                                                          ] ||
+                                                          testSubscription.plan.toUpperCase())
+                                                        : "없음"}
+                                                </strong>
+                                            </div>
+                                            <div className="admin-test-subscription-item">
+                                                <span>상태</span>
+                                                <strong>
+                                                    {getSubscriptionStatusLabel(
+                                                        testSubscription?.status ||
+                                                            "none",
+                                                    )}
+                                                </strong>
+                                            </div>
+                                            <div className="admin-test-subscription-item">
+                                                <span>결제 주기</span>
+                                                <strong>
+                                                    {getBillingCycleLabel(
+                                                        testSubscription?.billingCycle,
+                                                    )}
+                                                </strong>
+                                            </div>
+                                            <div className="admin-test-subscription-item">
+                                                <span>결제 금액</span>
+                                                <strong>
+                                                    {typeof testSubscription?.amount ===
+                                                    "number"
+                                                        ? formatCurrency(
+                                                              testSubscription.amount,
+                                                          )
+                                                        : "-"}
+                                                </strong>
+                                            </div>
+                                            <div className="admin-test-subscription-item">
+                                                <span>다음 결제 예정</span>
+                                                <strong>
+                                                    {formatOptionalDateTime(
+                                                        testSubscription?.nextBillingDate,
+                                                    )}
+                                                </strong>
+                                            </div>
+                                            <div className="admin-test-subscription-item">
+                                                <span>마지막 결제</span>
+                                                <strong>
+                                                    {formatOptionalDateTime(
+                                                        testSubscription?.lastPaymentDate,
+                                                    )}
+                                                </strong>
+                                            </div>
+                                        </div>
+
+                                        <div className="admin-test-subscription-message">
+                                            {testSubscription?.status === "active" &&
+                                            testSubscription?.isRecurring &&
+                                            testSubscription?.billingCycle ===
+                                                "test"
+                                                ? "테스트 정기구독이 활성화되어 있습니다. 배포 환경에서는 1분 주기 크론으로 자동 청구를 확인할 수 있습니다."
+                                                : testSubscription?.status ===
+                                                    "active" &&
+                                                  testSubscription?.isRecurring
+                                                  ? "현재 테스트 외 다른 정기구독이 활성화되어 있습니다. 테스트 전에는 별도 테스트 계정을 사용하는 것을 권장합니다."
+                                                  : "테스트 구독을 시작하면 100원 자동결제와 구독 취소 동작을 이 화면에서 확인할 수 있습니다."}
+                                        </div>
+
+                                        {testSubscriptionError && (
+                                            <p className="admin-update-error">
+                                                {testSubscriptionError}
+                                            </p>
+                                        )}
+
+                                        <div className="admin-update-actions">
+                                            <button
+                                                type="button"
+                                                className="admin-update-secondary-btn"
+                                                onClick={() =>
+                                                    void fetchTestSubscription()
+                                                }
+                                                disabled={testSubscriptionLoading}
+                                            >
+                                                상태 새로고침
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="admin-update-secondary-btn"
+                                                onClick={handleStartTestSubscription}
+                                                disabled={
+                                                    testSubscription?.status ===
+                                                        "active" &&
+                                                    testSubscription?.isRecurring &&
+                                                    testSubscription?.billingCycle !==
+                                                        "test"
+                                                }
+                                            >
+                                                테스트 구독 시작
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="admin-update-primary-btn"
+                                                onClick={() =>
+                                                    void handleCancelTestSubscription()
+                                                }
+                                                disabled={
+                                                    testSubscriptionAction ===
+                                                        "cancel" ||
+                                                    !testSubscription?.billingKey ||
+                                                    !testSubscription?.isRecurring
+                                                }
+                                            >
+                                                {testSubscriptionAction === "cancel"
+                                                    ? "취소 중..."
+                                                    : "정기구독 취소"}
+                                            </button>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
                         </div>
                     )}
                 </main>

@@ -165,6 +165,14 @@ function LoginContent() {
             if (billingCycle) {
                 paymentParams.set("billingCycle", billingCycle);
             }
+            const purchaseType = searchParams?.get("purchaseType");
+            if (purchaseType) {
+                paymentParams.set("purchaseType", purchaseType);
+            }
+            const tokenPackTier = searchParams?.get("tokenPackTier");
+            if (tokenPackTier) {
+                paymentParams.set("tokenPackTier", tokenPackTier);
+            }
             window.location.href = `/?${paymentParams.toString()}`;
             return;
         }

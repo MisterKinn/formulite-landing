@@ -15,6 +15,7 @@ export async function ensureUserDefaults(userId: string) {
             await setDoc(userRef, {
                 plan: "free",
                 aiCallUsage: 0,
+                extraTokenBalance: 0,
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString(),
             });
@@ -22,13 +23,16 @@ export async function ensureUserDefaults(userId: string) {
         } else {
             // Existing user - ensure fields exist
             const data = userDoc.data();
-            const updates: any = {};
+            const updates: Record<string, unknown> = {};
 
             if (!data.plan) {
                 updates.plan = "free";
             }
             if (data.aiCallUsage === undefined) {
                 updates.aiCallUsage = 0;
+            }
+            if (data.extraTokenBalance === undefined) {
+                updates.extraTokenBalance = 0;
             }
 
             if (Object.keys(updates).length > 0) {

@@ -86,6 +86,19 @@ def _is_win32com_cache_error(exc: Exception | None) -> bool:
     )
 
 
+def _is_pandas_runtime_error(exc: Exception | None) -> bool:
+    text = str(exc or "")
+    lower = text.lower()
+    return (
+        "_pandas_datetime_capi" in lower
+        or "partially initialized module 'pandas'" in lower
+        or 'partially initialized module "pandas"' in lower
+        or ("no module named" in lower and "pandas" in lower)
+        or ("dll load failed" in lower and ("pandas" in lower or "numpy" in lower))
+        or ("cannot import name" in lower and "pandas" in lower)
+    )
+
+
 def _format_connect_error(primary_exc: Exception, secondary_exc: Exception | None) -> str:
     if _is_rpc_unavailable_error(primary_exc) or (
         secondary_exc is not None and _is_rpc_unavailable_error(secondary_exc)
@@ -724,6 +737,55 @@ class HwpController:
 
         return None, progid_exc or exc
 
+    @staticmethod
+    def _create_hwp_via_dispatch(visible: bool = True) -> tuple[Any | None, Exception | None]:
+        """Create a fresh HWP COM object without importing pyhwpx."""
+        try:
+            import win32com.client  # type: ignore
+
+            last_exc: Exception | None = None
+            for progid in (
+                "HWPFrame.HwpObject.2",
+                "HWPFrame.HwpObject",
+                "HwpFrame.HwpObject.2",
+                "HwpFrame.HwpObject",
+            ):
+                for use_cache in (False, True):
+                    try:
+                        if use_cache:
+                            HwpController._ensure_win32com_cache_package()
+                            hwp_obj = win32com.client.gencache.EnsureDispatch(progid)
+                        else:
+                            hwp_obj = win32com.client.Dispatch(progid)
+                    except Exception as exc:
+                        last_exc = exc
+                        if use_cache and _is_win32com_cache_error(exc):
+                            HwpController._clear_corrupted_com_cache()
+                            try:
+                                hwp_obj = win32com.client.gencache.EnsureDispatch(progid)
+                            except Exception as retry_exc:
+                                last_exc = retry_exc
+                                continue
+                        else:
+                            continue
+
+                    try:
+                        windows = getattr(hwp_obj, "XHwpWindows", None)
+                        if windows is not None:
+                            active = getattr(windows, "Active_XHwpWindow", None)
+                            if active is None:
+                                item = getattr(windows, "Item", None)
+                                if callable(item):
+                                    active = item(0)
+                            if active is not None and hasattr(active, "Visible"):
+                                active.Visible = visible
+                    except Exception:
+                        pass
+                    return hwp_obj, None
+            return None, last_exc
+        except Exception as exc:
+            return None, exc
+
     def _register_security_module_best_effort(self) -> None:
         """Try common security-module names used by HWP automation."""
         if not self._register_module or self._hwp is None:
@@ -764,6 +826,17 @@ class HwpController:
                 except ImportError:
                     raise
                 except Exception as exc:
+                    if _is_pandas_runtime_error(exc):
+                        hwp_obj, dispatch_exc = self._create_hwp_via_dispatch(visible=self._visible)
+                        if hwp_obj is None:
+                            fallback_detail = ""
+                            if dispatch_exc is not None:
+                                fallback_detail = f" COM 우회 연결도 실패했습니다: {dispatch_exc}"
+                            raise HwpControllerError(
+                                "HWP 연결 실패: 내부 Python 런타임(pandas) 초기화에 실패했습니다."
+                                f"{fallback_detail} Nova AI를 완전히 종료한 뒤 다시 실행하고, "
+                                "같은 문제가 반복되면 기존 설치 폴더를 삭제한 뒤 재설치해 주세요."
+                            ) from exc
                     if _is_win32com_cache_error(exc):
                         self._clear_corrupted_com_cache()
                         try:
@@ -3790,6 +3863,67 @@ class HwpController:
     _CROP_MAX_WIDTH = 900
 
     @staticmethod
+    def _looks_like_line_art_image(image: Any) -> bool:
+        """Detect grayscale-ish diagrams/text where downscaling can wash out black lines."""
+        try:
+            from PIL import Image, ImageChops, ImageStat
+        except ImportError:
+            return False
+
+        try:
+            sample = image.convert("RGB")
+            max_dim = max(sample.size)
+            if max_dim > 256:
+                scale = 256.0 / float(max_dim)
+                sample = sample.resize(
+                    (
+                        max(1, int(round(sample.size[0] * scale))),
+                        max(1, int(round(sample.size[1] * scale))),
+                    ),
+                    Image.BILINEAR,
+                )
+
+            gray = sample.convert("L")
+            hist = gray.histogram()
+            total = max(1, gray.size[0] * gray.size[1])
+            dark_ratio = sum(hist[:96]) / float(total)
+            light_ratio = sum(hist[224:]) / float(total)
+            mid_ratio = sum(hist[96:224]) / float(total)
+
+            diff_rg = ImageChops.difference(sample.getchannel("R"), sample.getchannel("G"))
+            diff_gb = ImageChops.difference(sample.getchannel("G"), sample.getchannel("B"))
+            chroma = ImageChops.add(diff_rg, diff_gb, scale=1.0, offset=0)
+            chroma_mean = float(ImageStat.Stat(chroma).mean[0])
+
+            return (
+                chroma_mean < 6.0
+                and dark_ratio >= 0.01
+                and light_ratio >= 0.35
+                and mid_ratio <= 0.62
+            )
+        except Exception:
+            return False
+
+    @classmethod
+    def _resize_crop_preserving_dark_lines(cls, image: Any, target_size: tuple[int, int]) -> Any:
+        """Resize crops while keeping thin black lines from turning gray."""
+        try:
+            from PIL import Image, ImageEnhance, ImageFilter, ImageOps
+        except ImportError:
+            return image.resize(target_size)
+
+        if cls._looks_like_line_art_image(image):
+            resized = image.resize(target_size, Image.BICUBIC)
+            gray = resized.convert("L")
+            gray = ImageOps.autocontrast(gray, cutoff=0.5)
+            gray = ImageEnhance.Contrast(gray).enhance(1.12)
+            gray = gray.filter(ImageFilter.UnsharpMask(radius=0.7, percent=170, threshold=2))
+            gray = gray.point(lambda value: max(0, min(255, int(round(value * 0.97)))))
+            return gray.convert("RGB")
+
+        return image.resize(target_size, Image.LANCZOS)
+
+    @staticmethod
     def _image_display_size_mm(image_path: str, scale: float) -> tuple[int, int]:
         """
         Estimate a display size in mm for HWP specific-size insertion.
@@ -4451,9 +4585,9 @@ class HwpController:
         crop_w, crop_h = cropped.size
         if crop_w > self._CROP_MAX_WIDTH:
             scale = self._CROP_MAX_WIDTH / crop_w
-            cropped = cropped.resize(
+            cropped = self._resize_crop_preserving_dark_lines(
+                cropped,
                 (self._CROP_MAX_WIDTH, max(1, int(crop_h * scale))),
-                Image.LANCZOS,
             )
 
         tmp_dir = Path(tempfile.gettempdir()) / "nova_ai"

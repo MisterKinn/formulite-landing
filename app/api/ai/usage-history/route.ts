@@ -4,6 +4,42 @@ import getFirebaseAdmin from "@/lib/firebaseAdmin";
 const DEFAULT_LIMIT = 30;
 const MAX_LIMIT = 100;
 
+function normalizeUsageTokens(
+    feature: unknown,
+    promptTokensInput: unknown,
+    outputTokensInput: unknown,
+    totalTokensInput: unknown,
+) {
+    const featureKey = String(feature || "").trim().toLowerCase();
+    const promptTokens = Math.max(0, Math.floor(Number(promptTokensInput || 0)));
+    const outputTokens = Math.max(0, Math.floor(Number(outputTokensInput || 0)));
+    const rawTotalTokens = Math.max(
+        0,
+        Math.floor(Number(totalTokensInput || promptTokens + outputTokens)),
+    );
+
+    let billedPromptTokens = promptTokens;
+    let billedOutputTokens = outputTokens;
+
+    if (featureKey === "typing_problem" || featureKey === "typing") {
+        billedOutputTokens *= 2;
+    } else if (featureKey === "image_generation") {
+        billedPromptTokens *= 2;
+        billedOutputTokens *= 2;
+    }
+
+    const billedTotalTokens =
+        promptTokens > 0 || outputTokens > 0
+            ? billedPromptTokens + billedOutputTokens
+            : rawTotalTokens;
+
+    return {
+        promptTokens: billedPromptTokens,
+        outputTokens: billedOutputTokens,
+        totalTokens: billedTotalTokens,
+    };
+}
+
 function getBearerToken(authHeader: string | null): string | null {
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
         return null;
@@ -85,6 +121,7 @@ export async function POST(request: NextRequest) {
             promptTokens?: unknown;
             outputTokens?: unknown;
             totalTokens?: unknown;
+            usageNormalized?: unknown;
             createdAt?: unknown;
         };
 
@@ -94,12 +131,29 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
+        const usageAlreadyNormalized = Boolean(body.usageNormalized);
         const promptTokens = Math.max(0, Math.floor(Number(body.promptTokens || 0)));
         const outputTokens = Math.max(0, Math.floor(Number(body.outputTokens || 0)));
-        const totalTokens = Math.max(
+        const rawTotalTokens = Math.max(
             0,
             Math.floor(Number(body.totalTokens || promptTokens + outputTokens)),
         );
+        const {
+            promptTokens: billedPromptTokens,
+            outputTokens: billedOutputTokens,
+            totalTokens: billedTotalTokens,
+        } = usageAlreadyNormalized
+            ? {
+                  promptTokens,
+                  outputTokens,
+                  totalTokens: rawTotalTokens,
+              }
+            : normalizeUsageTokens(
+                  body.feature,
+                  body.promptTokens,
+                  body.outputTokens,
+                  body.totalTokens,
+              );
 
         const admin = getFirebaseAdmin();
         const db = admin.firestore();
@@ -112,9 +166,9 @@ export async function POST(request: NextRequest) {
                 provider: String(body.provider || "gemini"),
                 feature: String(body.feature || "typing"),
                 source: String(body.source || "desktop"),
-                promptTokens,
-                outputTokens,
-                totalTokens,
+                promptTokens: billedPromptTokens,
+                outputTokens: billedOutputTokens,
+                totalTokens: billedTotalTokens,
                 createdAt:
                     typeof body.createdAt === "string" && body.createdAt
                         ? body.createdAt

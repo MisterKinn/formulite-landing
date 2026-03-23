@@ -4,6 +4,10 @@ import { Suspense, useEffect, useMemo, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { loadTossPayments } from "@tosspayments/tosspayments-sdk";
 import { useAuth } from "@/context/AuthContext";
+import {
+    isValidOneTimeTossClientKey,
+    resolveOneTimeTossClientKey,
+} from "@/lib/tossClientKeys";
 
 import Home from "../../components/Home";
 import ExamTyping from "../../components/ExamTyping";
@@ -27,6 +31,8 @@ function FormuLiteContent() {
         const amountRaw = searchParams.get("amount");
         const orderNameRaw = searchParams.get("orderName");
         const billingCycleRaw = searchParams.get("billingCycle");
+        const purchaseTypeRaw = searchParams.get("purchaseType");
+        const tokenPackTierRaw = searchParams.get("tokenPackTier");
         if (!amountRaw || !orderNameRaw) return null;
         const amount = Number(amountRaw);
         if (Number.isNaN(amount) || amount <= 0) return null;
@@ -34,6 +40,8 @@ function FormuLiteContent() {
             amount,
             orderName: orderNameRaw,
             billingCycle: billingCycleRaw ?? undefined,
+            purchaseType: purchaseTypeRaw ?? undefined,
+            tokenPackTier: tokenPackTierRaw ?? undefined,
         };
     }, [searchParams]);
 
@@ -49,7 +57,13 @@ function FormuLiteContent() {
 
     useEffect(() => {
         paymentStartedRef.current = false;
-    }, [pendingPayment?.amount, pendingPayment?.orderName, pendingPayment?.billingCycle]);
+    }, [
+        pendingPayment?.amount,
+        pendingPayment?.orderName,
+        pendingPayment?.billingCycle,
+        pendingPayment?.purchaseType,
+        pendingPayment?.tokenPackTier,
+    ]);
 
     useEffect(() => {
         if (!pendingPayment) return;
@@ -73,14 +87,30 @@ function FormuLiteContent() {
 
         const startPayment = async () => {
             try {
-                const clientKey = process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY?.trim() || "";
+                if (pendingPayment.purchaseType === "token_pack") {
+                    const eligibilityResponse = await fetch(
+                        `/api/token-packs/eligibility?userId=${encodeURIComponent(user.uid)}`,
+                        { cache: "no-store" },
+                    );
+                    const eligibilityData = await eligibilityResponse.json();
+                    if (
+                        !eligibilityResponse.ok ||
+                        !eligibilityData?.eligible
+                    ) {
+                        window.alert(
+                            eligibilityData?.message ||
+                                "활성 유료 구독 중인 선생님만 추가 토큰을 구매할 수 있습니다.",
+                        );
+                        router.replace("/");
+                        return;
+                    }
+                }
 
-                if (
-                    !clientKey.startsWith("test_ck_") &&
-                    !clientKey.startsWith("live_ck_")
-                ) {
+                const clientKey = resolveOneTimeTossClientKey();
+
+                if (!isValidOneTimeTossClientKey(clientKey)) {
                     window.alert(
-                        "토스 결제 클라이언트 키 형식이 올바르지 않습니다. NEXT_PUBLIC_TOSS_CLIENT_KEY를 확인해주세요.",
+                        "토스 단건 결제 클라이언트 키 형식이 올바르지 않습니다. NEXT_PUBLIC_TOSS_CLIENT_KEY를 확인해주세요.",
                     );
                     router.replace("/");
                     return;
@@ -101,13 +131,26 @@ function FormuLiteContent() {
                     },
                     orderId: `order_${Date.now()}`,
                     orderName: pendingPayment.orderName,
-                    successUrl: `${window.location.origin}/payment/success?uid=${encodeURIComponent(user.uid)}`,
+                    successUrl: `${window.location.origin}/payment/success?uid=${encodeURIComponent(user.uid)}${
+                        pendingPayment.purchaseType
+                            ? `&purchaseType=${encodeURIComponent(
+                                  pendingPayment.purchaseType,
+                              )}`
+                            : ""
+                    }${
+                        pendingPayment.tokenPackTier
+                            ? `&tokenPackTier=${encodeURIComponent(
+                                  pendingPayment.tokenPackTier,
+                              )}`
+                            : ""
+                    }`,
                     failUrl: `${window.location.origin}/payment/fail`,
                     customerEmail: user.email || "test@example.com",
                     customerName: user.displayName || "고객",
                 });
-            } catch (error: any) {
-                window.alert(error?.message || "결제 요청 중 오류가 발생했습니다.");
+            } catch (error: unknown) {
+                const err = error as { message?: string };
+                window.alert(err?.message || "결제 요청 중 오류가 발생했습니다.");
                 router.replace("/");
             }
         };

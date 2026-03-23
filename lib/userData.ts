@@ -90,6 +90,7 @@ export function buildUserRootPatch(params: {
     plan?: UserPlan;
     aiCallUsage?: number;
     usageResetAt?: string;
+    extraTokenBalance?: number;
 }): PlainObject {
     const existing = params.existingUser ?? {};
     const patch: PlainObject = {
@@ -120,6 +121,14 @@ export function buildUserRootPatch(params: {
             : typeof existingUsageResetAt === "string"
               ? existingUsageResetAt
               : undefined;
+
+    const existingExtraTokenBalance = (existing as PlainObject).extraTokenBalance;
+    patch.extraTokenBalance =
+        typeof params.extraTokenBalance === "number"
+            ? params.extraTokenBalance
+            : typeof existingExtraTokenBalance === "number"
+              ? existingExtraTokenBalance
+              : 0;
 
     if (params.profile) {
         const profile = params.profile;

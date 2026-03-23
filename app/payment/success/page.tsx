@@ -11,12 +11,6 @@ const Sidebar = dynamic(() => import("../../../components/Sidebar"), {
 import "../../style.css";
 import "../../mobile.css";
 
-// use `updateSubscription` from AuthContext (writes safely to Firestore client-side)
-// import { saveSubscription } from "@/lib/subscription";
-import { getFirestore, doc, getDoc } from "firebase/firestore";
-import { app as firebaseApp } from "../../../firebaseConfig";
-import { inferPlanFromAmount } from "@/lib/userData";
-
 /* -------------------- Loading -------------------- */
 function Loading() {
     return (
@@ -49,18 +43,16 @@ function Fail({ error, onRetry }: { error: string; onRetry: () => void }) {
 /* -------------------- Success -------------------- */
 function Success({
     result,
-    subscriptionSaved,
-    resultSubscription,
 }: {
     result: any;
-    subscriptionSaved?: { userId: string; plan: string } | null;
-    resultSubscription?: any | null;
 }) {
     const orderId = result?.data?.orderId ?? "-";
     const method = result?.data?.method ?? "-";
     const amount = Number(
         result?.data?.totalAmount ?? result?.data?.amount ?? 0,
     );
+    const productType = result?.productType || "subscription";
+    const tokensGranted = Number(result?.tokensGranted || 0);
 
     return (
         <div style={styles.fullscreen}>
@@ -77,11 +69,15 @@ function Success({
                     </svg>
                 </div>
 
-                <h1 style={styles.title}>결제가 완료되었습니다</h1>
+                <h1 style={styles.title}>
+                    {productType === "token_pack"
+                        ? "토큰 충전이 완료되었습니다"
+                        : "결제가 완료되었습니다"}
+                </h1>
                 <p style={styles.desc}>
-                    결제가 정상적으로 처리되었습니다.
-                    <br />
-                    Nova AI와 함께 더 효율적인 한글 문서 작성을 경험해보세요.
+                    {productType === "token_pack"
+                        ? "추가 토큰이 계정에 반영되었습니다. 구독 토큰을 먼저 사용한 뒤 자동으로 추가 토큰이 이어서 차감됩니다."
+                        : "결제가 정상적으로 처리되었습니다."}
                 </p>
 
                 <div style={styles.divider} />
@@ -102,6 +98,15 @@ function Success({
                     <span style={styles.label}>결제수단</span>
                     <span style={styles.value}>{method}</span>
                 </div>
+
+                {productType === "token_pack" && tokensGranted > 0 && (
+                    <div style={styles.infoRow}>
+                        <span style={styles.label}>충전 토큰</span>
+                        <span style={styles.value}>
+                            {tokensGranted.toLocaleString()} 토큰
+                        </span>
+                    </div>
+                )}
 
                 <button
                     style={{ ...styles.primaryButton, marginTop: 32 }}
@@ -136,15 +141,8 @@ function PaymentSuccessContent() {
     const [loading, setLoading] = useState(true);
     const [result, setResult] = useState<any>(null);
     const [error, setError] = useState("");
-    const [subscriptionSaved, setSubscriptionSaved] = useState<null | {
-        userId: string;
-        plan: string;
-    }>(null);
 
-    const { loading: authLoading, user, updateSubscription } = useAuth();
-    const [resultSubscription, setResultSubscription] = useState<any | null>(
-        null,
-    );
+    const { loading: authLoading, user } = useAuth();
 
     useEffect(() => {
         if (authLoading || confirmedRef.current) return;
@@ -253,7 +251,6 @@ function PaymentSuccessContent() {
                         billingKey: billingData.billingKey,
                     });
 
-                    setResultSubscription(billingData.subscription);
                     return;
                 }
 
@@ -296,7 +293,6 @@ function PaymentSuccessContent() {
                         billingKey: billingData.billingKey,
                     });
 
-                    setResultSubscription(billingData.subscription);
                     setLoading(false);
                     return;
                 }
@@ -327,107 +323,6 @@ function PaymentSuccessContent() {
                 }
 
                 setResult(data);
-
-                // Immediately try to save subscription if we can identify the user
-                (async () => {
-                    try {
-                        const toss = data?.data || data;
-
-                        // 안전하게 값들 추출
-                        const total = Number(
-                            toss?.totalAmount ?? toss?.amount ?? 0,
-                        );
-                        const inferredPlan = inferPlanFromAmount(
-                            total,
-                            billingCycle,
-                        );
-                        const plan =
-                            inferredPlan === "go" ||
-                            inferredPlan === "plus" ||
-                            inferredPlan === "pro" ||
-                            inferredPlan === "test"
-                                ? inferredPlan
-                                : null;
-                        const customerKey = toss?.customerKey || null;
-
-                        let targetUserId = resolvedUserId;
-                        if (
-                            !targetUserId &&
-                            customerKey &&
-                            typeof customerKey === "string"
-                        ) {
-                            targetUserId = customerKey.replace(
-                                /^(customer_|user_)/,
-                                "",
-                            );
-                        }
-
-                        if (user && updateSubscription && plan) {
-                            try {
-                                await updateSubscription({
-                                    plan: plan as any,
-                                    amount: total,
-                                    startDate: new Date().toISOString(),
-                                    status: "active",
-                                    customerKey,
-                                });
-                                setSubscriptionSaved({
-                                    userId: user.uid,
-                                    plan,
-                                });
-                            } catch (err) {
-                                console.error(
-                                    "Failed to update subscription via auth context:",
-                                    err,
-                                );
-                            }
-                        } else if (targetUserId && plan) {
-                            // fallback: request the admin API (requires ADMIN_SECRET in env)
-                            try {
-                                const adminSecret =
-                                    (window as any).NEXT_PUBLIC_ADMIN_SECRET ||
-                                    process.env.NEXT_PUBLIC_ADMIN_SECRET ||
-                                    "";
-                                if (!adminSecret)
-                                    throw new Error(
-                                        "No admin secret available",
-                                    );
-
-                                await fetch("/api/admin/set-subscription", {
-                                    method: "POST",
-                                    headers: {
-                                        "Content-Type": "application/json",
-                                        "x-admin-secret": adminSecret,
-                                    },
-                                    body: JSON.stringify({
-                                        userId: targetUserId,
-                                        subscription: {
-                                            plan: plan as any,
-                                            amount: total,
-                                            startDate: new Date().toISOString(),
-                                            status: "active",
-                                            customerKey,
-                                        },
-                                    }),
-                                });
-                                setSubscriptionSaved({
-                                    userId: targetUserId,
-                                    plan,
-                                });
-                            } catch (err) {
-                                console.error(
-                                    "Failed to request server subscription:",
-                                    err,
-                                );
-                            }
-                        }
-                    } catch (err) {
-                        console.error(
-                            "Failed to save subscription on success page:",
-                            err,
-                        );
-                    }
-                })();
             } catch {
                 setError("결제 처리 중 오류가 발생했습니다");
             } finally {
@@ -438,26 +333,6 @@ function PaymentSuccessContent() {
         confirm();
     }, [authLoading]);
 
-    // After confirming and when user is available, fetch subscription from Firestore
-    useEffect(() => {
-        if (loading) return;
-        if (!user) return;
-        if (!firebaseApp) return;
-
-        (async () => {
-            try {
-                const db = getFirestore(firebaseApp);
-                const snap = await getDoc(doc(db, "users", user.uid));
-                if (snap.exists()) {
-                    const sub = (snap.data() as any).subscription ?? null;
-                    setResultSubscription(sub);
-                }
-            } catch (err) {
-                console.error("Failed to fetch subscription:", err);
-            }
-        })();
-    }, [loading, user]);
-
     if (loading) return <Loading />;
     if (error)
         return <Fail error={error} onRetry={() => router.push("/")} />;
@@ -465,8 +340,6 @@ function PaymentSuccessContent() {
     return (
         <Success
             result={result}
-            subscriptionSaved={subscriptionSaved}
-            resultSubscription={resultSubscription}
         />
     );
 }

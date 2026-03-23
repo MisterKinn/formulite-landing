@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import getFirebaseAdmin from "@/lib/firebaseAdmin";
+import {
+    buildUsageCycleResetFields,
+    buildUsageResetFields,
+    getStoredExtraTokenBalance,
+    resolveEffectiveUsagePlan,
+} from "@/lib/aiUsage";
 
 /**
  * Reset AI usage counter (admin only or monthly reset)
@@ -37,12 +43,21 @@ export async function POST(request: NextRequest) {
         const admin = await getFirebaseAdmin();
         const db = admin.firestore();
         const userRef = db.collection("users").doc(userId);
+        const userDoc = await userRef.get();
+        const userData = userDoc.exists
+            ? ((userDoc.data() || {}) as Record<string, unknown>)
+            : {};
+        const plan = resolveEffectiveUsagePlan(userData);
+        const resetAt = new Date().toISOString();
+        const usageFields =
+            plan === "free"
+                ? buildUsageResetFields(
+                      resetAt,
+                      getStoredExtraTokenBalance(userData),
+                  )
+                : buildUsageCycleResetFields(userData, plan, resetAt);
 
-        await userRef.update({
-            aiCallUsage: 0,
-            aiUsageMode: "tokens",
-            usageResetAt: new Date().toISOString(),
-        });
+        await userRef.update(usageFields);
 
         return NextResponse.json({
             success: true,

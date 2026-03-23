@@ -1,13 +1,11 @@
 import Pricing from "@/components/Pricing";
 import { Navbar } from "@/components/Navbar";
-import Footer from "@/components/Footer";
 
 export default function PricingPage() {
     return (
-        <div>
+        <div className="pricing-page">
             <Navbar />
             <Pricing />
-            <Footer />
         </div>
     );
 }

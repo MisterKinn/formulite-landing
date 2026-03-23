@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import getFirebaseAdmin from "@/lib/firebaseAdmin";
 import {
+    buildUsageConsumptionResult,
     buildUsageResetFields,
+    getStoredExtraTokenBalance,
     getStoredUsageTokens,
     inferPaidPlanFromPayment,
     needsUsageResetFromLimitMigration,
@@ -73,7 +75,7 @@ export async function POST(request: NextRequest) {
             const now = new Date();
             let plan: "free" | "go" | "plus" | "pro" = "free";
             let inferredResetAt: string | undefined;
-            let userData: Record<string, any> = {};
+            let userData: Record<string, unknown> = {};
 
             const inferPlanFromPayments = async () => {
                 try {
@@ -83,7 +85,7 @@ export async function POST(request: NextRequest) {
                         .limit(20);
                     const paymentsSnap = await tx.get(paymentsQuery);
                     for (const paymentDoc of paymentsSnap.docs) {
-                        const paymentData = paymentDoc.data() as any;
+                        const paymentData = paymentDoc.data() as Record<string, unknown>;
                         const inferred = inferPaidPlanFromPayment(paymentData);
                         if (inferred !== "free") {
                             if (typeof paymentData?.approvedAt === "string") {
@@ -92,11 +94,11 @@ export async function POST(request: NextRequest) {
                             return inferred;
                         }
                     }
-                } catch (orderedQueryError) {
+                } catch {
                     const paymentsQuery = userRef.collection("payments").limit(50);
                     const paymentsSnap = await tx.get(paymentsQuery);
                     for (const paymentDoc of paymentsSnap.docs) {
-                        const paymentData = paymentDoc.data() as any;
+                        const paymentData = paymentDoc.data() as Record<string, unknown>;
                         const inferred = inferPaidPlanFromPayment(paymentData);
                         if (inferred !== "free") {
                             if (typeof paymentData?.approvedAt === "string") {
@@ -127,6 +129,7 @@ export async function POST(request: NextRequest) {
                         tier: plan,
                         aiCallUsage: usageAmount,
                         aiUsageMode: "tokens",
+                        extraTokenBalance: 0,
                         lastAiCallAt: nowIso,
                         usageResetAt: inferredResetAt || nowIso,
                         createdAt: nowIso,
@@ -142,19 +145,17 @@ export async function POST(request: NextRequest) {
                 };
             }
 
-            userData = (userDoc.data() || {}) as Record<string, any>;
+            userData = (userDoc.data() || {}) as Record<string, unknown>;
             plan = resolveEffectiveUsagePlan(userData);
             if (plan === "free") {
                 plan = await inferPlanFromPayments();
             }
-            let currentUsage = getStoredUsageTokens(userData as Record<string, any>);
-
             const resetDecision = needsUsageResetFromPayment(
-                userData as Record<string, any>,
+                userData as Record<string, unknown>,
                 plan,
             );
             const migrationResetDecision = needsUsageResetFromLimitMigration(
-                userData as Record<string, any>,
+                userData as Record<string, unknown>,
                 now,
             );
             const shouldReset =
@@ -164,41 +165,53 @@ export async function POST(request: NextRequest) {
                       migrationResetDecision.resetAt ||
                           resetDecision.resetAt ||
                           inferredResetAt,
+                      getStoredExtraTokenBalance(
+                          userData as Record<string, unknown>,
+                      ),
                   )
                 : {};
-
-            if (shouldReset) {
-                currentUsage = 0;
-            }
-
-            const limit = resolveEffectiveUsageLimit(
-                userData as Record<string, any>,
+            const userDataForConsumption = {
+                ...(userData as Record<string, unknown>),
+                ...resetFields,
+                ...(shouldReset ? { aiCallUsage: 0 } : {}),
+            };
+            const baseLimit = resolveEffectiveUsageLimit(
+                userDataForConsumption,
                 plan,
                 now,
             );
+            const currentExtraTokenBalance =
+                getStoredExtraTokenBalance(userDataForConsumption);
+            const totalLimit = baseLimit + currentExtraTokenBalance;
+            const consumption = buildUsageConsumptionResult(
+                userDataForConsumption,
+                plan,
+                usageAmount,
+                now,
+            );
 
-            if (currentUsage >= limit) {
+            if (!consumption.canConsume) {
                 return {
                     exceeded: true as const,
                     plan,
-                    currentUsage,
-                    limit,
+                    currentUsage: getStoredUsageTokens(userDataForConsumption),
+                    limit: totalLimit,
                 };
             }
 
-            const newUsage = currentUsage + usageAmount;
             tx.update(userRef, {
                 ...resetFields,
-                aiCallUsage: newUsage,
+                aiCallUsage: consumption.nextUsage,
                 aiUsageMode: "tokens",
+                extraTokenBalance: consumption.nextExtraTokenBalance,
                 lastAiCallAt: new Date().toISOString(),
             });
 
             return {
                 exceeded: false as const,
                 plan,
-                currentUsage: newUsage,
-                limit,
+                currentUsage: consumption.nextUsage,
+                limit: baseLimit + consumption.nextExtraTokenBalance,
             };
         });
 

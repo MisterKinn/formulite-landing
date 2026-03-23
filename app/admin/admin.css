@@ -801,6 +801,52 @@
     color: #fecaca;
 }
 
+.admin-subscription-test-panel {
+    padding-top: 1.05rem;
+}
+
+.admin-test-subscription-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.7rem;
+}
+
+.admin-test-subscription-item {
+    border: 1px solid rgba(148, 163, 184, 0.15);
+    background: #0f1115;
+    border-radius: 12px;
+    padding: 0.8rem 0.85rem;
+    display: grid;
+    gap: 0.28rem;
+}
+
+.admin-test-subscription-item span {
+    color: #94a3b8;
+    font-size: 0.76rem;
+}
+
+.admin-test-subscription-item strong {
+    color: #f8fafc;
+    font-size: 0.88rem;
+    word-break: break-word;
+}
+
+.admin-test-subscription-message {
+    margin-top: 0.8rem;
+    border-radius: 10px;
+    background: rgba(37, 99, 235, 0.12);
+    color: #bfdbfe;
+    padding: 0.7rem 0.8rem;
+    font-size: 0.8rem;
+    line-height: 1.55;
+}
+
+.admin-test-subscription-warning {
+    margin-top: 0;
+    background: rgba(245, 158, 11, 0.12);
+    color: #fcd34d;
+}
+
 @media (max-width: 1200px) {
     .admin-container {
         grid-template-columns: 1fr;
@@ -833,6 +879,10 @@
         grid-template-columns: 1fr;
     }
 
+    .admin-test-subscription-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+
     .admin-header {
         margin: 0.9rem 0.9rem 0;
         flex-direction: column;
@@ -857,6 +907,10 @@
     }
 
     .admin-status-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .admin-test-subscription-grid {
         grid-template-columns: 1fr;
     }
 }

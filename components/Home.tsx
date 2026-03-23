@@ -76,6 +76,7 @@ const ArrowRightIcon = () => (
 export default function Home() {
     const [isEventStripVisible, setIsEventStripVisible] = useState(true);
     const [typedText, setTypedText] = useState("");
+    const [activeShowcaseVideoIndex, setActiveShowcaseVideoIndex] = useState(0);
     const [isProcessShowcaseVisible, setIsProcessShowcaseVisible] = useState(false);
     const [activeProcessIndex, setActiveProcessIndex] = useState(0);
     const [isProcessAutoplaying, setIsProcessAutoplaying] = useState(true);
@@ -105,6 +106,14 @@ export default function Home() {
                 "<보기> 영역을 자동으로 감지해 호출하고,\n필요한 이미지와 내용을 정확히 삽입합니다.",
         },
     ];
+    const showcaseVideos = [
+        { key: "kor", label: "국어", fileName: "kor_test.mp4" },
+        { key: "eng", label: "영어", fileName: "eng_test.mp4" },
+        { key: "math", label: "수학", fileName: "math_test.mp4" },
+        { key: "science", label: "과학", fileName: "science_test.mp4" },
+        { key: "book", label: "책", fileName: "book_test.mp4" },
+    ];
+    const activeShowcaseVideo = showcaseVideos[activeShowcaseVideoIndex];
 
     useEffect(() => {
         if (typeof window === "undefined") return;
@@ -378,6 +387,52 @@ export default function Home() {
             {/* Process showcase - 2 feature images */}
             <div ref={processShowcaseRef} className="process-showcase">
                 <div className="process-showcase-shell">
+                    <div className="process-showcase-video-intro">
+                        <div className="process-showcase-video-copy-wrap">
+                            <p className="process-showcase-video-copy">
+                                타이핑 결과물을
+                                <br />
+                                지금 확인해보세요
+                            </p>
+                            <div
+                                className="process-showcase-video-tabs"
+                                role="tablist"
+                                aria-label="기능 소개 영상 선택"
+                            >
+                                {showcaseVideos.map((video, index) => (
+                                    <button
+                                        key={video.key}
+                                        type="button"
+                                        role="tab"
+                                        className={`process-showcase-video-tab ${
+                                            activeShowcaseVideoIndex === index
+                                                ? "process-showcase-video-tab--active"
+                                                : ""
+                                        }`}
+                                        aria-selected={activeShowcaseVideoIndex === index}
+                                        onClick={() => setActiveShowcaseVideoIndex(index)}
+                                    >
+                                        {video.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                        <article className="process-showcase-video-item">
+                            <video
+                                key={activeShowcaseVideo.fileName}
+                                className="process-showcase-video-player"
+                                controls
+                                preload="metadata"
+                                playsInline
+                            >
+                                <source
+                                    src={`/api/test-movie/${activeShowcaseVideo.fileName}`}
+                                    type="video/mp4"
+                                />
+                                브라우저가 video 태그를 지원하지 않습니다.
+                            </video>
+                        </article>
+                    </div>
                     <h2 className="process-showcase-title">노바AI 기능 소개</h2>
                     <p className="process-showcase-subtitle">
                         독보적인 OCR 인식 성능과 이미지 크롭/삽입 자동화를 제공합니다

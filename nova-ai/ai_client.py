@@ -30,12 +30,14 @@ from backend.firebase_profile import (
     increment_ai_usage,
     get_remaining_usage,
     get_plan_limit,
+    normalize_usage_record,
     record_ai_usage_log,
 )
 
 
 MAX_IMAGE_DIM = 2048  # Higher cap to improve recognition
 DEFAULT_GEMINI_MODEL = "gemini-2.5-pro"
+DEFAULT_GEMINI_IMAGE_MODEL = "gemini-3-pro-image-preview"
 ESTIMATED_TOKENS_PER_PROBLEM = 25000
 ESTIMATED_TOKENS_PER_EXPLANATION = 25000
 
@@ -555,9 +557,7 @@ class AIClient:
                     image_path=image_path,
                     reasoning_effort=reasoning_effort,
                 )
-            self._last_usage_tokens = total_tokens
-            self._pending_usage_tokens += total_tokens
-            self._pending_usage_records.append(
+            usage_record = normalize_usage_record(
                 {
                     "model": model_name,
                     "provider": self.provider,
@@ -571,6 +571,10 @@ class AIClient:
                     "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                 }
             )
+            billed_total_tokens = max(0, int(usage_record.get("total_tokens") or 0))
+            self._last_usage_tokens = billed_total_tokens
+            self._pending_usage_tokens += billed_total_tokens
+            self._pending_usage_records.append(usage_record)
         except AIClientError:
             raise
         except Exception as exc:

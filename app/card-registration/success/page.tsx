@@ -18,6 +18,12 @@ function CardRegistrationSuccessContent() {
     const amount = Number(searchParams.get("amount")) || 0;
     const orderName = searchParams.get("orderName") || "";
     const billingCycle = searchParams.get("billingCycle") || "monthly";
+    const billingCycleLabel =
+        billingCycle === "test"
+            ? "1분마다 100원 (테스트)"
+            : billingCycle === "yearly"
+              ? "매년"
+              : "매월";
 
     useEffect(() => {
         const processBillingAuth = async () => {
@@ -127,7 +133,9 @@ function CardRegistrationSuccessContent() {
                 <p style={styles.description}>
                     카드가 성공적으로 등록되었습니다.
                     <br />
-                    이제 월간 구독 서비스를 이용하실 수 있습니다.
+                    {billingCycle === "test"
+                        ? "이제 테스트 정기구독 자동결제를 확인할 수 있습니다."
+                        : "이제 정기구독 서비스를 이용하실 수 있습니다."}
                 </p>
 
                 <div style={styles.infoBox}>
@@ -137,7 +145,7 @@ function CardRegistrationSuccessContent() {
                         <span>{orderName || "Nova AI 구독"}</span>
                     </div>
                     <div style={styles.infoRow}>
-                        <span>월간 요금:</span>
+                        <span>결제 금액:</span>
                         <span style={styles.price}>
                             {amount
                                 ? `${amount.toLocaleString()}원`
@@ -146,9 +154,7 @@ function CardRegistrationSuccessContent() {
                     </div>
                     <div style={styles.infoRow}>
                         <span>결제 주기:</span>
-                        <span>
-                            {billingCycle === "monthly" ? "매월" : "매년"}
-                        </span>
+                        <span>{billingCycleLabel}</span>
                     </div>
                     <div style={styles.infoRow}>
                         <span>빌링키:</span>
@@ -171,13 +177,17 @@ function CardRegistrationSuccessContent() {
                 <div style={styles.nextSteps}>
                     <h3 style={styles.nextTitle}>🚀 구독이 시작되었습니다!</h3>
                     <div style={styles.subscriptionInfo}>
-                        <p>✅ 첫 번째 결제가 곧 처리됩니다</p>
                         <p>
-                            ✅ 매월{" "}
-                            {new Date(
-                                Date.now() + 30 * 24 * 60 * 60 * 1000
-                            ).getDate()}
-                            일에 자동 결제
+                            {billingCycle === "test"
+                                ? "✅ 다음 자동결제 예정 시각부터 1분 간격으로 100원 청구를 확인할 수 있습니다"
+                                : "✅ 첫 번째 결제가 곧 처리됩니다"}
+                        </p>
+                        <p>
+                            {billingCycle === "test"
+                                ? "✅ 관리자 페이지 또는 구독 관리 화면에서 상태를 바로 새로고침해 확인할 수 있습니다"
+                                : `✅ 매월 ${new Date(
+                                      Date.now() + 30 * 24 * 60 * 60 * 1000,
+                                  ).getDate()}일에 자동 결제`}
                         </p>
                         <p>✅ 언제든지 구독을 관리하거나 취소할 수 있습니다</p>
                     </div>

@@ -9,6 +9,7 @@ import {
     resolveEffectiveUsageLimit,
     resolveEffectiveUsagePlan,
 } from "@/lib/aiUsage";
+import { isTokenPackOrderName } from "@/lib/tokenPacks";
 
 const db = admin.firestore();
 
@@ -90,6 +91,7 @@ function formatPeriodDate(value: Date): string {
 
 function inferCycleFromPayment(payment: { amount?: number; orderName?: string }): string | null {
     const orderName = String(payment.orderName || "").toLowerCase();
+    if (isTokenPackOrderName(payment.orderName)) return null;
     if (orderName.includes("연간") || orderName.includes("yearly")) return "yearly";
     if (orderName.includes("월간") || orderName.includes("monthly")) return "monthly";
 

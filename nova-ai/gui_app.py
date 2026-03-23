@@ -61,7 +61,12 @@ from PySide6.QtGui import (
 from PySide6.QtMultimedia import QAudioFormat, QAudioSource, QMediaDevices
 from PySide6.QtWidgets import QStyledItemDelegate, QStyle
 
-from ai_client import AIClient, AIClientError, normalize_ai_error_message
+from ai_client import (
+    AIClient,
+    AIClientError,
+    DEFAULT_GEMINI_IMAGE_MODEL,
+    normalize_ai_error_message,
+)
 from chat_page import ChatComposeTextEdit, ChatMessageWidget, ChatWorker
 from figure_code_runner import FigureCodeRenderError, render_python_figure_code
 from hwp_controller import HwpController, HwpControllerError
@@ -90,6 +95,7 @@ from backend.firebase_profile import (
     register_desktop_device_session,
     is_desktop_session_active,
     PLAN_LIMITS,
+    normalize_usage_record,
     record_ai_usage_log,
 )
 from runtime_env import can_connect, first_env_value, load_runtime_env, missing_env_keys
@@ -641,7 +647,7 @@ Preserve semantics and layout, but normalize rendering to clean exam-print style
 
     def _generate_image_from_crop(self, crop_path: str) -> tuple[str, dict[str, object]]:
         from ai_client import (  # type: ignore
-            DEFAULT_GEMINI_MODEL,
+            DEFAULT_GEMINI_IMAGE_MODEL,
             _load_env as _load_ai_env,
             _normalize_model_name,
         )
@@ -653,7 +659,7 @@ Preserve semantics and layout, but normalize rendering to clean exam-print style
 
         model_name = _normalize_model_name((
             os.getenv("GEMINI_IMAGE_MODEL")
-            or DEFAULT_GEMINI_MODEL
+            or DEFAULT_GEMINI_IMAGE_MODEL
         ).strip())
         if "image" not in model_name:
             raise AIClientError(
@@ -687,16 +693,18 @@ Preserve semantics and layout, but normalize rendering to clean exam-print style
             )
             usage = AIClient._coerce_usage_metadata_dict(response)
             total_tokens = int(usage.get("total_tokens") or ESTIMATED_TOKENS_PER_PROBLEM)
-            usage_record = {
-                "model": model_name,
-                "provider": "gemini",
-                "feature": "image_generation",
-                "source": "desktop",
-                "prompt_tokens": int(usage.get("prompt_tokens") or 0),
-                "output_tokens": int(usage.get("candidate_tokens") or 0),
-                "total_tokens": total_tokens,
-                "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            }
+            usage_record = normalize_usage_record(
+                {
+                    "model": model_name,
+                    "provider": "gemini",
+                    "feature": "image_generation",
+                    "source": "desktop",
+                    "prompt_tokens": int(usage.get("prompt_tokens") or 0),
+                    "output_tokens": int(usage.get("candidate_tokens") or 0),
+                    "total_tokens": total_tokens,
+                    "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                }
+            )
             user = get_stored_user() or {}
             uid = str(user.get("uid") or "").strip()
             if uid:
@@ -2256,6 +2264,7 @@ class TokenUsageBreakdownDialog(_FramelessCardDialog):
             "typing_problem": "문제 생성",
             "typing_explanation": "해설 생성",
             "image_generation": "이미지 생성",
+            "total_usage": "총 사용량",
             "typing": "문제 생성",
         }.get(str(feature or "").strip().lower(), "AI 작업")
         if count > 1:
@@ -2280,6 +2289,7 @@ class TokenUsageBreakdownDialog(_FramelessCardDialog):
         for record in records:
             if not isinstance(record, dict):
                 continue
+            record = normalize_usage_record(record)
             provider = str(record.get("provider") or "").strip()
             model = str(record.get("model") or "").strip()
             feature = str(record.get("feature") or "").strip()
@@ -2951,6 +2961,7 @@ class NovaAILiteWindow(QWidget):
             [
                 self._image_mode_text("no_image"),
                 self._image_mode_text("crop"),
+                self._image_mode_text("ai_generate"),
             ]
         )
         self._image_mode_combo.setFixedWidth(220)
@@ -3110,6 +3121,7 @@ class NovaAILiteWindow(QWidget):
             [
                 self._image_mode_text("no_image"),
                 self._image_mode_text("crop"),
+                self._image_mode_text("ai_generate"),
             ]
         )
         self._image_mode_combo_compact.setMinimumWidth(140)
@@ -4029,7 +4041,7 @@ class NovaAILiteWindow(QWidget):
         name_color = "#4338ca" if hovered else ("#111827" if logged_in else "#6366f1")
         self._header_user_area.setStyleSheet(
             f"QWidget#headerUserArea {{ background-color: {background};"
-            " border: none; border-radius: 16px; }}"
+            " border: none; border-radius: 16px; }"
         )
         self._header_name.setStyleSheet(
             f"font-size: 12px; font-weight: 600; color: {name_color}; background: transparent;"
@@ -5281,7 +5293,7 @@ class NovaAILiteWindow(QWidget):
         if isinstance(records, list):
             for record in records:
                 if isinstance(record, dict):
-                    normalized.append(dict(record))
+                    normalized.append(normalize_usage_record(record))
         self._generated_usage_records_by_index[idx] = normalized
 
     def _cancel_pending_auto_type(self) -> None:
@@ -5507,6 +5519,7 @@ class NovaAILiteWindow(QWidget):
     def _image_mode_text(mode_key: str) -> str:
         mapping = {
             "no_image": "이미지 없이 생성하기",
+            "ai_generate": "이미지 크롭 AI 생성",
             "crop": "이미지 크롭해서 생성하기",
         }
         return mapping.get(mode_key, mapping["crop"])
@@ -5514,8 +5527,10 @@ class NovaAILiteWindow(QWidget):
     @staticmethod
     def _image_mode_key_from_text(text: str) -> str:
         normalized = (text or "").strip()
+        if normalized.startswith("이미지 크롭 AI 생성"):
+            return "ai_generate"
         if normalized.startswith("AI 이미지 생성하기"):
-            return "crop"
+            return "ai_generate"
         if normalized.startswith("이미지 없이 생성하기"):
             return "no_image"
         if normalized.startswith("이미지 크롭해서 생성하기"):
@@ -6221,6 +6236,37 @@ class NovaAILiteWindow(QWidget):
         usage_records: list[dict[str, object]] = []
         if idx < len(self._generated_usage_records_by_index):
             usage_records = list(self._generated_usage_records_by_index[idx] or [])
+        recorded_total = sum(
+            max(0, int(record.get("total_tokens") or 0))
+            for record in usage_records
+            if isinstance(record, dict)
+        )
+        if tokens > recorded_total:
+            code_text = str(self._generated_codes_by_index[idx] or "")
+            missing_total = tokens - recorded_total
+            fallback_feature = (
+                "image_generation"
+                if "insert_generated_image(" in code_text
+                else "total_usage"
+            )
+            fallback_model = (
+                DEFAULT_GEMINI_IMAGE_MODEL
+                if fallback_feature == "image_generation"
+                else ""
+            )
+            fallback_provider = "gemini" if fallback_feature == "image_generation" else ""
+            usage_records.append(
+                {
+                    "model": fallback_model,
+                    "provider": fallback_provider,
+                    "feature": fallback_feature,
+                    "source": "desktop",
+                    "prompt_tokens": 0,
+                    "output_tokens": 0,
+                    "total_tokens": missing_total,
+                    "created_at": "",
+                }
+            )
         dlg = TokenUsageBreakdownDialog(
             self,
             tier=self.profile_plan or "Free",
@@ -6356,6 +6402,11 @@ def _normalize_runtime_error_message(message: str) -> str:
         return "이미지 크롭 좌표가 잘못되어 삽입하지 못했습니다."
     if "pillow" in lower:
         return "이미지 처리 라이브러리(Pillow) 문제로 작업을 진행할 수 없습니다."
+    if "_pandas_datetime_capi" in lower or "partially initialized module 'pandas'" in lower:
+        return (
+            "내부 Python 런타임(pandas) 초기화에 실패했습니다. Nova AI를 완전히 종료한 뒤 다시 실행하고, "
+            "같은 문제가 반복되면 기존 설치 폴더를 삭제한 뒤 재설치해 주세요."
+        )
 
     # Mojibake-like text: fallback to a clean summary instead of broken glyphs.
     if text.count("?") >= 4 or "??" in text:

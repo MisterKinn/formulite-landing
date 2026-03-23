@@ -3,10 +3,11 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAdmin, admin } from "@/lib/adminAuth";
 import { resolveEffectiveUsagePlan } from "@/lib/aiUsage";
+import { resolvePaymentProduct } from "@/lib/tokenPacks";
 
 const db = admin.firestore();
 
-const PRODUCT_KEYWORDS = ["요금제", "구독", "plan", "pricing"] as const;
+const PRODUCT_KEYWORDS = ["요금제", "구독", "plan", "pricing", "토큰"] as const;
 const KNOWN_PRODUCT_AMOUNTS = new Set([
     60,
     100,
@@ -15,6 +16,7 @@ const KNOWN_PRODUCT_AMOUNTS = new Set([
     840,
     11900,
     29900,
+    49900,
     59400,
     99000,
     99960,
@@ -280,14 +282,20 @@ export async function GET(request: NextRequest) {
 
                 const amount = Number(payment.amount || 0);
                 const billingCycle = inferBillingCycleFromPayment(payment);
+                const paymentProduct = resolvePaymentProduct({
+                    orderName: payment.orderName,
+                    amount,
+                });
                 if (payment.status === "DONE") {
                     recentPaymentsCount++;
                     recentPaymentsTotal += amount;
 
-                    if (billingCycle === "yearly") {
-                        yearlyRevenue += amount;
-                    } else {
-                        monthlyRevenue += amount;
+                    if (paymentProduct.kind === "subscription") {
+                        if (billingCycle === "yearly") {
+                            yearlyRevenue += amount;
+                        } else {
+                            monthlyRevenue += amount;
+                        }
                     }
 
                     const approvedAt = payment.approvedAt

@@ -22,6 +22,12 @@ function CardRegistrationContent() {
     const amount = Number(searchParams.get("amount")) || 0;
     const orderName = searchParams.get("orderName") || "Nova AI 월간 구독";
     const billingCycle = searchParams.get("billingCycle") || "monthly";
+    const billingCycleLabel =
+        billingCycle === "test"
+            ? "1분마다 100원 (테스트)"
+            : billingCycle === "yearly"
+              ? "매년"
+              : "매월";
 
     useEffect(() => {
         const loadTossSDK = async () => {
@@ -130,7 +136,9 @@ function CardRegistrationContent() {
             <div style={styles.card}>
                 <h1 style={styles.title}>🏦 카드 등록</h1>
                 <p style={styles.description}>
-                    월간 구독을 위한 카드 정보를 안전하게 등록합니다.
+                    {billingCycle === "test"
+                        ? "테스트 정기구독을 위한 카드 정보를 안전하게 등록합니다."
+                        : "월간 구독을 위한 카드 정보를 안전하게 등록합니다."}
                     <br />
                     카드 정보는 토스페이먼츠에서 암호화되어 관리됩니다.
                 </p>
@@ -147,12 +155,12 @@ function CardRegistrationContent() {
                         <strong>상품명:</strong> {orderName}
                     </p>
                     <p>
-                        <strong>월간 요금:</strong>{" "}
+                        <strong>결제 금액:</strong>{" "}
                         {amount ? `${amount.toLocaleString()}원` : "설정 필요"}
                     </p>
                     <p>
                         <strong>결제 주기:</strong>{" "}
-                        {billingCycle === "monthly" ? "매월" : "매년"}
+                        {billingCycleLabel}
                     </p>
                     <hr
                         style={{

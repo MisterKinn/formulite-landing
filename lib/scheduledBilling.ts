@@ -7,6 +7,10 @@
 import getFirebaseAdmin from "./firebaseAdmin";
 import { getNextBillingDate } from "./subscription";
 import { sendPaymentReceipt, sendPaymentFailureNotification } from "./email";
+import {
+    buildUsageCycleResetFields,
+    resolveEffectiveUsagePlan,
+} from "@/lib/aiUsage";
 
 // Use Admin SDK for server-side operations
 const getAdminDb = () => getFirebaseAdmin().firestore();
@@ -196,6 +200,11 @@ export async function processScheduledBilling(): Promise<BillingResult[]> {
                 const nextBillingDate = getNextBillingDate(
                     subscription.billingCycle || "monthly",
                 );
+                const usageFields = buildUsageCycleResetFields(
+                    userData as Record<string, unknown>,
+                    resolveEffectiveUsagePlan(userData as Record<string, unknown>),
+                    billingResult.approvedAt || new Date().toISOString(),
+                );
 
                 // Update subscription using Admin SDK
                 await db.collection("users").doc(userId).update({
@@ -204,9 +213,7 @@ export async function processScheduledBilling(): Promise<BillingResult[]> {
                     "subscription.lastOrderId": billingResult.orderId,
                     "subscription.failureCount": 0,
                     "subscription.lastFailureReason": null,
-                    aiCallUsage: 0,
-                    usageResetAt:
-                        billingResult.approvedAt || new Date().toISOString(),
+                    ...usageFields,
                     updatedAt: new Date().toISOString(),
                 });
 

@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Navbar } from "../../../components/Navbar";
-import Footer from "../../../components/Footer";
 import NoticeDetailAdminActions from "@/components/NoticeDetailAdminActions";
 import { ENABLE_UPDATE_NOTICE } from "@/lib/featureFlags";
 import { formatNoticeDate, getNoticeBySlug } from "@/lib/notices";
@@ -28,8 +27,8 @@ export default async function NoticeDetailPage({
             <div className="notice-detail-container">
                 <Link href="/notices" className="notice-back-btn">
                     <svg
-                        width="18"
-                        height="18"
+                        width="16"
+                        height="16"
                         viewBox="0 0 24 24"
                         fill="none"
                         stroke="currentColor"
@@ -60,7 +59,6 @@ export default async function NoticeDetailPage({
                     </div>
                 </article>
             </div>
-            <Footer />
         </div>
     );
 }

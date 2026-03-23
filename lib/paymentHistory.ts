@@ -15,6 +15,10 @@ export interface PaymentRecord {
     refundedAt?: string | null;
     refundAmount?: number | null;
     refundReason?: string | null;
+    productType?: "subscription" | "token_pack" | "unknown";
+    tokenPackTier?: "go" | "plus" | "pro" | null;
+    tokensGranted?: number | null;
+    entitlementAppliedAt?: string | null;
 }
 
 /**

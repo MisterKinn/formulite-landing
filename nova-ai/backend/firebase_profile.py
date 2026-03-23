@@ -134,6 +134,53 @@ PLAN_LIMITS = {
     "Test": 220 * ESTIMATED_TOKENS_PER_PROBLEM,
 }
 
+
+def _coerce_non_negative_int(value: Any) -> int:
+    try:
+        numeric = int(value or 0)
+    except Exception:
+        return 0
+    return max(0, numeric)
+
+
+def normalize_usage_record(record: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Normalize prompt/output/total tokens for billing and UI display.
+
+    Rules:
+    - typing_problem / typing: output tokens are billed/displayed as x2
+    - image_generation: prompt/output tokens are both billed/displayed as x2
+    - total_tokens follows the adjusted prompt/output sum when available
+    """
+    normalized = dict(record or {})
+    if bool(normalized.get("_usage_normalized")):
+        return normalized
+    feature = str(normalized.get("feature") or "").strip().lower()
+    prompt_tokens = _coerce_non_negative_int(normalized.get("prompt_tokens"))
+    output_tokens = _coerce_non_negative_int(normalized.get("output_tokens"))
+    total_tokens = _coerce_non_negative_int(normalized.get("total_tokens"))
+
+    billed_prompt_tokens = prompt_tokens
+    billed_output_tokens = output_tokens
+
+    if feature in {"typing_problem", "typing"}:
+        billed_output_tokens *= 2
+    elif feature == "image_generation":
+        billed_prompt_tokens *= 2
+        billed_output_tokens *= 2
+
+    billed_total_tokens = (
+        billed_prompt_tokens + billed_output_tokens
+        if (prompt_tokens > 0 or output_tokens > 0)
+        else total_tokens
+    )
+
+    normalized["prompt_tokens"] = billed_prompt_tokens
+    normalized["output_tokens"] = billed_output_tokens
+    normalized["total_tokens"] = billed_total_tokens
+    normalized["_usage_normalized"] = True
+    return normalized
+
 ADMIN_UNLIMITED_EMAIL = "admin@gmail.com"
 SINGLE_DEVICE_PLANS = {"free", "plus", "test", "standard"}
 
@@ -206,6 +253,14 @@ def record_ai_usage_log(
         return False
 
     try:
+        normalized = normalize_usage_record(
+            {
+                "feature": feature,
+                "prompt_tokens": prompt_tokens,
+                "output_tokens": output_tokens,
+                "total_tokens": total_tokens,
+            }
+        )
         base = _resolve_usage_api_base_url()
         url = f"{base}/api/ai/usage-history"
         headers = {"Content-Type": "application/json"}
@@ -221,9 +276,10 @@ def record_ai_usage_log(
                 "provider": provider,
                 "feature": feature,
                 "source": source,
-                "promptTokens": max(0, int(prompt_tokens or 0)),
-                "outputTokens": max(0, int(output_tokens or 0)),
-                "totalTokens": max(0, int(total_tokens or 0)),
+                "promptTokens": int(normalized.get("prompt_tokens") or 0),
+                "outputTokens": int(normalized.get("output_tokens") or 0),
+                "totalTokens": int(normalized.get("total_tokens") or 0),
+                "usageNormalized": True,
                 "createdAt": created_at or datetime.utcnow().isoformat() + "Z",
             },
             timeout=10,

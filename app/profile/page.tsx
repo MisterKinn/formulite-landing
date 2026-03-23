@@ -11,12 +11,12 @@ import "../style.css";
 import "../mobile.css";
 
 import { Navbar } from "../../components/Navbar";
-import Footer from "../../components/Footer";
 import dynamic from "next/dynamic";
 import {
     ESTIMATED_TOKENS_PER_PROBLEM,
     TIER_LIMITS,
 } from "../../lib/tierLimits";
+import { isTokenPackOrderName } from "@/lib/tokenPacks";
 const Sidebar = dynamic(() => import("../../components/Sidebar"), {
     ssr: false,
 });
@@ -299,7 +299,7 @@ function ProfileContent() {
     const [email, setEmail] = useState("");
     const [status, setStatus] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const [activeTab, setActiveTab] = useState<"profile" | "payment">(
+    const [activeTab, setActiveTab] = useState<"profile" | "payment" | "usage">(
         "profile",
     );
     const billingCycle: "yearly" = "yearly";
@@ -316,8 +316,9 @@ function ProfileContent() {
     const [paymentHistory, setPaymentHistory] = useState<any[]>([]);
     const [loadingPayments, setLoadingPayments] = useState(false);
     const [usageHistory, setUsageHistory] = useState<AiUsageHistoryLog[]>([]);
-    const [usageHistoryOpen, setUsageHistoryOpen] = useState(false);
     const [loadingUsageHistory, setLoadingUsageHistory] = useState(false);
+    const [usageHistoryPage, setUsageHistoryPage] = useState(0);
+    const USAGE_PAGE_SIZE = 10;
 
     // Refresh key for forcing data reload
     const [refreshKey, setRefreshKey] = useState(0);
@@ -516,14 +517,14 @@ function ProfileContent() {
     useEffect(() => {
         // First, check URL query parameter
         const tabParam = searchParams?.get("tab");
-        if (tabParam === "payment" || tabParam === "profile") {
+        if (tabParam === "payment" || tabParam === "profile" || tabParam === "usage") {
             setActiveTab(tabParam);
             return;
         }
 
         // Then, check sessionStorage
         const savedTab = sessionStorage.getItem("profileTab");
-        if (savedTab === "payment" || savedTab === "profile") {
+        if (savedTab === "payment" || savedTab === "profile" || savedTab === "usage") {
             setActiveTab(savedTab);
             sessionStorage.removeItem("profileTab");
         }
@@ -598,6 +599,7 @@ function ProfileContent() {
         orderName?: unknown,
     ): "free" | "go" | "plus" | "pro" | "test" => {
         if (typeof orderName !== "string") return "free";
+        if (isTokenPackOrderName(orderName)) return "free";
         const normalized = orderName.toLowerCase();
         if (normalized.includes("ultra") || normalized.includes("pro")) return "pro";
         if (normalized.includes("test")) return "test";
@@ -1081,19 +1083,15 @@ function ProfileContent() {
         }
     };
 
-    const handleOpenUsageHistory = async () => {
+    const loadUsageHistory = useCallback(async () => {
         if (!authUser) return;
-
-        setUsageHistoryOpen(true);
         setLoadingUsageHistory(true);
         try {
             const idToken = await authUser.getIdToken();
             const response = await fetch(
-                `/api/ai/usage-history?userId=${encodeURIComponent(authUser.uid)}&limit=40`,
+                `/api/ai/usage-history?userId=${encodeURIComponent(authUser.uid)}&limit=100`,
                 {
-                    headers: {
-                        Authorization: `Bearer ${idToken}`,
-                    },
+                    headers: { Authorization: `Bearer ${idToken}` },
                     cache: "no-store",
                 },
             );
@@ -1109,7 +1107,34 @@ function ProfileContent() {
         } finally {
             setLoadingUsageHistory(false);
         }
+    }, [authUser]);
+
+    useEffect(() => {
+        if (activeTab === "usage" && usageHistory.length === 0 && !loadingUsageHistory) {
+            void loadUsageHistory();
+        }
+    }, [activeTab, usageHistory.length, loadingUsageHistory, loadUsageHistory]);
+
+    const buildDailyUsageChart = () => {
+        const dayMap = new Map<string, number>();
+        for (const log of usageHistory) {
+            const d = new Date(log.createdAt);
+            const key = `${d.getMonth() + 1}/${d.getDate()}`;
+            dayMap.set(key, (dayMap.get(key) || 0) + log.totalTokens);
+        }
+        const entries = Array.from(dayMap.entries()).slice(-14);
+        const maxVal = Math.max(...entries.map(([, v]) => v), 1);
+        return { entries, maxVal };
     };
+
+    const badgeClass =
+        subscriptionStatusTone === "active"
+            ? "sb-badge-active"
+            : subscriptionStatusTone === "cancelled"
+              ? "sb-badge-cancelled"
+              : subscriptionStatusTone === "suspended"
+                ? "sb-badge-suspended"
+                : "sb-badge-free";
 
     return (
         <>
@@ -1127,208 +1152,77 @@ function ProfileContent() {
                             <span className="profile-sidebar-kicker">
                                 My Page
                             </span>
-                            <strong className="profile-sidebar-email">
-                                {email || authUser?.email || "계정 확인 중"}
-                            </strong>
-                            <p className="profile-sidebar-copy">
-                                계정 정보와 결제 상태를 한 곳에서 관리하세요.
-                            </p>
-
                             <nav className="profile-nav">
                                 <button
-                                    className={`profile-nav-item ${
-                                        activeTab === "profile" ? "active" : ""
-                                    }`}
+                                    className={`profile-nav-item ${activeTab === "profile" ? "active" : ""}`}
                                     onClick={() => setActiveTab("profile")}
                                 >
-                                    <svg
-                                        width="18"
-                                        height="18"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        strokeWidth="1.5"
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                    >
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                                         <circle cx="12" cy="8" r="4" />
                                         <path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2" />
                                     </svg>
                                     <span>프로필</span>
                                 </button>
                                 <button
-                                    className={`profile-nav-item ${
-                                        activeTab === "payment" ? "active" : ""
-                                    }`}
+                                    className={`profile-nav-item ${activeTab === "payment" ? "active" : ""}`}
                                     onClick={() => setActiveTab("payment")}
                                 >
-                                    <svg
-                                        width="18"
-                                        height="18"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        strokeWidth="1.5"
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                    >
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                                         <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
                                     </svg>
                                     <span>결제내역</span>
+                                </button>
+                                <button
+                                    className={`profile-nav-item ${activeTab === "usage" ? "active" : ""}`}
+                                    onClick={() => setActiveTab("usage")}
+                                >
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M3 3v18h18" />
+                                        <path d="m19 9-5 5-4-4-3 3" />
+                                    </svg>
+                                    <span>토큰 사용 이력</span>
                                 </button>
                             </nav>
                         </div>
                     </aside>
 
                     <section className="profile-main">
-                        <nav
-                            className="profile-top-nav"
-                            role="tablist"
-                            aria-label="프로필 탭"
-                        >
-                            <button
-                                role="tab"
-                                aria-selected={activeTab === "profile"}
-                                className={`profile-nav-item ${
-                                    activeTab === "profile" ? "active" : ""
-                                }`}
-                                onClick={() => setActiveTab("profile")}
-                            >
-                                <svg
-                                    width="18"
-                                    height="18"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    strokeWidth="1.5"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                >
+                        <nav className="profile-top-nav" role="tablist" aria-label="프로필 탭">
+                            <button role="tab" aria-selected={activeTab === "profile"} className={`profile-nav-item ${activeTab === "profile" ? "active" : ""}`} onClick={() => setActiveTab("profile")}>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                                     <circle cx="12" cy="8" r="4" />
                                     <path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2" />
                                 </svg>
                                 <span>프로필</span>
                             </button>
-                            <button
-                                role="tab"
-                                aria-selected={activeTab === "payment"}
-                                className={`profile-nav-item ${
-                                    activeTab === "payment" ? "active" : ""
-                                }`}
-                                onClick={() => setActiveTab("payment")}
-                            >
-                                <svg
-                                    width="18"
-                                    height="18"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    strokeWidth="1.5"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                >
+                            <button role="tab" aria-selected={activeTab === "payment"} className={`profile-nav-item ${activeTab === "payment" ? "active" : ""}`} onClick={() => setActiveTab("payment")}>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                                     <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
                                 </svg>
                                 <span>결제내역</span>
                             </button>
+                            <button role="tab" aria-selected={activeTab === "usage"} className={`profile-nav-item ${activeTab === "usage" ? "active" : ""}`} onClick={() => setActiveTab("usage")}>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M3 3v18h18" />
+                                    <path d="m19 9-5 5-4-4-3 3" />
+                                </svg>
+                                <span>토큰 이력</span>
+                            </button>
                         </nav>
-
-                        <section className="profile-hero-card">
-                            <div className="profile-hero-main">
-                                <div className="profile-hero-avatar">
-                                    {authUser?.photoURL ? (
-                                        <img
-                                            src={authUser.photoURL}
-                                            alt="프로필 이미지"
-                                            className="profile-hero-avatar-img"
-                                        />
-                                    ) : (
-                                        <span>{profileInitial}</span>
-                                    )}
-                                </div>
-                                <div className="profile-hero-copy">
-                                    <span className="profile-hero-kicker">
-                                        Nova AI 마이페이지
-                                    </span>
-                                    <h1 className="profile-hero-title">
-                                        {profileDisplayName}
-                                    </h1>
-                                    <p className="profile-hero-subtitle">
-                                        {email || authUser?.email || "로그인 정보를 불러오는 중입니다."}
-                                    </p>
-                                </div>
-                            </div>
-
-                            <div className="profile-hero-stats">
-                                <div className="profile-stat-card">
-                                    <span>이용 중 플랜</span>
-                                    <strong>{effectivePlanInfo.name}</strong>
-                                    <p>{subscriptionStatusLabel}</p>
-                                </div>
-                                <div className="profile-stat-card">
-                                    <span>남은 토큰</span>
-                                    <strong>
-                                        {formatTokenCount(remainingQuestions)}
-                                    </strong>
-                                    <p>
-                                        전체 한도{" "}
-                                        {questionUsage
-                                            ? formatTokenCount(questionUsage.limit)
-                                            : "확인 중"}
-                                    </p>
-                                </div>
-                                <div className="profile-stat-card">
-                                    <span>다음 갱신일</span>
-                                    <strong>
-                                        {formatDateLabel(planExpiryDate)}
-                                    </strong>
-                                    <p>
-                                        {billingStartDate
-                                            ? `시작일 ${formatDateLabel(
-                                                  billingStartDate,
-                                              )}`
-                                            : "결제 기준으로 자동 갱신됩니다"}
-                                    </p>
-                                </div>
-                            </div>
-                        </section>
 
                         {error && (
                             <div className="profile-alert profile-alert-error">
-                                <svg
-                                    width="16"
-                                    height="16"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    strokeWidth="2"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                >
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                     <circle cx="12" cy="12" r="10" />
                                     <line x1="12" y1="8" x2="12" y2="12" />
-                                    <line
-                                        x1="12"
-                                        y1="16"
-                                        x2="12.01"
-                                        y2="16"
-                                    />
+                                    <line x1="12" y1="16" x2="12.01" y2="16" />
                                 </svg>
                                 <span>{error}</span>
                             </div>
                         )}
                         {status && (
                             <div className="profile-alert profile-alert-success">
-                                <svg
-                                    width="16"
-                                    height="16"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    strokeWidth="2"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                >
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                     <polyline points="20 6 9 17 4 12" />
                                 </svg>
                                 <span>{status}</span>
@@ -1336,624 +1230,329 @@ function ProfileContent() {
                         )}
 
                         {activeTab === "profile" ? (
-                            <div className="profile-card-stack">
-                                <section className="profile-card">
-                                    <div className="profile-card-head">
-                                        <div>
-                                            <h2>계정 정보</h2>
-                                            <p>
-                                                기본 프로필과 현재 이용 상태를
-                                                확인합니다.
-                                            </p>
-                                        </div>
+                            <>
+                                {/* 계정 정보 */}
+                                <section className="profile-section">
+                                    <div className="profile-section-header">
+                                        <h2>계정 정보</h2>
+                                        <p>프로필과 현재 이용 상태를 확인합니다.</p>
                                     </div>
-                                    <div className="profile-info-grid">
-                                        <div className="profile-info-item">
-                                            <span className="profile-info-label">
-                                                이메일
-                                            </span>
-                                            <strong>{email || "-"}</strong>
-                                            <p>
-                                                로그인 식별자로 사용되며 변경할 수
-                                                없습니다.
-                                            </p>
+                                    <div className="sb-card">
+                                        <div className="sb-card-row">
+                                            <div className="sb-card-row-left">
+                                                <span className="sb-card-row-label">이메일</span>
+                                            </div>
+                                            <span className="sb-card-row-value">{email || authUser?.email || "-"}</span>
                                         </div>
-                                        <div className="profile-info-item">
-                                            <span className="profile-info-label">
-                                                현재 플랜
-                                            </span>
-                                            <strong>{effectivePlanInfo.name}</strong>
-                                            <p>
-                                                {effectivePlanInfo.description}
-                                            </p>
+                                        <div className="sb-card-row">
+                                            <div className="sb-card-row-left">
+                                                <span className="sb-card-row-label">현재 플랜</span>
+                                            </div>
+                                            <div className="sb-card-row-right">
+                                                <span className={`sb-badge ${badgeClass}`}>{subscriptionStatusLabel}</span>
+                                                <span className="sb-card-row-value">{effectivePlanInfo.name}</span>
+                                            </div>
                                         </div>
-                                        <div className="profile-info-item">
-                                            <span className="profile-info-label">
-                                                다음 갱신일
-                                            </span>
-                                            <strong>
-                                                {formatDateLabel(planExpiryDate)}
-                                            </strong>
-                                            <p>
-                                                정기 결제 또는 이용 만료 시점을
-                                                안내합니다.
-                                            </p>
+                                        <div className="sb-card-row">
+                                            <div className="sb-card-row-left">
+                                                <span className="sb-card-row-label">다음 갱신일</span>
+                                            </div>
+                                            <span className="sb-card-row-value">{formatDateLabel(planExpiryDate)}</span>
+                                        </div>
+                                        <div className="sb-card-row">
+                                            <div className="sb-card-row-left">
+                                                <span className="sb-card-row-label">남은 토큰</span>
+                                            </div>
+                                            <span className="sb-card-row-value">{formatTokenCount(remainingQuestions)}</span>
                                         </div>
                                     </div>
                                 </section>
 
-                                <section className="profile-card">
-                                    <div className="profile-card-head">
-                                        <div>
-                                            <h2>구독 및 사용량</h2>
-                                            <p>
-                                                플랜 상태와 토큰 사용량을 한 번에
-                                                관리합니다.
-                                            </p>
-                                        </div>
-                                        <span
-                                            className={`profile-status-badge ${subscriptionStatusTone}`}
-                                        >
-                                            {subscriptionStatusLabel}
-                                        </span>
+                                {/* 토큰 사용량 */}
+                                <section className="profile-section">
+                                    <div className="profile-section-header">
+                                        <h2>토큰 사용량</h2>
+                                        <p>AI 토큰 사용량과 남은 한도를 확인합니다.</p>
                                     </div>
-
-                                    <div className="profile-subscription-card">
-                                        <div className="profile-subscription-top">
-                                            <div className="profile-subscription-plan">
-                                                <span
-                                                    className={`profile-subscription-plan-icon ${effectivePlanId}`}
-                                                >
-                                                    {getPlanIcon(
-                                                        isPlanResolving
-                                                            ? undefined
-                                                            : effectivePlanId,
-                                                    )}
-                                                </span>
-                                                <div>
-                                                    <span className="profile-subscription-plan-name">
-                                                        {effectivePlanInfo.name}
-                                                    </span>
-                                                    <span className="profile-subscription-plan-desc">
-                                                        {effectivePlanInfo.description}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                            <div className="profile-subscription-expiry">
-                                                <span className="profile-subscription-expiry-label">
-                                                    만료일
-                                                </span>
-                                                <span className="profile-subscription-expiry-value">
-                                                    {formatDateLabel(
-                                                        planExpiryDate,
-                                                    )}
-                                                </span>
-                                            </div>
-                                        </div>
-
-                                        <div className="profile-subscription-meta-grid">
-                                            <div className="profile-info-item compact">
-                                                <span className="profile-info-label">
-                                                    청구 시작일
-                                                </span>
-                                                <strong>
-                                                    {formatDateLabel(
-                                                        billingStartDate,
-                                                    )}
-                                                </strong>
-                                            </div>
-                                            <div className="profile-info-item compact">
-                                                <span className="profile-info-label">
-                                                    전체 토큰 한도
-                                                </span>
+                                    <div className="sb-card">
+                                        <div className="sb-usage-wrap">
+                                            <div className="sb-usage-header">
+                                                <span>사용량</span>
                                                 <strong>
                                                     {questionUsage
-                                                        ? formatTokenCount(
-                                                              questionUsage.limit,
-                                                          )
-                                                        : "-"}
-                                                </strong>
-                                            </div>
-                                            <div className="profile-info-item compact">
-                                                <span className="profile-info-label">
-                                                    남은 토큰
-                                                </span>
-                                                <strong>
-                                                    {formatTokenCount(
-                                                        remainingQuestions,
-                                                    )}
-                                                </strong>
-                                            </div>
-                                        </div>
-
-                                        <div className="profile-usage-block">
-                                            <div className="profile-usage-head">
-                                                <span>토큰 사용량</span>
-                                                <strong>
-                                                    {questionUsage
-                                                        ? `${questionUsage.currentUsage.toLocaleString(
-                                                              "ko-KR",
-                                                          )} / ${questionUsage.limit.toLocaleString(
-                                                              "ko-KR",
-                                                          )} 토큰`
+                                                        ? `${questionUsage.currentUsage.toLocaleString("ko-KR")} / ${questionUsage.limit.toLocaleString("ko-KR")} 토큰`
                                                         : "확인 중"}
                                                 </strong>
                                             </div>
-                                            <div className="profile-usage-track">
+                                            <div className="sb-usage-track">
                                                 <div
-                                                    className={`profile-usage-fill ${
-                                                        questionUsage &&
-                                                        questionUsage.currentUsage >=
-                                                            questionUsage.limit
-                                                            ? "limit"
-                                                            : ""
-                                                    }`}
-                                                    style={{
-                                                        width: `${usageProgress}%`,
-                                                    }}
+                                                    className={`sb-usage-fill ${questionUsage && questionUsage.currentUsage >= questionUsage.limit ? "limit" : ""}`}
+                                                    style={{ width: `${usageProgress}%` }}
                                                 />
                                             </div>
-                                            <div className="profile-usage-meta">
-                                                <span>
-                                                    사용{" "}
-                                                    {questionUsage
-                                                        ? formatTokenCount(
-                                                              questionUsage.currentUsage,
-                                                          )
-                                                        : "-"}
-                                                </span>
-                                                <span>
-                                                    남음{" "}
-                                                    {formatTokenCount(
-                                                        remainingQuestions,
-                                                    )}
-                                                </span>
+                                            <div className="sb-usage-meta">
+                                                <span>사용 {questionUsage ? formatTokenCount(questionUsage.currentUsage) : "-"}</span>
+                                                <span>남음 {formatTokenCount(remainingQuestions)}</span>
                                             </div>
-                                            {questionUsage &&
-                                                questionUsage.currentUsage >=
-                                                    questionUsage.limit && (
-                                                    <p className="profile-usage-warning">
-                                                        사용 한도에 도달했습니다.
-                                                        플랜을 업그레이드해 계속
-                                                        이용할 수 있습니다.
-                                                    </p>
-                                                )}
-                                        </div>
-
-                                        <div className="profile-subscription-actions">
-                                            <button
-                                                type="button"
-                                                className="profile-btn profile-btn-upgrade"
-                                                onClick={() =>
-                                                    router.push("/pricing")
-                                                }
-                                            >
-                                                요금제 보러가기
-                                            </button>
-                                            {effectivePlanId !== "free" &&
-                                                (subscription?.status ===
-                                                "cancelled" ? (
-                                                    <div className="profile-subscription-cancelled">
-                                                        <svg
-                                                            width="16"
-                                                            height="16"
-                                                            viewBox="0 0 24 24"
-                                                            fill="none"
-                                                            stroke="currentColor"
-                                                            strokeWidth="2"
-                                                            strokeLinecap="round"
-                                                            strokeLinejoin="round"
-                                                        >
-                                                            <circle
-                                                                cx="12"
-                                                                cy="12"
-                                                                r="10"
-                                                            />
-                                                            <line
-                                                                x1="12"
-                                                                y1="8"
-                                                                x2="12"
-                                                                y2="12"
-                                                            />
-                                                            <line
-                                                                x1="12"
-                                                                y1="16"
-                                                                x2="12.01"
-                                                                y2="16"
-                                                            />
-                                                        </svg>
-                                                        <span>
-                                                            구독이 취소되어
-                                                            만료일까지 이용할 수
-                                                            있습니다.
-                                                        </span>
-                                                    </div>
-                                                ) : (
-                                                    <div className="profile-cancel-sub-wrap">
-                                                        <button
-                                                            type="button"
-                                                            className="profile-btn profile-btn-cancel-sub"
-                                                            onClick={
-                                                                handleCancelSubscription
-                                                            }
-                                                        >
-                                                            구독 취소하기
-                                                        </button>
-                                                        <span className="profile-cancel-sub-tooltip">
-                                                            다음 회차의 결제가
-                                                            진행되지 않습니다.
-                                                        </span>
-                                                    </div>
-                                                ))}
+                                            {questionUsage && questionUsage.currentUsage >= questionUsage.limit && (
+                                                <div className="sb-usage-warning">
+                                                    사용 한도에 도달했습니다. 플랜을 업그레이드해 계속 이용할 수 있습니다.
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 </section>
 
-                                <section className="profile-card">
-                                    <div className="profile-card-head">
-                                        <div>
-                                            <h2>보안 및 세션</h2>
-                                            <p>
-                                                비밀번호와 현재 로그인 상태를
-                                                관리합니다.
-                                            </p>
-                                        </div>
+                                {/* 보안 및 세션 */}
+                                <section className="profile-section">
+                                    <div className="profile-section-header">
+                                        <h2>보안 및 세션</h2>
+                                        <p>비밀번호와 로그인 상태를 관리합니다.</p>
                                     </div>
-
-                                    <div className="profile-action-list">
-                                        <div className="profile-action-row">
-                                            <div className="profile-setting-info">
-                                                <span className="profile-setting-label">
-                                                    비밀번호 변경
-                                                </span>
-                                                <span className="profile-setting-desc">
-                                                    계정 비밀번호를 새로
-                                                    설정합니다.
-                                                </span>
+                                    <div className="sb-card">
+                                        <div className="sb-card-row">
+                                            <div className="sb-card-row-left">
+                                                <span className="sb-card-row-label">비밀번호 변경</span>
+                                                <span className="sb-card-row-desc">계정 비밀번호를 새로 설정합니다.</span>
                                             </div>
-                                            <button
-                                                type="button"
-                                                className="profile-btn profile-btn-secondary"
-                                                onClick={() =>
-                                                    router.push(
-                                                        "/password-reset",
-                                                    )
-                                                }
-                                            >
+                                            <button type="button" className="sb-btn" onClick={() => router.push("/password-reset")}>
                                                 변경하기
                                             </button>
                                         </div>
-
-                                        <div className="profile-action-row">
-                                            <div className="profile-setting-info">
-                                                <span className="profile-setting-label">
-                                                    로그아웃
-                                                </span>
-                                                <span className="profile-setting-desc">
-                                                    현재 기기에서 안전하게
-                                                    로그아웃합니다.
-                                                </span>
+                                        <div className="sb-card-row">
+                                            <div className="sb-card-row-left">
+                                                <span className="sb-card-row-label">로그아웃</span>
+                                                <span className="sb-card-row-desc">현재 기기에서 안전하게 로그아웃합니다.</span>
                                             </div>
-                                            <button
-                                                type="button"
-                                                className="profile-btn profile-btn-danger"
-                                                onClick={handleLogout}
-                                            >
+                                            <button type="button" className="sb-btn" onClick={handleLogout}>
                                                 로그아웃
                                             </button>
                                         </div>
                                     </div>
                                 </section>
 
-                                <section className="profile-card profile-card-danger">
-                                    <div className="danger-zone">
-                                        <h2 className="danger-title">
-                                            위험 영역
-                                        </h2>
-                                        <div className="danger-row">
-                                            <div className="danger-info">
-                                                <span className="danger-label">
-                                                    계정 삭제
-                                                </span>
-                                                <span className="danger-desc">
-                                                    계정과 저장된 데이터가
-                                                    영구적으로 삭제됩니다.
-                                                </span>
+                                {/* 위험 영역 */}
+                                <section className="profile-section">
+                                    <div className="profile-section-header profile-section-header--danger">
+                                        <h2>Danger zone</h2>
+                                        <p>계정과 저장된 데이터를 영구적으로 삭제합니다.</p>
+                                    </div>
+                                    <div className="sb-card sb-card-danger">
+                                        <div className="sb-danger-body">
+                                            <div className="sb-danger-icon">
+                                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                    <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+                                                    <line x1="12" y1="9" x2="12" y2="13" />
+                                                    <line x1="12" y1="17" x2="12.01" y2="17" />
+                                                </svg>
                                             </div>
-                                            <div className="danger-actions">
-                                                <button
-                                                    type="button"
-                                                    className="danger-btn danger-btn-secondary"
-                                                    onClick={handleOpenUsageHistory}
-                                                >
-                                                    토큰 보기
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    className="danger-btn"
-                                                    onClick={handleDeleteAccount}
-                                                    disabled={deleting}
-                                                >
-                                                    {deleting
-                                                        ? "삭제 중..."
-                                                        : "계정 삭제"}
-                                                </button>
+                                            <div className="sb-danger-content">
+                                                <strong>계정 삭제 요청</strong>
+                                                <p>계정을 삭제하면 모든 데이터가 영구적으로 제거되며 복구할 수 없습니다. 신중하게 결정해 주세요.</p>
+                                            </div>
+                                        </div>
+                                        <div className="sb-danger-actions">
+                                            <button type="button" className="sb-btn sb-btn-danger-fill" onClick={handleDeleteAccount} disabled={deleting}>
+                                                {deleting ? "삭제 중..." : "계정 삭제"}
+                                            </button>
+                                        </div>
+                                    </div>
+                                </section>
+                            </>
+                        ) : activeTab === "payment" ? (
+                            <>
+                                {/* 결제 통계 */}
+                                <section className="profile-section">
+                                    <div className="profile-section-header">
+                                        <h2>결제 통계</h2>
+                                        <p>결제 횟수와 누적 결제 금액을 확인합니다.</p>
+                                    </div>
+                                    <div className="sb-card">
+                                        <div className="sb-stats-grid">
+                                            <div className="sb-stat-item">
+                                                <span className="sb-stat-label">결제 완료</span>
+                                                <span className="sb-stat-value">{completedPayments.length}건</span>
+                                            </div>
+                                            <div className="sb-stat-item">
+                                                <span className="sb-stat-label">누적 결제액</span>
+                                                <span className="sb-stat-value">{totalPaidAmount > 0 ? formatCurrency(totalPaidAmount) : "없음"}</span>
+                                            </div>
+                                            <div className="sb-stat-item">
+                                                <span className="sb-stat-label">청구 시작일</span>
+                                                <span className="sb-stat-value">{formatDateLabel(billingStartDate)}</span>
                                             </div>
                                         </div>
                                     </div>
                                 </section>
-                            </div>
-                        ) : (
-                            <div className="profile-card-stack">
-                                <section className="profile-card">
-                                    <div className="profile-card-head">
-                                        <div>
-                                            <h2>결제 요약</h2>
-                                            <p>
-                                                현재 플랜과 결제 현황을 빠르게
-                                                확인합니다.
-                                            </p>
-                                        </div>
-                                        {effectivePlanId !== "free" && (
-                                            <button
-                                                type="button"
-                                                className="profile-btn profile-btn-cancel-sub"
-                                                onClick={handleCancelSubscription}
-                                                disabled={
-                                                    subscription?.status ===
-                                                    "cancelled"
-                                                }
-                                            >
-                                                {subscription?.status ===
-                                                "cancelled"
-                                                    ? "취소됨"
-                                                    : "구독 취소"}
-                                            </button>
+
+                                {/* 결제 내역 */}
+                                <section className="profile-section">
+                                    <div className="profile-section-header">
+                                        <h2>결제 내역</h2>
+                                        <p>최근 결제와 환불 이력을 시간순으로 확인합니다.</p>
+                                    </div>
+                                    <div className="sb-card">
+                                        {loadingPayments ? (
+                                            <div className="sb-empty-state">결제 정보를 불러오는 중입니다.</div>
+                                        ) : paymentHistory.length === 0 ? (
+                                            <div className="sb-empty-state">아직 결제 내역이 없습니다.</div>
+                                        ) : (
+                                            <div className="sb-payment-list">
+                                                {paymentHistory.map((payment) => {
+                                                    const isRefunded = String(payment.status || "").toUpperCase() === "REFUNDED";
+                                                    return (
+                                                        <div key={payment.paymentKey} className="sb-payment-row">
+                                                            <div className="sb-payment-main">
+                                                                <div className="sb-payment-title-row">
+                                                                    <strong className="sb-payment-title">{payment.orderName}</strong>
+                                                                    <span className={`sb-payment-status ${isRefunded ? "refunded" : "done"}`}>
+                                                                        {isRefunded ? "환불됨" : "결제 완료"}
+                                                                    </span>
+                                                                </div>
+                                                                <p className="sb-payment-meta">
+                                                                    {formatDateLabel(payment.approvedAt, true)}
+                                                                    {payment.card?.company && ` · ${payment.card.company}`}
+                                                                </p>
+                                                                <p className="sb-payment-meta">
+                                                                    주문번호 {payment.orderId || payment.paymentKey}
+                                                                </p>
+                                                            </div>
+                                                            <div className="sb-payment-side">
+                                                                <strong className={`sb-payment-amount ${isRefunded ? "refunded" : ""}`}>
+                                                                    {Number(payment.amount || 0) > 0 ? formatCurrency(Number(payment.amount || 0)) : "없음"}
+                                                                </strong>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
                                         )}
                                     </div>
-
-                                    <div className="profile-info-grid">
-                                        <div className="profile-info-item">
-                                            <span className="profile-info-label">
-                                                현재 플랜
-                                            </span>
-                                            <strong>{effectivePlanInfo.name}</strong>
-                                            <p>{effectivePlanInfo.description}</p>
-                                        </div>
-                                        <div className="profile-info-item">
-                                            <span className="profile-info-label">
-                                                청구 시작일
-                                            </span>
-                                            <strong>
-                                                {formatDateLabel(
-                                                    billingStartDate,
-                                                )}
-                                            </strong>
-                                            <p>최초 또는 최근 갱신 기준입니다.</p>
-                                        </div>
-                                        <div className="profile-info-item">
-                                            <span className="profile-info-label">
-                                                다음 갱신일
-                                            </span>
-                                            <strong>
-                                                {formatDateLabel(planExpiryDate)}
-                                            </strong>
-                                            <p>
-                                                {subscriptionStatusLabel} 상태로
-                                                표시됩니다.
-                                            </p>
-                                        </div>
-                                    </div>
                                 </section>
 
-                                <section className="profile-card">
-                                    <div className="profile-card-head">
-                                        <div>
-                                            <h2>결제 통계</h2>
-                                            <p>
-                                                결제 횟수와 누적 결제 금액을
-                                                보여줍니다.
-                                            </p>
+                                {effectivePlanId !== "free" && (
+                                    <section className="profile-section">
+                                        <div className="profile-section-header">
+                                            <h2>구독 관리</h2>
+                                            <p>정기 결제를 해지하거나 요금제를 변경합니다.</p>
                                         </div>
+                                        <div className="sb-card">
+                                            <div className="sb-card-row">
+                                                <div className="sb-card-row-left">
+                                                    <span className="sb-card-row-label">구독 취소</span>
+                                                    <span className="sb-card-row-desc">다음 정기결제를 해지합니다. 만료일까지는 현재 플랜을 이용할 수 있습니다.</span>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    className="sb-btn sb-btn-danger"
+                                                    onClick={handleCancelSubscription}
+                                                    disabled={subscription?.status === "cancelled"}
+                                                >
+                                                    {subscription?.status === "cancelled" ? "취소됨" : "구독 취소"}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </section>
+                                )}
+                            </>
+                        ) : activeTab === "usage" ? (
+                            <>
+                                {/* 토큰 사용량 그래프 */}
+                                <section className="profile-section">
+                                    <div className="profile-section-header">
+                                        <h2>토큰 사용량</h2>
+                                        <p>최근 일별 AI 토큰 사용량 추이입니다.</p>
                                     </div>
-
-                                    <div className="profile-info-grid">
-                                        <div className="profile-info-item compact">
-                                            <span className="profile-info-label">
-                                                결제 완료
-                                            </span>
-                                            <strong>
-                                                {completedPayments.length}건
-                                            </strong>
-                                        </div>
-                                        <div className="profile-info-item compact">
-                                            <span className="profile-info-label">
-                                                누적 결제액
-                                            </span>
-                                            <strong>
-                                                {totalPaidAmount > 0
-                                                    ? formatCurrency(totalPaidAmount)
-                                                    : "없음"}
-                                            </strong>
-                                        </div>
-                                        <div className="profile-info-item compact">
-                                            <span className="profile-info-label">
-                                                남은 토큰
-                                            </span>
-                                            <strong>
-                                                {formatTokenCount(
-                                                    remainingQuestions,
-                                                )}
-                                            </strong>
-                                        </div>
-                                    </div>
-                                </section>
-
-                                <section className="profile-card">
-                                    <div className="profile-card-head">
-                                        <div>
-                                            <h2>결제 내역</h2>
-                                            <p>
-                                                최근 결제와 환불 이력을 시간순으로
-                                                확인합니다.
-                                            </p>
-                                        </div>
-                                    </div>
-
-                                    {loadingPayments ? (
-                                        <div className="profile-empty-state">
-                                            결제 정보를 불러오는 중입니다.
-                                        </div>
-                                    ) : paymentHistory.length === 0 ? (
-                                        <div className="profile-empty-state">
-                                            아직 결제 내역이 없습니다.
-                                        </div>
-                                    ) : (
-                                        <div className="profile-payment-list">
-                                            {paymentHistory.map((payment) => {
-                                                const isRefunded =
-                                                    String(
-                                                        payment.status || "",
-                                                    ).toUpperCase() ===
-                                                    "REFUNDED";
-
-                                                return (
-                                                    <article
-                                                        key={payment.paymentKey}
-                                                        className="profile-payment-row"
-                                                    >
-                                                        <div className="profile-payment-main">
-                                                            <div className="profile-payment-title-row">
-                                                                <strong className="profile-payment-title">
-                                                                    {
-                                                                        payment.orderName
-                                                                    }
-                                                                </strong>
-                                                                <span
-                                                                    className={`profile-payment-status ${
-                                                                        isRefunded
-                                                                            ? "refunded"
-                                                                            : "done"
-                                                                    }`}
-                                                                >
-                                                                    {isRefunded
-                                                                        ? "환불됨"
-                                                                        : "결제 완료"}
-                                                                </span>
+                                    <div className="sb-card">
+                                        {loadingUsageHistory ? (
+                                            <div className="sb-empty-state">데이터를 불러오는 중입니다.</div>
+                                        ) : usageHistory.length === 0 ? (
+                                            <div className="sb-empty-state">아직 사용 데이터가 없습니다.</div>
+                                        ) : (() => {
+                                            const { entries, maxVal } = buildDailyUsageChart();
+                                            return (
+                                                <div className="sb-chart-wrap">
+                                                    <div className="sb-chart-bars">
+                                                        {entries.map(([label, value]) => (
+                                                            <div key={label} className="sb-chart-col">
+                                                                <div className="sb-chart-bar-track">
+                                                                    <div
+                                                                        className="sb-chart-bar-fill"
+                                                                        style={{ height: `${Math.max((value / maxVal) * 100, 2)}%` }}
+                                                                    />
+                                                                </div>
+                                                                <span className="sb-chart-label">{label}</span>
                                                             </div>
-                                                            <p className="profile-payment-meta">
-                                                                {formatDateLabel(
-                                                                    payment.approvedAt,
-                                                                    true,
-                                                                )}
-                                                                {payment.card
-                                                                    ?.company &&
-                                                                    ` · ${payment.card.company}`}
-                                                            </p>
-                                                            <p className="profile-payment-meta">
-                                                                주문번호{" "}
-                                                                {payment.orderId ||
-                                                                    payment.paymentKey}
-                                                            </p>
-                                                        </div>
-                                                        <div className="profile-payment-side">
-                                                            <strong
-                                                                className={`profile-payment-amount ${
-                                                                    isRefunded
-                                                                        ? "refunded"
-                                                                        : ""
-                                                                }`}
-                                                            >
-                                                                {Number(
-                                                                    payment.amount || 0,
-                                                                ) > 0
-                                                                    ? formatCurrency(
-                                                                          Number(
-                                                                              payment.amount ||
-                                                                                  0,
-                                                                          ),
-                                                                      )
-                                                                    : "없음"}
-                                                            </strong>
-                                                        </div>
-                                                    </article>
-                                                );
-                                            })}
-                                        </div>
-                                    )}
+                                                        ))}
+                                                    </div>
+                                                    <div className="sb-chart-summary sb-chart-summary-usage">
+                                                        <span>최근 {entries.length}일 총 사용: <strong>{entries.reduce((s, [, v]) => s + v, 0).toLocaleString("ko-KR")} 토큰</strong></span>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })()}
+                                    </div>
                                 </section>
-                            </div>
-                        )}
+
+                                {/* 토큰 사용 이력 */}
+                                <section className="profile-section">
+                                    <div className="profile-section-header">
+                                        <h2>사용 이력</h2>
+                                        <p>개별 AI 호출과 토큰 차감 내역입니다.</p>
+                                    </div>
+                                    <div className="sb-card sb-card-usage">
+                                        {loadingUsageHistory ? (
+                                            <div className="sb-empty-state">토큰 사용 이력을 불러오는 중입니다.</div>
+                                        ) : usageHistory.length === 0 ? (
+                                            <div className="sb-empty-state">아직 기록된 토큰 사용 이력이 없습니다.</div>
+                                        ) : (
+                                            <>
+                                                <div className="sb-payment-list sb-payment-list-usage">
+                                                    {usageHistory
+                                                        .slice(usageHistoryPage * USAGE_PAGE_SIZE, (usageHistoryPage + 1) * USAGE_PAGE_SIZE)
+                                                        .map((log) => (
+                                                            <div key={log.id} className="sb-usage-history-row sb-usage-history-row-usage">
+                                                                <div className="sb-usage-history-main">
+                                                                    <strong className="sb-usage-history-title">{log.model || "알 수 없는 모델"}</strong>
+                                                                    <p className="sb-usage-history-meta">
+                                                                        {formatDateLabel(log.createdAt, true)}
+                                                                        {log.feature ? ` · ${log.feature}` : ""}
+                                                                        {log.source ? ` · ${log.source}` : ""}
+                                                                    </p>
+                                                                    <p className="sb-usage-history-meta">
+                                                                        입력 {log.promptTokens.toLocaleString("ko-KR")} · 출력 {log.outputTokens.toLocaleString("ko-KR")} 토큰
+                                                                    </p>
+                                                                </div>
+                                                                <div className="sb-usage-history-side">
+                                                                    <strong>{log.totalTokens.toLocaleString("ko-KR")} 토큰</strong>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                </div>
+                                                {usageHistory.length > USAGE_PAGE_SIZE && (
+                                                    <div className="sb-pagination">
+                                                        <button type="button" className="sb-btn" disabled={usageHistoryPage === 0} onClick={() => setUsageHistoryPage((p) => p - 1)}>
+                                                            이전
+                                                        </button>
+                                                        <span className="sb-pagination-info">
+                                                            {usageHistoryPage + 1} / {Math.ceil(usageHistory.length / USAGE_PAGE_SIZE)}
+                                                        </span>
+                                                        <button type="button" className="sb-btn" disabled={(usageHistoryPage + 1) * USAGE_PAGE_SIZE >= usageHistory.length} onClick={() => setUsageHistoryPage((p) => p + 1)}>
+                                                            다음
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </>
+                                        )}
+                                    </div>
+                                </section>
+                            </>
+                        ) : null}
                     </section>
                 </div>
             </main>
 
-            {usageHistoryOpen && (
-                <div
-                    className="profile-modal-overlay"
-                    onClick={() => setUsageHistoryOpen(false)}
-                >
-                    <div
-                        className="profile-modal-card"
-                        onClick={(event) => event.stopPropagation()}
-                    >
-                        <div className="profile-modal-head">
-                            <div>
-                                <h3>토큰 사용 이력</h3>
-                                <p>최근에 어떤 AI 모델을 사용했고 얼마나 차감됐는지 확인합니다.</p>
-                            </div>
-                            <button
-                                type="button"
-                                className="profile-modal-close"
-                                onClick={() => setUsageHistoryOpen(false)}
-                            >
-                                닫기
-                            </button>
-                        </div>
 
-                        {loadingUsageHistory ? (
-                            <div className="profile-empty-state">
-                                토큰 사용 이력을 불러오는 중입니다.
-                            </div>
-                        ) : usageHistory.length === 0 ? (
-                            <div className="profile-empty-state">
-                                아직 기록된 토큰 사용 이력이 없습니다.
-                            </div>
-                        ) : (
-                            <div className="profile-usage-history-list">
-                                {usageHistory.map((log) => (
-                                    <article
-                                        key={log.id}
-                                        className="profile-usage-history-row"
-                                    >
-                                        <div className="profile-usage-history-main">
-                                            <strong className="profile-usage-history-title">
-                                                {log.model || "알 수 없는 모델"}
-                                            </strong>
-                                            <p className="profile-usage-history-meta">
-                                                {formatDateLabel(log.createdAt, true)}
-                                                {log.feature ? ` · ${log.feature}` : ""}
-                                                {log.source ? ` · ${log.source}` : ""}
-                                            </p>
-                                            <p className="profile-usage-history-meta">
-                                                입력 {log.promptTokens.toLocaleString("ko-KR")} · 출력{" "}
-                                                {log.outputTokens.toLocaleString("ko-KR")} 토큰
-                                            </p>
-                                        </div>
-                                        <div className="profile-usage-history-side">
-                                            <strong>
-                                                {log.totalTokens.toLocaleString("ko-KR")} 토큰
-                                            </strong>
-                                        </div>
-                                    </article>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                </div>
-            )}
-
-            <Footer />
         </>
     );
 }

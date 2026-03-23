@@ -5,7 +5,8 @@ import { getFirestore, doc, getDoc } from "firebase/firestore";
 import { getFirebaseAppOrNull } from "../firebaseConfig";
 import { inferPlanFromAmount } from "@/lib/userData";
 import { ENABLE_UPDATE_NOTICE } from "@/lib/featureFlags";
-import { ADMIN_EMAILS, ADMIN_SESSION_STORAGE_KEY } from "@/lib/adminPortal";
+import { ADMIN_EMAIL, ADMIN_SESSION_STORAGE_KEY } from "@/lib/adminPortal";
+import { isTokenPackOrderName } from "@/lib/tokenPacks";
 
 export function Navbar() {
     const { isAuthenticated, avatar, logout, user } = useAuth();
@@ -31,6 +32,7 @@ export function Navbar() {
         value?: unknown,
     ): "free" | "go" | "plus" | "pro" => {
         if (typeof value !== "string") return "free";
+        if (isTokenPackOrderName(value)) return "free";
         const normalized = value.toLowerCase();
         if (normalized.includes("ultra") || normalized.includes("pro")) return "pro";
         if (normalized.includes("go")) return "go";
@@ -215,9 +217,10 @@ export function Navbar() {
         return () => window.removeEventListener("scroll", handleScroll);
     }, []);
 
-    const isAdminUser =
-        (!!user?.email && ADMIN_EMAILS.includes(user.email.toLowerCase())) ||
-        hasAdminSession;
+    const isAdminEmailUser =
+        typeof user?.email === "string" &&
+        user.email.toLowerCase() === ADMIN_EMAIL;
+    const isAdminUser = isAdminEmailUser || (!user && hasAdminSession);
 
     useEffect(() => {
         const element = navRef.current;
@@ -261,9 +264,6 @@ export function Navbar() {
                 </a>
 
                 <div className="nav-items">
-                    <a href="/#exam-typing" className="nav-link">
-                        {"\uC2DC\uD5D8\uC9C0 \uD0C0\uC774\uD551"}
-                    </a>
                     <a href="/pricing" className="nav-link">
                         {"\uC694\uAE08\uC81C"}
                     </a>
@@ -374,6 +374,10 @@ export function Navbar() {
                                         className="nav-profile-dropdown-item nav-profile-logout-btn"
                                         onClick={async () => {
                                             setMenuOpen(false);
+                                            sessionStorage.removeItem(
+                                                ADMIN_SESSION_STORAGE_KEY,
+                                            );
+                                            setHasAdminSession(false);
                                             await logout();
                                         }}
                                     >

@@ -457,6 +457,12 @@ body {
         padding: 0.2rem 0.46rem;
     }
 
+    .pricing-billing-toggle__subscriber-badge {
+        bottom: calc(100% + 0.35rem);
+        font-size: 0.625rem;
+        padding: 0.2rem 0.46rem;
+    }
+
     .pricing-cards-wrapper {
         gap: 1.25rem;
     }

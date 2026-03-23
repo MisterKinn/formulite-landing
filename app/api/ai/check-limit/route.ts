@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import getFirebaseAdmin from "@/lib/firebaseAdmin";
 import {
     buildUsageResetFields,
+    getStoredExtraTokenBalance,
     getStoredUsageTokens,
     inferPaidPlanFromPayment,
     needsUsageResetFromLimitMigration,
@@ -33,7 +34,7 @@ async function resolvePlanFromPayments(
             .get();
 
         for (const paymentDoc of paymentsSnap.docs) {
-            const paymentData = paymentDoc.data() as any;
+            const paymentData = paymentDoc.data() as Record<string, unknown>;
             const inferred = inferPaidPlanFromPayment(paymentData);
             if (inferred !== "free") {
                 return {
@@ -45,12 +46,12 @@ async function resolvePlanFromPayments(
                 };
             }
         }
-    } catch (orderedQueryError) {
+    } catch {
         // Fallback when some payment docs miss approvedAt/index in production data.
         const paymentsSnap = await userRef.collection("payments").limit(50).get();
 
         for (const paymentDoc of paymentsSnap.docs) {
-            const paymentData = paymentDoc.data() as any;
+            const paymentData = paymentDoc.data() as Record<string, unknown>;
             const inferred = inferPaidPlanFromPayment(paymentData);
             if (inferred !== "free") {
                 return {
@@ -69,7 +70,7 @@ async function resolvePlanFromPayments(
 
 async function resolvePlanWithPaymentFallback(
     userRef: FirebaseFirestore.DocumentReference,
-    userData: Record<string, any>,
+    userData: Record<string, unknown>,
 ): Promise<{ plan: PlanTier; resetAt?: string }> {
     const resolved = resolveEffectiveUsagePlan(userData);
     if (resolved !== "free") return { plan: resolved };
@@ -131,6 +132,7 @@ export async function GET(request: NextRequest) {
                     tier: inferredFromPayments.plan,
                     aiCallUsage: 0,
                     aiUsageMode: "tokens",
+                    extraTokenBalance: 0,
                     usageResetAt: inferredFromPayments.resetAt || nowIso,
                     createdAt: nowIso,
                     updatedAt: nowIso,
@@ -143,16 +145,16 @@ export async function GET(request: NextRequest) {
         const userData = userDoc.data() || {};
         const planResolved = await resolvePlanWithPaymentFallback(
             userRef,
-            userData as Record<string, any>,
+            userData as Record<string, unknown>,
         );
         const plan = planResolved.plan;
-        let currentUsage = getStoredUsageTokens(userData as Record<string, any>);
+        let currentUsage = getStoredUsageTokens(userData as Record<string, unknown>);
         const resetDecision = needsUsageResetFromPayment(
-            userData as Record<string, any>,
+            userData as Record<string, unknown>,
             plan,
         );
         const migrationResetDecision = needsUsageResetFromLimitMigration(
-            userData as Record<string, any>,
+            userData as Record<string, unknown>,
             now,
         );
 
@@ -165,25 +167,40 @@ export async function GET(request: NextRequest) {
             resetDecision.shouldReset ||
             (!!resetAt && plan !== "free")
         ) {
-            await userDoc.ref.update(buildUsageResetFields(resetAt));
+            const extraTokenBalance = getStoredExtraTokenBalance(
+                userData as Record<string, unknown>,
+            );
+            await userDoc.ref.update(
+                buildUsageResetFields(resetAt, extraTokenBalance),
+            );
             currentUsage = 0;
         }
 
-        const limit = resolveEffectiveUsageLimit(
-            userData as Record<string, any>,
+        const baseLimit = resolveEffectiveUsageLimit(
+            userData as Record<string, unknown>,
             plan,
             now,
         );
-        const canUse = currentUsage < limit;
+        const extraTokenBalance = getStoredExtraTokenBalance(
+            userData as Record<string, unknown>,
+        );
+        const limit = baseLimit + extraTokenBalance;
+        const remaining = Math.max(
+            0,
+            Math.max(0, baseLimit - currentUsage) + extraTokenBalance,
+        );
+        const canUse = remaining > 0;
 
         return NextResponse.json({
             success: true,
             plan,
             currentUsage,
             limit,
-            remaining: Math.max(0, limit - currentUsage),
+            remaining,
             canUse,
             usageUnit: "tokens",
+            subscriptionLimit: baseLimit,
+            extraTokenBalance,
         }, {
             headers: {
                 "Cache-Control": "no-store, no-cache, must-revalidate",
