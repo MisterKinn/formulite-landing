@@ -87,7 +87,7 @@ const formatTokenAllowance = (baseProblems: number, bonusProblems?: number) => {
 const plans: PricingPlan[] = [
     {
         name: "Free 요금제",
-        subDescription: "기본 요금제로 다양한 서비스를 먼저 경험해보세요.",
+        subDescription: "다양한 서비스를 먼저 경험해보세요.",
         prices: {
             monthly: "0",
             yearly: "0",
