@@ -1,9 +1,7 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
-import { admin } from "@/lib/adminAuth";
-
-const db = admin.firestore();
+import { getAdminDb } from "@/lib/adminAuth";
 
 function getDateKey(date = new Date()) {
     const formatter = new Intl.DateTimeFormat("en-CA", {
@@ -17,6 +15,7 @@ function getDateKey(date = new Date()) {
 
 export async function POST(request: NextRequest) {
     try {
+        const db = getAdminDb();
         const body = await request.json().catch(() => ({}));
         const platform = String(body?.platform || "unknown").slice(0, 50);
         const dateKey = getDateKey();

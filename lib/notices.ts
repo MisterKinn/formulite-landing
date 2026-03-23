@@ -1,3 +1,6 @@
+import {
+    hasExplicitFirebaseAdminCredentials,
+} from "@/lib/firebaseAdmin";
 import getFirebaseAdmin from "@/lib/firebaseAdmin";
 import { isDefaultNoticeSlug } from "@/lib/noticesShared";
 
@@ -40,6 +43,12 @@ const DEFAULT_NOTICES: NoticeItem[] = [
     },
 ];
 
+function shouldSkipFirestoreNoticeLookup() {
+    // Notices can safely fall back to a bundled default. Only attempt
+    // Firestore when explicit admin credentials are configured.
+    return !hasExplicitFirebaseAdminCredentials();
+}
+
 function normalizeNotice(slug: string, data: NoticeDoc): NoticeItem {
     return {
         slug: String(data.slug || slug),
@@ -79,6 +88,10 @@ export function buildNoticeSlug(title: string) {
 }
 
 export async function listNotices(): Promise<NoticeItem[]> {
+    if (shouldSkipFirestoreNoticeLookup()) {
+        return DEFAULT_NOTICES;
+    }
+
     try {
         const admin = getFirebaseAdmin();
         const db = admin.firestore();
@@ -101,6 +114,10 @@ export async function listNotices(): Promise<NoticeItem[]> {
 }
 
 export async function getNoticeBySlug(slug: string): Promise<NoticeItem | null> {
+    if (shouldSkipFirestoreNoticeLookup()) {
+        return DEFAULT_NOTICES.find((notice) => notice.slug === slug) || null;
+    }
+
     try {
         const admin = getFirebaseAdmin();
         const db = admin.firestore();

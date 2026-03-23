@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyAdmin, admin } from "@/lib/adminAuth";
+import { getAdminDb, verifyAdmin } from "@/lib/adminAuth";
 
 /**
  * DELETE /api/admin/payments/[paymentKey]
@@ -30,7 +30,7 @@ export async function DELETE(
             );
         }
 
-        const db = admin.firestore();
+        const db = getAdminDb();
 
         // Delete the payment document
         const paymentRef = db

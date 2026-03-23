@@ -1,11 +1,9 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
-import { verifyAdmin, admin } from "@/lib/adminAuth";
+import { getAdmin, getAdminDb, verifyAdmin } from "@/lib/adminAuth";
 import { resolveEffectiveUsagePlan } from "@/lib/aiUsage";
 import { resolvePaymentProduct } from "@/lib/tokenPacks";
-
-const db = admin.firestore();
 
 const PRODUCT_KEYWORDS = ["요금제", "구독", "plan", "pricing", "토큰"] as const;
 const KNOWN_PRODUCT_AMOUNTS = new Set([
@@ -109,6 +107,7 @@ function getSeoulMonthStart(date = new Date()) {
 }
 
 async function getAuthUserCount(): Promise<number> {
+    const admin = getAdmin();
     let pageToken: string | undefined = undefined;
     let total = 0;
 
@@ -163,6 +162,7 @@ function getEmptyStats() {
  * Returns dashboard statistics for admin
  */
 export async function GET(request: NextRequest) {
+    const db = getAdminDb();
     const adminUser = await verifyAdmin(request.headers.get("Authorization"));
 
     if (!adminUser) {

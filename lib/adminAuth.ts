@@ -2,8 +2,6 @@ import "server-only";
 import crypto from "crypto";
 import getFirebaseAdmin from "@/lib/firebaseAdmin";
 
-const admin = getFirebaseAdmin();
-
 const ADMIN_SESSION_TTL_MS = 1000 * 60 * 60 * 12; // 12 hours
 const ADMIN_TOKEN_VERSION = 1;
 
@@ -150,6 +148,7 @@ export async function verifyAdmin(
     }
 
     try {
+        const admin = getAdmin();
         const decodedToken = await admin.auth().verifyIdToken(token);
         const email = decodedToken.email?.toLowerCase();
         const adminEmails = getAdminEmails();
@@ -175,4 +174,10 @@ export function isAdminEmail(email: string | null | undefined): boolean {
     return !!email && getAdminEmails().includes(email.toLowerCase());
 }
 
-export { admin };
+export function getAdmin() {
+    return getFirebaseAdmin();
+}
+
+export function getAdminDb() {
+    return getAdmin().firestore();
+}

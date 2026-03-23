@@ -1,9 +1,7 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
-import { admin } from "@/lib/adminAuth";
-
-const db = admin.firestore();
+import { getAdminDb } from "@/lib/adminAuth";
 
 function getDateKey(date = new Date()) {
     const formatter = new Intl.DateTimeFormat("en-CA", {
@@ -33,6 +31,7 @@ function getClientIp(request: NextRequest): string {
 
 export async function POST(request: NextRequest) {
     try {
+        const db = getAdminDb();
         const body = await request.json().catch(() => ({}));
         const page = String(body?.page || "/").slice(0, 200);
         const ip = getClientIp(request).slice(0, 64);

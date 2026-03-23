@@ -1,11 +1,10 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
-import { verifyAdmin, admin } from "@/lib/adminAuth";
-
-const db = admin.firestore();
+import { getAdmin, getAdminDb, verifyAdmin } from "@/lib/adminAuth";
 
 async function listAllAuthUsers() {
+    const admin = getAdmin();
     let pageToken: string | undefined = undefined;
     const users: Array<{ uid: string; email: string }> = [];
 
@@ -61,6 +60,7 @@ export async function GET(request: NextRequest) {
     }
 
     try {
+        const db = getAdminDb();
         const { searchParams } = new URL(request.url);
         const limit = parseInt(searchParams.get("limit") || "50");
         const offset = parseInt(searchParams.get("offset") || "0");

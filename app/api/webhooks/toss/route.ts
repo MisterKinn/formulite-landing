@@ -12,9 +12,9 @@ import {
 } from "@/lib/aiUsage";
 import { canPurchaseTokenPack, resolvePaymentProduct } from "@/lib/tokenPacks";
 
-// Get Firebase Admin instance (uses centralized initialization)
-const admin = getFirebaseAdmin();
-const adminDb = admin.firestore();
+function getAdminDb() {
+    return getFirebaseAdmin().firestore();
+}
 
 /**
  * TossPayments Webhook Handler
@@ -74,6 +74,7 @@ async function logWebhookEvent(
     body: Record<string, unknown>,
 ) {
     try {
+        const adminDb = getAdminDb();
         const webhookLogRef = adminDb.collection("webhookLogs").doc();
         await webhookLogRef.set({
             eventType,
@@ -124,6 +125,7 @@ async function handlePaymentDone(
     userId: string,
     data: Record<string, unknown>,
 ) {
+    const adminDb = getAdminDb();
     const {
         paymentKey,
         orderId,
@@ -270,6 +272,7 @@ async function handlePaymentCanceled(
     userId: string,
     data: Record<string, unknown>,
 ) {
+    const adminDb = getAdminDb();
     const { paymentKey, orderId, cancels } = data;
     const paymentKeyValue = typeof paymentKey === "string" ? paymentKey : "";
     const orderIdValue = typeof orderId === "string" ? orderId : "";
@@ -328,6 +331,7 @@ async function handleCancelStatusChanged(data: Record<string, unknown>) {
 }
 
 async function handleBillingDeleted(data: Record<string, unknown>) {
+    const adminDb = getAdminDb();
     const { billingKey, customerKey } = data;
 
     console.log("BILLING_DELETED:", { billingKey, customerKey });
@@ -368,6 +372,7 @@ async function handleDepositCallback(data: Record<string, unknown>) {
 
 async function updateWebhookLog(paymentKey: string, processed: boolean) {
     try {
+        const adminDb = getAdminDb();
         const logsQuery = await adminDb
             .collection("webhookLogs")
             .where("body.data.paymentKey", "==", paymentKey)

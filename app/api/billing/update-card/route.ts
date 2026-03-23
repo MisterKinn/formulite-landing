@@ -3,10 +3,6 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import getFirebaseAdmin from "@/lib/firebaseAdmin";
 
-const admin = getFirebaseAdmin();
-
-const db = admin.firestore();
-
 /**
  * POST /api/billing/update-card
  * Updates the user's billing key with a new card
@@ -14,6 +10,8 @@ const db = admin.firestore();
  */
 export async function POST(request: NextRequest) {
     try {
+        const admin = getFirebaseAdmin();
+        const db = admin.firestore();
         // Get Firebase Auth token from Authorization header
         const authHeader = request.headers.get("Authorization");
         if (!authHeader || !authHeader.startsWith("Bearer ")) {

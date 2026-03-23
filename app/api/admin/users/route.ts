@@ -1,7 +1,7 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
-import { verifyAdmin, admin } from "@/lib/adminAuth";
+import { getAdmin, getAdminDb, verifyAdmin } from "@/lib/adminAuth";
 import { getTierLimit, PlanTier } from "@/lib/tierLimits";
 import { normalizeCreatedAt } from "@/lib/userData";
 import {
@@ -11,9 +11,8 @@ import {
 } from "@/lib/aiUsage";
 import { isTokenPackOrderName } from "@/lib/tokenPacks";
 
-const db = admin.firestore();
-
 async function listAllAuthUsers() {
+    const admin = getAdmin();
     let pageToken: string | undefined = undefined;
     const users: Array<{
         uid: string;
@@ -106,6 +105,7 @@ function inferCycleFromPayment(payment: { amount?: number; orderName?: string })
  * Query params: limit, offset, search (email), plan, status
  */
 export async function GET(request: NextRequest) {
+    const db = getAdminDb();
     const adminUser = await verifyAdmin(request.headers.get("Authorization"));
 
     if (!adminUser) {
@@ -116,6 +116,7 @@ export async function GET(request: NextRequest) {
     }
 
     try {
+        const admin = getAdmin();
         const resolvedProjectId =
             admin.app().options.projectId ||
             process.env.FIREBASE_PROJECT_ID ||

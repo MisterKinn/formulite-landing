@@ -1,9 +1,7 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
-import { verifyAdmin, admin } from "@/lib/adminAuth";
-
-const db = admin.firestore();
+import { getAdminDb, verifyAdmin } from "@/lib/adminAuth";
 const UPDATE_CONFIG_COLLECTION = "systemConfig";
 const UPDATE_CONFIG_DOC_ID = "desktopUpdateManifest";
 
@@ -54,6 +52,7 @@ function validatePayload(payload: UpdateManifestPayload): string | null {
 }
 
 async function readUpdateManifest(): Promise<UpdateManifestPayload> {
+    const db = getAdminDb();
     const docRef = db
         .collection(UPDATE_CONFIG_COLLECTION)
         .doc(UPDATE_CONFIG_DOC_ID);
@@ -108,6 +107,7 @@ export async function PUT(request: NextRequest) {
     }
 
     try {
+        const db = getAdminDb();
         const body = await request.json().catch(() => null);
         const payload = toStoredPayload(body || {});
         const errorMessage = validatePayload(payload);

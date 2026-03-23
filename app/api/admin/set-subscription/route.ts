@@ -4,10 +4,6 @@ import { NextRequest, NextResponse } from "next/server";
 import getFirebaseAdmin from "@/lib/firebaseAdmin";
 import { buildUserRootPatch } from "@/lib/userData";
 
-const admin = getFirebaseAdmin();
-
-const db = admin.firestore();
-
 export async function POST(request: NextRequest) {
     const secret = request.headers.get("x-admin-secret");
     if (!process.env.ADMIN_SECRET || secret !== process.env.ADMIN_SECRET) {
@@ -15,6 +11,7 @@ export async function POST(request: NextRequest) {
     }
 
     try {
+        const db = getFirebaseAdmin().firestore();
         const body = await request.json();
         const { userId, subscription } = body;
         if (!userId || !subscription) {

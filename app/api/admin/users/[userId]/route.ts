@@ -1,15 +1,13 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
-import { verifyAdmin, admin } from "@/lib/adminAuth";
+import { getAdmin, getAdminDb, verifyAdmin } from "@/lib/adminAuth";
 import { getTierLimit } from "@/lib/tierLimits";
 import {
     getStoredUsageTokens,
     resolveEffectiveUsageLimit,
     resolveEffectiveUsagePlan,
 } from "@/lib/aiUsage";
-
-const db = admin.firestore();
 const ALLOWED_PLANS = ["free", "go", "plus", "pro"] as const;
 type EditablePlan = (typeof ALLOWED_PLANS)[number];
 
@@ -51,6 +49,8 @@ export async function PATCH(
     }
 
     try {
+        const admin = getAdmin();
+        const db = getAdminDb();
         const body = (await request.json()) as {
             remainingUsage?: unknown;
             plan?: unknown;
@@ -278,6 +278,8 @@ export async function DELETE(
     }
 
     try {
+        const admin = getAdmin();
+        const db = getAdminDb();
         // 1) Delete from Firebase Auth first so we don't report success while auth user still exists.
         let deletedAuthUser = false;
         try {

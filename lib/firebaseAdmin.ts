@@ -1,5 +1,21 @@
 import admin from "firebase-admin";
 
+export function hasExplicitFirebaseAdminCredentials() {
+    return Boolean(
+        process.env.FIREBASE_ADMIN_CREDENTIALS ||
+            process.env.FIREBASE_ADMIN_CREDENTIALS_B64 ||
+            process.env.GOOGLE_APPLICATION_CREDENTIALS,
+    );
+}
+
+export function getConfiguredFirebaseProjectId() {
+    return (
+        process.env.FIREBASE_PROJECT_ID ||
+        process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ||
+        undefined
+    );
+}
+
 /**
  * getFirebaseAdmin
  * Lazily initialize and return the firebase-admin namespace.
@@ -18,9 +34,7 @@ export default function getFirebaseAdmin() {
     const serviceAccountJson = process.env.FIREBASE_ADMIN_CREDENTIALS;
     const serviceAccountB64 = process.env.FIREBASE_ADMIN_CREDENTIALS_B64;
     const serviceAccountPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
-    const configuredProjectId =
-        process.env.FIREBASE_PROJECT_ID ||
-        process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+    const configuredProjectId = getConfiguredFirebaseProjectId();
 
     try {
         if (serviceAccountJson) {
