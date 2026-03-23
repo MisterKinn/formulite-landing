@@ -42,24 +42,33 @@ const formatTokenAllowance = (baseProblems: number, bonusProblems?: number) => {
             label: "총 토큰",
             lines: [
                 {
-                    value: formatTokenNumber(baseTokens),
+                    prefix: "총",
                     suffix: "토큰",
+                    value: formatTokenNumber(baseTokens),
                 },
             ],
         };
     }
 
     const bonusTokens = bonusProblems * TOKENS_PER_PROBLEM;
+    const totalTokens = baseTokens + bonusTokens;
     return {
         label: "월 토큰",
         lines: [
             {
+                prefix: "기본",
+                suffix: "토큰",
                 value: formatTokenNumber(baseTokens),
-                suffix: "기본토큰",
             },
             {
+                prefix: "추가",
+                suffix: "토큰",
                 value: formatTokenNumber(bonusTokens),
-                suffix: "추가토큰",
+            },
+            {
+                prefix: "총",
+                suffix: "토큰",
+                value: formatTokenNumber(totalTokens),
             },
         ],
     };
@@ -338,19 +347,21 @@ export default function Pricing() {
                                                 key={`${plan.tier}-token-line-${index}`}
                                                 className="pricing-card-v2__token-line"
                                             >
-                                                {line.prefix && (
-                                                    <span className="pricing-card-v2__token-prefix">
-                                                        {line.prefix}
-                                                    </span>
-                                                )}
+                                                <span className="pricing-card-v2__token-name">
+                                                    {line.prefix && (
+                                                        <span className="pricing-card-v2__token-prefix">
+                                                            {line.prefix}
+                                                        </span>
+                                                    )}
+                                                    {line.suffix && (
+                                                        <span className="pricing-card-v2__token-suffix">
+                                                            {line.suffix}
+                                                        </span>
+                                                    )}
+                                                </span>
                                                 <span className="pricing-card-v2__token-value">
                                                     {line.value}
                                                 </span>
-                                                {line.suffix && (
-                                                    <span className="pricing-card-v2__token-suffix">
-                                                        {line.suffix}
-                                                    </span>
-                                                )}
                                             </span>
                                         ))}
                                     </div>

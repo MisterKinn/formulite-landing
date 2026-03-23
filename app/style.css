@@ -2071,9 +2071,17 @@ nextjs-portal {
 .pricing-card-v2__token-line {
     display: flex;
     align-items: baseline;
-    gap: 0.28rem;
-    flex-wrap: wrap;
+    gap: 0.22rem;
+    flex-wrap: nowrap;
 }
+
+.pricing-card-v2__token-name {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.2rem;
+    flex: 0 0 4.3rem;
+}
+
 
 .pricing-card-v2__token-prefix,
 .pricing-card-v2__token-suffix {
@@ -2084,11 +2092,12 @@ nextjs-portal {
 }
 
 .pricing-card-v2__token-value {
-    font-size: 1.45rem;
+    font-size: 0.98rem;
     font-weight: 700;
     color: #f7f7f8;
     line-height: 1.12;
     letter-spacing: -0.03em;
+    font-variant-numeric: tabular-nums;
 }
 
 .pricing-card-v2--popular .pricing-card-v2__token-prefix,

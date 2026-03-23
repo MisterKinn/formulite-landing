@@ -2951,7 +2951,6 @@ class NovaAILiteWindow(QWidget):
             [
                 self._image_mode_text("no_image"),
                 self._image_mode_text("crop"),
-                self._image_mode_text("ai_generate"),
             ]
         )
         self._image_mode_combo.setFixedWidth(220)
@@ -3111,7 +3110,6 @@ class NovaAILiteWindow(QWidget):
             [
                 self._image_mode_text("no_image"),
                 self._image_mode_text("crop"),
-                self._image_mode_text("ai_generate"),
             ]
         )
         self._image_mode_combo_compact.setMinimumWidth(140)
@@ -5510,7 +5508,6 @@ class NovaAILiteWindow(QWidget):
         mapping = {
             "no_image": "이미지 없이 생성하기",
             "crop": "이미지 크롭해서 생성하기",
-            "ai_generate": "AI 이미지 생성하기",
         }
         return mapping.get(mode_key, mapping["crop"])
 
@@ -5518,7 +5515,7 @@ class NovaAILiteWindow(QWidget):
     def _image_mode_key_from_text(text: str) -> str:
         normalized = (text or "").strip()
         if normalized.startswith("AI 이미지 생성하기"):
-            return "ai_generate"
+            return "crop"
         if normalized.startswith("이미지 없이 생성하기"):
             return "no_image"
         if normalized.startswith("이미지 크롭해서 생성하기"):

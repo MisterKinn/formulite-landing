@@ -13,7 +13,7 @@ const faqCategories = {
         },
         {
             question: "어떤 운영체제를 지원하나요?",
-            answer: "현재 Nova AI Windows, macOS, Linux 환경을 모두 지원합니다. 단, 한글 파일 수정은 Windows에서만 가능합니다.",
+            answer: "Nova AI 데스크톱 앱은 Windows만 지원합니다. 한글 오토메이션과의 연동 때문에 macOS·Linux에서는 이용할 수 없습니다.",
         },
         {
             question: "내 데이터는 안전한가요?",
@@ -23,7 +23,7 @@ const faqCategories = {
     결제: [
         {
             question: "무료 체험 기간이 있나요?",
-            answer: "네, 모든 신규 사용자에게 7일간의 무료 체험 기간을 제공합니다. 이 기간 동안 Plus 요금제 또는 Ultra 요금제의 모든 기능을 제한 없이 사용하실 수 있습니다.",
+            answer: "아니요, Plus·Ultra 요금제의 전체 기능을 제한 없이 쓰는 별도의 7일 무료 체험은 없습니다. 회원가입 후에는 Free 요금제로 바로 시작할 수 있으며, 안내된 AI 토큰 한도(약 7만 5천 토큰, 문제 약 3회분 기준) 안에서 이용하실 수 있습니다. 더 많은 사용량은 Go·Plus·Ultra 유료 플랜에서 선택하실 수 있습니다.",
         },
         {
             question: "월간/연간 결제의 차이점이 무엇인가요?",

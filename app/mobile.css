@@ -509,8 +509,12 @@ body {
         font-size: 0.76rem;
     }
 
+    .pricing-card-v2__token-name {
+        flex-basis: 3.75rem;
+    }
+
     .pricing-card-v2__token-value {
-        font-size: 1.08rem;
+        font-size: 0.86rem;
     }
 
 

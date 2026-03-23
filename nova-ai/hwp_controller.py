@@ -3790,6 +3790,35 @@ class HwpController:
     _CROP_MAX_WIDTH = 900
 
     @staticmethod
+    def _image_display_size_mm(image_path: str, scale: float) -> tuple[int, int]:
+        """
+        Estimate a display size in mm for HWP specific-size insertion.
+
+        This avoids forcing HWP to guess a large image's size on every insert.
+        """
+        try:
+            img = load_pil_image(image_path)
+            w_px, h_px = img.size
+            dpi_info = getattr(img, "info", {}).get("dpi", (96, 96))
+            img.close()
+        except Exception:
+            return (0, 0)
+
+        try:
+            dpi_x = float(dpi_info[0]) if isinstance(dpi_info, (tuple, list)) else 96.0
+            dpi_y = float(dpi_info[1]) if isinstance(dpi_info, (tuple, list)) else dpi_x
+        except Exception:
+            dpi_x = 96.0
+            dpi_y = 96.0
+
+        dpi_x = dpi_x if dpi_x > 1 else 96.0
+        dpi_y = dpi_y if dpi_y > 1 else 96.0
+        s = max(0.1, float(scale))
+        width_mm = max(1, int(round((w_px / dpi_x) * 25.4 * s)))
+        height_mm = max(1, int(round((h_px / dpi_y) * 25.4 * s)))
+        return (width_mm, height_mm)
+
+    @staticmethod
     def _normalize_crop_box_1000(
         x1: float,
         y1: float,
@@ -4389,14 +4418,20 @@ class HwpController:
 
         Preferred coordinates are normalized 0-1000 values, matching Gemini
         responseSchema output. Legacy 0.0-1.0 ratios are still accepted.
-        The final inserted image is rendered with CSS-style percent cropping
-        math and then placed into an invisible 1x1 table cell.
+        The final inserted image is cropped first, then gently downscaled only
+        when needed before being placed into an invisible 1x1 table cell.
         """
         src = self._source_image_path
         if not src or not Path(src).exists():
             raise HwpControllerError(
                 "insert_cropped_image 실패: 원본 이미지 경로가 설정되지 않았거나 파일이 없습니다."
             )
+        try:
+            from PIL import Image
+        except ImportError as exc:
+            raise HwpControllerError(
+                "insert_cropped_image 실패: Pillow 라이브러리가 필요합니다."
+            ) from exc
         box_1000, legacy_ratio_input = self._normalize_crop_box_1000(
             x1_pct,
             y1_pct,
@@ -4404,14 +4439,30 @@ class HwpController:
             y2_pct,
         )
         img = load_pil_image(src, mode="RGB")
+        px1, py1, px2, py2 = self._normalized_box_1000_to_pixels(img.size, box_1000)
         if legacy_ratio_input:
-            px1, py1, px2, py2 = self._normalized_box_1000_to_pixels(img.size, box_1000)
-            rx1, ry1, rx2, ry2 = self._refine_crop_rect(src, (px1, py1, px2, py2))
-            box_1000 = self._pixel_rect_to_normalized_1000(
-                img.size,
-                (rx1, ry1, rx2, ry2),
+            px1, py1, px2, py2 = self._refine_crop_rect(src, (px1, py1, px2, py2))
+        cropped = img.crop((px1, py1, px2, py2))
+        try:
+            img.close()
+        except Exception:
+            pass
+
+        crop_w, crop_h = cropped.size
+        if crop_w > self._CROP_MAX_WIDTH:
+            scale = self._CROP_MAX_WIDTH / crop_w
+            cropped = cropped.resize(
+                (self._CROP_MAX_WIDTH, max(1, int(crop_h * scale))),
+                Image.LANCZOS,
             )
-        rendered_path = self._render_percent_crop_image(src, box_1000)
+
+        tmp_dir = Path(tempfile.gettempdir()) / "nova_ai"
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        rendered_path = tmp_dir / f"crop_{os.getpid()}_{id(cropped)}.png"
+        cropped.save(str(rendered_path), format="PNG")
+        width_mm, height_mm = self._image_display_size_mm(
+            str(rendered_path), self._IMAGE_INSERT_SCALE
+        )
 
         self._insert_1x1_table()
         self._set_current_table_border_none()
@@ -4419,7 +4470,11 @@ class HwpController:
             self._set_paragraph_align("center")
         except Exception:
             pass
-        self._raw_insert_picture(rendered_path)
+        self._raw_insert_picture(
+            str(rendered_path),
+            width_mm=width_mm,
+            height_mm=height_mm,
+        )
         self._exit_table_after_image()
 
     def insert_generated_image(self, image_path: str) -> None:
@@ -4434,13 +4489,21 @@ class HwpController:
         if not p.exists():
             raise HwpControllerError(f"insert_generated_image 실패: 파일을 찾을 수 없습니다: {path}")
 
+        width_mm, height_mm = self._image_display_size_mm(
+            str(p), self._IMAGE_INSERT_SCALE
+        )
+
         self._insert_1x1_table()
         self._set_current_table_border_none()
         try:
             self._set_paragraph_align("center")
         except Exception:
             pass
-        self._raw_insert_picture(str(p))
+        self._raw_insert_picture(
+            str(p),
+            width_mm=width_mm,
+            height_mm=height_mm,
+        )
         self._exit_table_after_image()
 
     # Low-level image helpers (table-based)
@@ -4528,42 +4591,101 @@ class HwpController:
             except Exception:
                 pass
 
-    def _raw_insert_picture(self, image_path: str) -> None:
+    def _raw_insert_picture(
+        self,
+        image_path: str,
+        *,
+        width_mm: int = 0,
+        height_mm: int = 0,
+    ) -> None:
         """Insert an image file into HWP as inline (글자처럼 취급)."""
         hwp = self._ensure_connected()
         abs_path = str(Path(image_path).resolve())
 
         action = getattr(hwp, "HAction", None)
         param_sets = getattr(hwp, "HParameterSet", None)
+        errors: list[str] = []
+        use_specific_size = width_mm > 0 and height_mm > 0
+
+        for method_name in ("InsertPicture", "insert_picture"):
+            fn = getattr(hwp, method_name, None)
+            if fn is not None:
+                method_attempts = []
+                if use_specific_size:
+                    method_attempts.extend(
+                        [
+                            (abs_path, True, 1, False, False, 0, width_mm, height_mm),
+                            (abs_path, True, 1),
+                        ]
+                    )
+                method_attempts.extend(
+                    [
+                        (abs_path, True, 0, False, False, 0, 0, 0),
+                        (abs_path, True, 3, False, False, 0, 0, 0),
+                        (abs_path, True, 2, False, False, 0, 0, 0),
+                        (abs_path, True, 0),
+                        (abs_path, True, 3),
+                        (abs_path, True, 2),
+                        (abs_path, True),
+                        (abs_path,),
+                    ]
+                )
+                for args in method_attempts:
+                    try:
+                        fn(*args)
+                        self._try_set_treat_as_char()
+                        return
+                    except Exception as exc:
+                        errors.append(f"{method_name}{args!r}: {type(exc).__name__}: {exc}")
+                        continue
 
         if action is not None and param_sets is not None:
             for param_name in ("HInsertPicture", "HPicture"):
                 param_obj = getattr(param_sets, param_name, None)
                 if param_obj is None:
                     continue
-                try:
-                    action.GetDefault("InsertPicture", param_obj.HSet)
-                    param_obj.FileName = abs_path
-                    if hasattr(param_obj, "Treatment"):
-                        param_obj.Treatment = 0  # 글자처럼 취급
-                    if hasattr(param_obj, "SizeType"):
-                        param_obj.SizeType = 0
-                    result = action.Execute("InsertPicture", param_obj.HSet)
-                    if result is not False:
-                        self._try_set_treat_as_char()
-                        return
-                except Exception:
-                    continue
-
-        for method_name in ("InsertPicture", "insert_picture"):
-            fn = getattr(hwp, method_name, None)
-            if fn is not None:
-                try:
-                    fn(abs_path, 0)
-                    self._try_set_treat_as_char()
-                    return
-                except Exception:
-                    continue
+                size_options = [1] if use_specific_size else []
+                size_options.extend([0, 3, 2])
+                for size_option in size_options:
+                    try:
+                        action.GetDefault("InsertPicture", param_obj.HSet)
+                        for attr in ("FileName", "FileName2", "FilePath", "Filename"):
+                            if hasattr(param_obj, attr):
+                                setattr(param_obj, attr, abs_path)
+                            try:
+                                param_obj.HSet.SetItem(attr, abs_path)
+                            except Exception:
+                                pass
+                        for attr, value in (
+                            ("Embedded", 1),
+                            ("Embeded", 1),
+                            ("Reverse", 0),
+                            ("Watermark", 0),
+                            ("Effect", 0),
+                            ("Treatment", 0),
+                            ("TreatAsChar", 1),
+                            ("TextWrap", 0),
+                            ("SizeType", size_option),
+                            ("SizeOption", size_option),
+                            ("Width", width_mm if size_option == 1 else 0),
+                            ("Height", height_mm if size_option == 1 else 0),
+                        ):
+                            if hasattr(param_obj, attr):
+                                setattr(param_obj, attr, value)
+                            try:
+                                param_obj.HSet.SetItem(attr, value)
+                            except Exception:
+                                pass
+                        result = action.Execute("InsertPicture", param_obj.HSet)
+                        if result is not False:
+                            self._try_set_treat_as_char()
+                            return
+                    except Exception as exc:
+                        errors.append(
+                            f"InsertPicture/{param_name}/size={size_option}: "
+                            f"{type(exc).__name__}: {exc}"
+                        )
+                        continue
 
         try:
             hwp.Run("InsertPicture")
@@ -4572,7 +4694,10 @@ class HwpController:
         except Exception:
             pass
 
-        raise HwpControllerError(f"이미지 삽입 실패: {abs_path}")
+        detail = ""
+        if errors:
+            detail = " | 최근 오류: " + " | ".join(errors[-3:])
+        raise HwpControllerError(f"이미지 삽입 실패: {abs_path}{detail}")
 
     def _try_set_treat_as_char(self) -> None:
         """Best-effort: set TreatAsChar on the most recently inserted picture.
