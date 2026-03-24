@@ -342,6 +342,12 @@ function ProfileContent() {
     // Refresh key for forcing data reload
     const [refreshKey, setRefreshKey] = useState(0);
 
+    useEffect(() => {
+        if (activeTab === "usage") {
+            setActiveTab("profile");
+        }
+    }, [activeTab]);
+
     const loadAccountProfile = useCallback(async () => {
         if (!authUser) {
             setEmail("");
@@ -922,7 +928,7 @@ function ProfileContent() {
             return;
         }
 
-        const upgradeMessage = `${plan.name}로 업그레이드하시겠습니까?\n업그레이드가 완료되면 현재 사용량은 초기화되고 새 요금제 한도가 즉시 적용됩니다.`;
+        const upgradeMessage = `${plan.name}로 업그레이드하시겠습니까?\n상위 요금제로 업그레이드하면 현재 사용량이 초기화되며 새 한도가 즉시 적용됩니다. 또한 토큰 별도 구매도 가능합니다.`;
         if (!confirm(upgradeMessage)) {
             return;
         }
@@ -1194,16 +1200,6 @@ function ProfileContent() {
                                     </svg>
                                     <span>결제내역</span>
                                 </button>
-                                <button
-                                    className={`profile-nav-item ${activeTab === "usage" ? "active" : ""}`}
-                                    onClick={() => setActiveTab("usage")}
-                                >
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                                        <path d="M3 3v18h18" />
-                                        <path d="m19 9-5 5-4-4-3 3" />
-                                    </svg>
-                                    <span>토큰 사용 이력</span>
-                                </button>
                             </nav>
                         </div>
                     </aside>
@@ -1222,13 +1218,6 @@ function ProfileContent() {
                                     <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
                                 </svg>
                                 <span>결제내역</span>
-                            </button>
-                            <button role="tab" aria-selected={activeTab === "usage"} className={`profile-nav-item ${activeTab === "usage" ? "active" : ""}`} onClick={() => setActiveTab("usage")}>
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                                    <path d="M3 3v18h18" />
-                                    <path d="m19 9-5 5-4-4-3 3" />
-                                </svg>
-                                <span>토큰 이력</span>
                             </button>
                         </nav>
 
@@ -1322,7 +1311,7 @@ function ProfileContent() {
                                                 </div>
                                             )}
                                             <div className="sb-usage-warning">
-                                                상위 요금제로 업그레이드하면 현재 사용량이 초기화되며 새 한도가 즉시 적용됩니다. Go에서 Ultra로 바로 업그레이드하는 것도 가능합니다.
+                                                상위 요금제로 업그레이드하면 현재 사용량이 초기화되며 새 한도가 즉시 적용됩니다. 또한 토큰 별도 구매도 가능합니다.
                                             </div>
                                         </div>
                                     </div>
@@ -1479,98 +1468,6 @@ function ProfileContent() {
                                         </div>
                                     </section>
                                 )}
-                            </>
-                        ) : activeTab === "usage" ? (
-                            <>
-                                {/* 토큰 사용량 그래프 */}
-                                <section className="profile-section">
-                                    <div className="profile-section-header">
-                                        <h2>토큰 사용량</h2>
-                                        <p>최근 일별 AI 토큰 사용량 추이입니다.</p>
-                                    </div>
-                                    <div className="sb-card">
-                                        {loadingUsageHistory ? (
-                                            <div className="sb-empty-state">데이터를 불러오는 중입니다.</div>
-                                        ) : usageHistory.length === 0 ? (
-                                            <div className="sb-empty-state">아직 사용 데이터가 없습니다.</div>
-                                        ) : (() => {
-                                            const { entries, maxVal } = buildDailyUsageChart();
-                                            return (
-                                                <div className="sb-chart-wrap">
-                                                    <div className="sb-chart-bars">
-                                                        {entries.map(([label, value]) => (
-                                                            <div key={label} className="sb-chart-col">
-                                                                <div className="sb-chart-bar-track">
-                                                                    <div
-                                                                        className="sb-chart-bar-fill"
-                                                                        style={{ height: `${Math.max((value / maxVal) * 100, 2)}%` }}
-                                                                    />
-                                                                </div>
-                                                                <span className="sb-chart-label">{label}</span>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                    <div className="sb-chart-summary sb-chart-summary-usage">
-                                                        <span>최근 {entries.length}일 총 사용: <strong>{entries.reduce((s, [, v]) => s + v, 0).toLocaleString("ko-KR")} 토큰</strong></span>
-                                                    </div>
-                                                </div>
-                                            );
-                                        })()}
-                                    </div>
-                                </section>
-
-                                {/* 토큰 사용 이력 */}
-                                <section className="profile-section">
-                                    <div className="profile-section-header">
-                                        <h2>사용 이력</h2>
-                                        <p>개별 AI 호출과 토큰 차감 내역입니다.</p>
-                                    </div>
-                                    <div className="sb-card sb-card-usage">
-                                        {loadingUsageHistory ? (
-                                            <div className="sb-empty-state">토큰 사용 이력을 불러오는 중입니다.</div>
-                                        ) : usageHistory.length === 0 ? (
-                                            <div className="sb-empty-state">아직 기록된 토큰 사용 이력이 없습니다.</div>
-                                        ) : (
-                                            <>
-                                                <div className="sb-payment-list sb-payment-list-usage">
-                                                    {usageHistory
-                                                        .slice(usageHistoryPage * USAGE_PAGE_SIZE, (usageHistoryPage + 1) * USAGE_PAGE_SIZE)
-                                                        .map((log) => (
-                                                            <div key={log.id} className="sb-usage-history-row sb-usage-history-row-usage">
-                                                                <div className="sb-usage-history-main">
-                                                                    <strong className="sb-usage-history-title">{log.model || "알 수 없는 모델"}</strong>
-                                                                    <p className="sb-usage-history-meta">
-                                                                        {formatDateLabel(log.createdAt, true)}
-                                                                        {log.feature ? ` · ${log.feature}` : ""}
-                                                                        {log.source ? ` · ${log.source}` : ""}
-                                                                    </p>
-                                                                    <p className="sb-usage-history-meta">
-                                                                        입력 {log.promptTokens.toLocaleString("ko-KR")} · 출력 {log.outputTokens.toLocaleString("ko-KR")} 토큰
-                                                                    </p>
-                                                                </div>
-                                                                <div className="sb-usage-history-side">
-                                                                    <strong>{log.totalTokens.toLocaleString("ko-KR")} 토큰</strong>
-                                                                </div>
-                                                            </div>
-                                                        ))}
-                                                </div>
-                                                {usageHistory.length > USAGE_PAGE_SIZE && (
-                                                    <div className="sb-pagination">
-                                                        <button type="button" className="sb-btn" disabled={usageHistoryPage === 0} onClick={() => setUsageHistoryPage((p) => p - 1)}>
-                                                            이전
-                                                        </button>
-                                                        <span className="sb-pagination-info">
-                                                            {usageHistoryPage + 1} / {Math.ceil(usageHistory.length / USAGE_PAGE_SIZE)}
-                                                        </span>
-                                                        <button type="button" className="sb-btn" disabled={(usageHistoryPage + 1) * USAGE_PAGE_SIZE >= usageHistory.length} onClick={() => setUsageHistoryPage((p) => p + 1)}>
-                                                            다음
-                                                        </button>
-                                                    </div>
-                                                )}
-                                            </>
-                                        )}
-                                    </div>
-                                </section>
                             </>
                         ) : null}
                     </section>
