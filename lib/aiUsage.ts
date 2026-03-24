@@ -34,10 +34,10 @@ export function normalizeUsageTokens(
     let billedOutputTokens = outputTokens;
 
     if (featureKey === "typing_problem" || featureKey === "typing") {
-        billedOutputTokens *= 2;
+        billedOutputTokens *= 12;
     } else if (featureKey === "image_generation") {
-        billedPromptTokens *= 2;
-        billedOutputTokens *= 2;
+        billedPromptTokens *= 3;
+        billedOutputTokens *= 6;
     }
 
     const billedTotalTokens =

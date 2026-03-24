@@ -1435,6 +1435,209 @@ class ScriptRunner:
             out.append(line)
         return out
 
+    @staticmethod
+    def _extract_declared_subject(script: str) -> str | None:
+        match = re.search(
+            r"(?mi)^\s*SUBJECT\s*=\s*(['\"])(?P<subject>[A-Za-z_]+)\1\s*$",
+            script or "",
+        )
+        if not match:
+            return None
+        subject = str(match.group("subject") or "").strip().lower()
+        return subject or None
+
+    @staticmethod
+    def _looks_like_english_plain_text(text: str) -> bool:
+        sample = str(text or "")
+        if "\\" not in sample:
+            return False
+        if re.search(r"[가-힣]", sample):
+            return False
+        if re.search(r"[A-Za-z]:\\", sample):
+            return False
+        return len(re.findall(r"[A-Za-z]", sample)) >= 3
+
+    @classmethod
+    def _sanitize_english_backslash_text(cls, text: str) -> str:
+        cleaned = str(text or "")
+        if not cls._looks_like_english_plain_text(cleaned):
+            return cleaned
+        cleaned = re.sub(
+            r"(?i)\b([A-Za-z]+)\s*\\\s*(s|t|re|ve|ll|d|m)\b",
+            r"\1'\2",
+            cleaned,
+        )
+        cleaned = re.sub(r"(?<=[A-Za-z])\\(?=[A-Za-z])", "'", cleaned)
+        cleaned = re.sub(r"(?<=[A-Za-z0-9])\\(?=[.,!?;:)\]]|$)", "", cleaned)
+        cleaned = re.sub(r"(?<=\s)\\(?=[A-Za-z])", "", cleaned)
+        cleaned = re.sub(r"(?<=[A-Za-z])\\(?=\s)", "", cleaned)
+        return cleaned
+
+    @staticmethod
+    def _looks_like_korean_plain_text(text: str) -> bool:
+        sample = str(text or "")
+        if "\\" not in sample and not re.search(r"[가-힣]", sample):
+            return False
+        if len(re.findall(r"[가-힣]", sample)) < 2 and not re.search(r"[㉠-㉾㈀-㈞]", sample):
+            return False
+        if re.search(
+            r"LEFT|RIGHT|over|sqrt|frac|TIMES|CDOT|matrix|pmatrix|bmatrix|dmatrix|[=^_{}]",
+            sample,
+            flags=re.IGNORECASE,
+        ):
+            return False
+        return True
+
+    @classmethod
+    def _sanitize_korean_backslash_text(cls, text: str) -> str:
+        cleaned = str(text or "")
+        if not cls._looks_like_korean_plain_text(cleaned):
+            return cleaned
+        cleaned = re.sub(r"(?<=[가-힣A-Za-z0-9])\\(?=[가-힣A-Za-z0-9])", "", cleaned)
+        cleaned = re.sub(r"(?<=\s)\\(?=[가-힣A-Za-z0-9])", "", cleaned)
+        cleaned = re.sub(r"(?<=[가-힣A-Za-z0-9])\\(?=[.,!?;:)\]}\s]|$)", "", cleaned)
+        return cleaned
+
+    def _sanitize_english_plain_text_backslashes(self, lines: List[str]) -> List[str]:
+        """
+        Prose-like Korean/English passages and choices are plain text, so stray
+        OCR/model backslashes should not survive into insert_text-like calls.
+        """
+        out: List[str] = []
+        text_call_re = re.compile(
+            r"^(?P<indent>\s*)(?P<name>insert_(?:text|styled_text|colored_text|highlighted_text))\("
+            r"\s*(?P<quote>['\"])(?P<body>.*?)(?P=quote)(?P<rest>\s*(?:,.*)?)\)\s*$"
+        )
+        for line in lines:
+            match = text_call_re.match(line)
+            if not match:
+                out.append(line)
+                continue
+            body = match.group("body")
+            normalized_body = self._sanitize_english_backslash_text(body)
+            normalized_body = self._sanitize_korean_backslash_text(normalized_body)
+            if normalized_body == body:
+                out.append(line)
+                continue
+            rendered_body = repr(normalized_body)
+            out.append(
+                f"{match.group('indent')}{match.group('name')}({rendered_body}{match.group('rest')})"
+            )
+        return out
+
+    @staticmethod
+    def _looks_like_plain_english_sentence(text: str) -> bool:
+        sample = str(text or "").strip()
+        if not sample:
+            return False
+        if re.search(r"[가-힣]", sample):
+            return False
+        words = re.findall(r"[A-Za-z]+(?:'[A-Za-z]+)?", sample)
+        if len(words) < 2:
+            return False
+        if len(" ".join(words)) < 8:
+            return False
+        if re.search(
+            r"LEFT|RIGHT|over|sqrt|frac|TIMES|CDOT|matrix|pmatrix|bmatrix|dmatrix|[=^_{}]",
+            sample,
+            flags=re.IGNORECASE,
+        ):
+            return False
+        if re.search(r"\\[A-Za-z]+", sample):
+            return False
+        if re.search(r"\d+\s*[-+*/=]\s*\d+", sample):
+            return False
+        return True
+
+    @staticmethod
+    def _looks_like_plain_korean_sentence(text: str) -> bool:
+        sample = str(text or "").strip()
+        if not sample:
+            return False
+        if len(re.findall(r"[가-힣]", sample)) < 2 and not re.search(r"[㉠-㉾㈀-㈞]", sample):
+            return False
+        if re.search(
+            r"LEFT|RIGHT|over|sqrt|frac|TIMES|CDOT|matrix|pmatrix|bmatrix|dmatrix|[=^_{}]",
+            sample,
+            flags=re.IGNORECASE,
+        ):
+            return False
+        return True
+
+    def _demote_english_equation_calls(
+        self,
+        lines: List[str],
+        *,
+        force_all_english_equations: bool = False,
+        force_all_korean_equations: bool = False,
+    ) -> List[str]:
+        """
+        Korean/English subject passages should be typed as plain text.
+        Convert insert_equation / insert_latex_equation calls back to insert_text
+        when the payload is prose, or for all equation lines when the subject is
+        explicitly english/korean.
+        """
+        out: List[str] = []
+        eq_re = re.compile(
+            r"^(?P<indent>\s*)insert_(?:equation|latex_equation)\(\s*(?P<quote>['\"])(?P<body>.*?)(?P=quote)\s*\)\s*$"
+        )
+        for line in lines:
+            match = eq_re.match(line)
+            if not match:
+                out.append(line)
+                continue
+            body = match.group("body")
+            should_demote = (
+                force_all_english_equations
+                or force_all_korean_equations
+                or self._looks_like_plain_english_sentence(body)
+                or self._looks_like_plain_korean_sentence(body)
+            )
+            if not should_demote:
+                out.append(line)
+                continue
+            rendered_body = repr(body)
+            out.append(f"{match.group('indent')}insert_text({rendered_body})")
+        return out
+
+    @staticmethod
+    def _parse_loose_string_argument(arg_str: str) -> str:
+        text = str(arg_str or "").strip()
+        if not text:
+            return ""
+        try:
+            value = ast.literal_eval(text)
+            if isinstance(value, str):
+                return value
+        except Exception:
+            pass
+        if not text.startswith(("'", '"')):
+            return text
+        quote = text[0]
+        end_idx = -1
+        for idx in range(len(text) - 1, 0, -1):
+            if text[idx] != quote:
+                continue
+            backslash_count = 0
+            probe = idx - 1
+            while probe >= 0 and text[probe] == "\\":
+                backslash_count += 1
+                probe -= 1
+            if backslash_count % 2 == 0:
+                end_idx = idx
+                break
+        if end_idx <= 0:
+            body = text[1:]
+        else:
+            body = text[1:end_idx]
+        body = body.replace("\\\\", "\\")
+        body = body.replace("\\n", "\n").replace("\\r", "\r").replace("\\t", "\t")
+        if quote == "'":
+            body = body.replace("\\'", "'")
+        else:
+            body = body.replace('\\"', '"')
+        return body
+
     def _demote_circled_english_markers_from_equations(self, lines: List[str]) -> List[str]:
         """
         Circled English markers like ⓐⓑⓒ are visible text, not equations.
@@ -1829,16 +2032,7 @@ class ScriptRunner:
                 if matched in funcs_no_args:
                     funcs_no_args[matched]()
                 elif matched in funcs_one_str:
-                    s = ""
-                    if arg_str.startswith(("'", '"')):
-                        q = arg_str[0]
-                        end = arg_str.find(q, 1)
-                        if end == -1:
-                            s = arg_str[1:]
-                        else:
-                            s = arg_str[1:end]
-                    else:
-                        s = arg_str
+                    s = self._parse_loose_string_argument(arg_str)
                     funcs_one_str[matched](s)
                 elif matched == "set_bold":
                     val = "true" in arg_str.lower()
@@ -1944,6 +2138,8 @@ class ScriptRunner:
             log_fn("빈 스크립트라서 실행하지 않았습니다.")
             return
 
+        declared_subject = self._extract_declared_subject(cleaned)
+
         # Normalize newlines inside any quoted strings
         cleaned = self._sanitize_multiline_strings(cleaned)
         # Normalize newlines inside insert_* calls
@@ -1984,7 +2180,13 @@ class ScriptRunner:
         expanded_lines = self._ensure_exit_after_plain_box(expanded_lines)
         expanded_lines = self._drop_enter_after_exit_box(expanded_lines)
         expanded_lines = self._normalize_choice_leading_space(expanded_lines)
+        expanded_lines = self._demote_english_equation_calls(
+            expanded_lines,
+            force_all_english_equations=(declared_subject == "english"),
+            force_all_korean_equations=(declared_subject == "korean"),
+        )
         expanded_lines = self._demote_circled_english_markers_from_equations(expanded_lines)
+        expanded_lines = self._sanitize_english_plain_text_backslashes(expanded_lines)
         expanded_lines = self._relocate_late_image_block_before_question(expanded_lines)
         expanded_lines = self._drop_unused_choices_placeholder(expanded_lines)
         expanded_lines = self._ensure_score_right_align(expanded_lines)

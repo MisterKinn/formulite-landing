@@ -148,8 +148,9 @@ def normalize_usage_record(record: Dict[str, Any]) -> Dict[str, Any]:
     Normalize prompt/output/total tokens for billing and UI display.
 
     Rules:
-    - typing_problem / typing: output tokens are billed/displayed as x2
-    - image_generation: prompt/output tokens are both billed/displayed as x2
+    - typing_problem / typing: output tokens are billed/displayed as x12
+    - image_generation: prompt tokens are billed/displayed as x3
+    - image_generation: output tokens are billed/displayed as x6
     - total_tokens follows the adjusted prompt/output sum when available
     """
     normalized = dict(record or {})
@@ -164,10 +165,10 @@ def normalize_usage_record(record: Dict[str, Any]) -> Dict[str, Any]:
     billed_output_tokens = output_tokens
 
     if feature in {"typing_problem", "typing"}:
-        billed_output_tokens *= 2
+        billed_output_tokens *= 12
     elif feature == "image_generation":
-        billed_prompt_tokens *= 2
-        billed_output_tokens *= 2
+        billed_prompt_tokens *= 3
+        billed_output_tokens *= 6
 
     billed_total_tokens = (
         billed_prompt_tokens + billed_output_tokens
