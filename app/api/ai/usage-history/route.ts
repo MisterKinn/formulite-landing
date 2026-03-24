@@ -1,44 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import getFirebaseAdmin from "@/lib/firebaseAdmin";
+import { normalizeUsageTokens } from "@/lib/aiUsage";
 
 const DEFAULT_LIMIT = 30;
 const MAX_LIMIT = 100;
-
-function normalizeUsageTokens(
-    feature: unknown,
-    promptTokensInput: unknown,
-    outputTokensInput: unknown,
-    totalTokensInput: unknown,
-) {
-    const featureKey = String(feature || "").trim().toLowerCase();
-    const promptTokens = Math.max(0, Math.floor(Number(promptTokensInput || 0)));
-    const outputTokens = Math.max(0, Math.floor(Number(outputTokensInput || 0)));
-    const rawTotalTokens = Math.max(
-        0,
-        Math.floor(Number(totalTokensInput || promptTokens + outputTokens)),
-    );
-
-    let billedPromptTokens = promptTokens;
-    let billedOutputTokens = outputTokens;
-
-    if (featureKey === "typing_problem" || featureKey === "typing") {
-        billedOutputTokens *= 2;
-    } else if (featureKey === "image_generation") {
-        billedPromptTokens *= 2;
-        billedOutputTokens *= 2;
-    }
-
-    const billedTotalTokens =
-        promptTokens > 0 || outputTokens > 0
-            ? billedPromptTokens + billedOutputTokens
-            : rawTotalTokens;
-
-    return {
-        promptTokens: billedPromptTokens,
-        outputTokens: billedOutputTokens,
-        totalTokens: billedTotalTokens,
-    };
-}
 
 function getBearerToken(authHeader: string | null): string | null {
     if (!authHeader || !authHeader.startsWith("Bearer ")) {

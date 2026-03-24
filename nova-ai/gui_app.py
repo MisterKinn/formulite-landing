@@ -1211,7 +1211,14 @@ Preserve semantics and layout, but normalize rendering to clean exam-print style
                                 f"총 필요: {total_usage_cost:,}, 남음: {remaining:,}, 한도: {limit:,})\n"
                                 f"현재 플랜: {tier}"
                             )
-                        increment_ai_usage(uid, amount=total_usage_cost)
+                        increment_ai_usage(
+                            uid,
+                            amount=total_usage_cost,
+                            usage_records=[
+                                *[dict(record) for record in usage_records],
+                                *[dict(record) for record in image_usage_records],
+                            ],
+                        )
                         for record in usage_records:
                             record_ai_usage_log(
                                 uid,
@@ -1261,7 +1268,14 @@ Preserve semantics and layout, but normalize rendering to clean exam-print style
                             f"총 필요: {total_usage_cost:,}, 남음: {remaining:,}, 한도: {limit:,})\n"
                             f"현재 플랜: {tier}"
                         )
-                    increment_ai_usage(uid, amount=total_usage_cost)
+                    increment_ai_usage(
+                        uid,
+                        amount=total_usage_cost,
+                        usage_records=[
+                            *[dict(record) for record in usage_records],
+                            *[dict(record) for record in image_usage_records],
+                        ],
+                    )
                     for record in usage_records:
                         record_ai_usage_log(
                             uid,

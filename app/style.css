@@ -2923,6 +2923,14 @@ body:has(.pricing-page) .navbar--scrolled {
     text-align: left;
 }
 
+.process-showcase-video-note {
+    margin: -0.8rem 0 1.4rem;
+    font-size: 0.95rem;
+    color: rgba(255, 255, 255, 0.72);
+    line-height: 1.5;
+    text-align: left;
+}
+
 @media (min-width: 768px) {
     .process-showcase-video-copy {
         font-size: 3.2rem;
@@ -3271,6 +3279,12 @@ body:has(.pricing-page) .navbar--scrolled {
     .process-showcase-video-copy {
         font-size: 1.8rem;
         margin-bottom: 1.2rem;
+        text-align: center;
+    }
+
+    .process-showcase-video-note {
+        margin: -0.4rem 0 1rem;
+        font-size: 0.85rem;
         text-align: center;
     }
 

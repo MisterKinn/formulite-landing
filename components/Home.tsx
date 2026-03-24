@@ -394,6 +394,11 @@ export default function Home() {
                                 <br />
                                 지금 확인해보세요
                             </p>
+                            <p className="process-showcase-video-note">
+                                이미지당 문제 1~2개가 적정 권장량입니다.
+                                <br />
+                                너무 많은 계산량이 있으면 종종 프로그램이 꺼집니다.
+                            </p>
                             <div
                                 className="process-showcase-video-tabs"
                                 role="tablist"

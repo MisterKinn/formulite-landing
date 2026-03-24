@@ -436,8 +436,13 @@ class AIClient:
             1,
             int(tokens if tokens is not None else self._last_usage_tokens or ESTIMATED_TOKENS_PER_PROBLEM),
         )
-        increment_ai_usage(uid, amount=usage_tokens)
-        for record in self.consume_pending_usage_records():
+        usage_records = self.consume_pending_usage_records()
+        increment_ai_usage(
+            uid,
+            amount=usage_tokens,
+            usage_records=[dict(record) for record in usage_records],
+        )
+        for record in usage_records:
             record_ai_usage_log(
                 uid,
                 model=str(record.get("model") or self.model),

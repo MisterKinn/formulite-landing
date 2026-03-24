@@ -290,6 +290,52 @@ def record_ai_usage_log(
         return False
 
 
+def _resolve_billed_usage_amount(
+    *,
+    amount: int = ESTIMATED_TOKENS_PER_PROBLEM,
+    feature: str = "",
+    prompt_tokens: int = 0,
+    output_tokens: int = 0,
+    total_tokens: int = 0,
+    usage_normalized: bool = False,
+    usage_records: Optional[list[Dict[str, Any]]] = None,
+) -> int:
+    records = usage_records or []
+    if records:
+        total = 0
+        for record in records:
+            normalized = (
+                dict(record or {})
+                if bool((record or {}).get("_usage_normalized"))
+                else normalize_usage_record(record or {})
+            )
+            total += max(0, int(normalized.get("total_tokens") or 0))
+        return max(0, int(total))
+
+    if (
+        feature
+        or prompt_tokens
+        or output_tokens
+        or total_tokens
+    ):
+        if usage_normalized:
+            return max(0, int(total_tokens or 0))
+        normalized = normalize_usage_record(
+            {
+                "feature": feature,
+                "prompt_tokens": prompt_tokens,
+                "output_tokens": output_tokens,
+                "total_tokens": total_tokens,
+            }
+        )
+        return max(0, int(normalized.get("total_tokens") or 0))
+
+    try:
+        return max(0, int(amount))
+    except Exception:
+        return 0
+
+
 def _sync_cached_user_plan(plan: Any) -> None:
     normalized = _normalize_plan_tier(plan, "free")
     user = get_stored_user()
@@ -346,6 +392,13 @@ def _fetch_usage_status_from_web(uid: str) -> Optional[Dict[str, Any]]:
 def _increment_usage_via_web(
     uid: str,
     amount: int = ESTIMATED_TOKENS_PER_PROBLEM,
+    *,
+    feature: str = "",
+    prompt_tokens: int = 0,
+    output_tokens: int = 0,
+    total_tokens: int = 0,
+    usage_normalized: bool = False,
+    usage_records: Optional[list[Dict[str, Any]]] = None,
 ) -> Optional[Dict[str, Any]]:
     if not REQUESTS_AVAILABLE:
         return None
@@ -355,9 +408,25 @@ def _increment_usage_via_web(
     try:
         base = _resolve_usage_api_base_url()
         url = f"{base}/api/ai/increment-usage"
+        payload: Dict[str, Any] = {
+            "userId": uid,
+            "amount": amount,
+        }
+        if usage_records:
+            payload["usageRecords"] = usage_records
+        elif feature or prompt_tokens or output_tokens or total_tokens:
+            payload.update(
+                {
+                    "feature": feature,
+                    "promptTokens": int(prompt_tokens or 0),
+                    "outputTokens": int(output_tokens or 0),
+                    "totalTokens": int(total_tokens or 0),
+                    "usageNormalized": bool(usage_normalized),
+                }
+            )
         response = requests.post(
             url,
-            json={"userId": uid, "amount": amount},
+            json=payload,
             timeout=10,
             headers={"Content-Type": "application/json"},
         )
@@ -885,7 +954,17 @@ def force_refresh_usage() -> int:
     return 0
 
 
-def increment_ai_usage(uid: str, amount: int = ESTIMATED_TOKENS_PER_PROBLEM) -> bool:
+def increment_ai_usage(
+    uid: str,
+    amount: int = ESTIMATED_TOKENS_PER_PROBLEM,
+    *,
+    feature: str = "",
+    prompt_tokens: int = 0,
+    output_tokens: int = 0,
+    total_tokens: int = 0,
+    usage_normalized: bool = False,
+    usage_records: Optional[list[Dict[str, Any]]] = None,
+) -> bool:
     """
     Atomically increment aiCallUsage field in Firestore.
     Called each time user makes an AI request.
@@ -893,16 +972,31 @@ def increment_ai_usage(uid: str, amount: int = ESTIMATED_TOKENS_PER_PROBLEM) -> 
     """
     if not uid:
         return False
-    try:
-        amount = max(1, int(amount))
-    except Exception:
-        amount = 1
+    amount = _resolve_billed_usage_amount(
+        amount=amount,
+        feature=feature,
+        prompt_tokens=prompt_tokens,
+        output_tokens=output_tokens,
+        total_tokens=total_tokens,
+        usage_normalized=usage_normalized,
+        usage_records=usage_records,
+    )
+    amount = max(1, int(amount or 0))
     if _is_admin_unlimited_user(uid):
         # Do not consume quota for admin unlimited account.
         return True
 
     # 1) Canonical source: website usage API (same logic as web app)
-    web_result = _increment_usage_via_web(uid, amount=amount)
+    web_result = _increment_usage_via_web(
+        uid,
+        amount=amount,
+        feature=feature,
+        prompt_tokens=prompt_tokens,
+        output_tokens=output_tokens,
+        total_tokens=total_tokens,
+        usage_normalized=usage_normalized,
+        usage_records=usage_records,
+    )
     if web_result is not None:
         return bool(web_result.get("canUse"))
 

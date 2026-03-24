@@ -3,115 +3,87 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import dynamic from "next/dynamic";
 import { Navbar } from "../../../components/Navbar";
-const Sidebar = dynamic(() => import("../../../components/Sidebar"), {
-    ssr: false,
-});
 import "../../style.css";
 import "../../mobile.css";
 
-/* -------------------- Loading -------------------- */
 function Loading() {
     return (
-        <div style={styles.fullscreen}>
-            <div style={styles.loadingCard}>
-                <div style={styles.spinner} />
-                <h2 style={styles.loadingTitle}>결제 처리 중</h2>
-                <p style={styles.loadingDesc}>잠시만 기다려주세요</p>
+        <div style={s.fullscreen}>
+            <div style={{ textAlign: "center" }}>
+                <div style={s.spinner} />
+                <h2 style={s.loadingTitle}>결제 처리 중</h2>
+                <p style={s.loadingDesc}>잠시만 기다려주세요</p>
             </div>
         </div>
     );
 }
 
-/* -------------------- Fail -------------------- */
 function Fail({ error, onRetry }: { error: string; onRetry: () => void }) {
     return (
-        <div style={styles.fullscreen}>
-            <div style={styles.card}>
-                <div style={styles.failIcon}>✕</div>
-                <h1 style={styles.title}>결제에 실패했습니다</h1>
-                <p style={styles.desc}>{error}</p>
-                <button style={styles.primaryButton} onClick={onRetry}>
-                    다시 결제하기
-                </button>
+        <div style={s.fullscreen}>
+            <div style={s.card}>
+                <div style={s.failIcon}>
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+                        <path d="M18 6L6 18M6 6l12 12" stroke="#e04956" strokeWidth="2.5" strokeLinecap="round" />
+                    </svg>
+                </div>
+                <h1 style={s.title}>결제에 실패했습니다</h1>
+                <p style={s.desc}>{error}</p>
+                <button style={s.primaryBtn} onClick={onRetry}>다시 결제하기</button>
             </div>
         </div>
     );
 }
 
-/* -------------------- Success -------------------- */
-function Success({
-    result,
-}: {
-    result: any;
-}) {
+function Success({ result }: { result: any }) {
     const orderId = result?.data?.orderId ?? "-";
     const method = result?.data?.method ?? "-";
-    const amount = Number(
-        result?.data?.totalAmount ?? result?.data?.amount ?? 0,
-    );
+    const amount = Number(result?.data?.totalAmount ?? result?.data?.amount ?? 0);
     const productType = result?.productType || "subscription";
     const tokensGranted = Number(result?.tokensGranted || 0);
 
     return (
-        <div style={styles.fullscreen}>
-            <div style={styles.card}>
-                <div style={styles.successIcon}>
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
-                        <path
-                            d="M20 6L9 17l-5-5"
-                            stroke="#fff"
-                            strokeWidth="2.5"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                        />
+        <div style={s.fullscreen}>
+            <div style={s.card}>
+                <div style={s.successIcon}>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                        <path d="M20 6L9 17l-5-5" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
                 </div>
 
-                <h1 style={styles.title}>
-                    {productType === "token_pack"
-                        ? "토큰 충전이 완료되었습니다"
-                        : "결제가 완료되었습니다"}
+                <h1 style={s.title}>
+                    {productType === "token_pack" ? "토큰 충전이 완료되었습니다" : "결제가 완료되었습니다"}
                 </h1>
-                <p style={styles.desc}>
+                <p style={s.desc}>
                     {productType === "token_pack"
-                        ? "추가 토큰이 계정에 반영되었습니다. 구독 토큰을 먼저 사용한 뒤 자동으로 추가 토큰이 이어서 차감됩니다."
+                        ? "추가 토큰이 계정에 반영되었습니다."
                         : "결제가 정상적으로 처리되었습니다."}
                 </p>
 
-                <div style={styles.divider} />
+                <div style={s.divider} />
 
-                <div style={styles.infoRow}>
-                    <span style={styles.label}>주문번호</span>
-                    <span style={styles.value}>{orderId}</span>
+                <div style={s.infoRow}>
+                    <span style={s.label}>주문번호</span>
+                    <span style={s.value}>{orderId}</span>
                 </div>
-
-                <div style={styles.infoRow}>
-                    <span style={styles.label}>결제금액</span>
-                    <span style={styles.value}>
-                        {amount.toLocaleString()}원
-                    </span>
+                <div style={s.infoRow}>
+                    <span style={s.label}>결제금액</span>
+                    <span style={s.valueHighlight}>{amount.toLocaleString()}원</span>
                 </div>
-
-                <div style={styles.infoRow}>
-                    <span style={styles.label}>결제수단</span>
-                    <span style={styles.value}>{method}</span>
+                <div style={s.infoRow}>
+                    <span style={s.label}>결제수단</span>
+                    <span style={s.value}>{method}</span>
                 </div>
 
                 {productType === "token_pack" && tokensGranted > 0 && (
-                    <div style={styles.infoRow}>
-                        <span style={styles.label}>충전 토큰</span>
-                        <span style={styles.value}>
-                            {tokensGranted.toLocaleString()} 토큰
-                        </span>
+                    <div style={s.infoRow}>
+                        <span style={s.label}>충전 토큰</span>
+                        <span style={s.value}>{tokensGranted.toLocaleString()} 토큰</span>
                     </div>
                 )}
 
-                <button
-                    style={{ ...styles.primaryButton, marginTop: 32 }}
-                    onClick={() => (window.location.href = "/")}
-                >
+                <button style={{ ...s.primaryBtn, marginTop: 24 }} onClick={() => (window.location.href = "/")}>
                     홈으로 이동
                 </button>
             </div>
@@ -119,14 +91,10 @@ function Success({
     );
 }
 
-/* -------------------- Debug component -------------------- */
-
-/* -------------------- Page -------------------- */
 export default function PaymentSuccessPage() {
     return (
         <>
             <Navbar />
-            <Sidebar />
             <React.Suspense fallback={<Loading />}>
                 <PaymentSuccessContent />
             </React.Suspense>
@@ -141,7 +109,6 @@ function PaymentSuccessContent() {
     const [loading, setLoading] = useState(true);
     const [result, setResult] = useState<any>(null);
     const [error, setError] = useState("");
-
     const { loading: authLoading, user } = useAuth();
 
     useEffect(() => {
@@ -157,21 +124,16 @@ function PaymentSuccessContent() {
                 const customerKey = searchParams.get("customerKey");
                 const isRecurring = searchParams.get("recurring") === "true";
                 const orderName = searchParams.get("orderName") || "";
-                const billingCycle =
-                    searchParams.get("billingCycle") || "monthly";
+                const billingCycle = searchParams.get("billingCycle") || "monthly";
                 const urlUserId = searchParams.get("uid");
                 const resolvedUserId = urlUserId || user?.uid || null;
 
-                // 구독 결제 - 결제위젯으로 진행한 경우 (paymentKey 존재)
                 if (isRecurring && paymentKey && !authKey) {
-                    // customerKey는 URL에서 받거나 생성
                     const urlCustomerKey = searchParams.get("customerKey");
                     const finalCustomerKey =
                         urlCustomerKey ||
                         (resolvedUserId
-                            ? `user_${resolvedUserId
-                                  .replace(/[^a-zA-Z0-9\-_=.@]/g, "")
-                                  .substring(0, 40)}`
+                            ? `user_${resolvedUserId.replace(/[^a-zA-Z0-9\-_=.@]/g, "").substring(0, 40)}`
                             : null);
 
                     if (!finalCustomerKey) {
@@ -179,19 +141,11 @@ function PaymentSuccessContent() {
                         return;
                     }
 
-                    // 1. 일반 결제 승인
                     const confirmRes = await fetch("/api/payment/confirm", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            paymentKey,
-                            orderId,
-                            amount: Number(amount),
-                            userId: resolvedUserId,
-                            billingCycle,
-                        }),
+                        body: JSON.stringify({ paymentKey, orderId, amount: Number(amount), userId: resolvedUserId, billingCycle }),
                     });
-
                     const confirmData = await confirmRes.json();
 
                     if (!confirmRes.ok) {
@@ -199,77 +153,34 @@ function PaymentSuccessContent() {
                         return;
                     }
 
-                    // 토스페이/간편결제는 빌링키 발급 불가
-                    if (
-                        paymentKey.startsWith("tlink") ||
-                        paymentKey.startsWith("tviva")
-                    ) {
-                        setResult({
-                            success: true,
-                            data: confirmData.data,
-                        });
-                        setError(
-                            "⚠️ 카드 직접 결제만 구독이 가능합니다. 결제는 완료되었으나 자동결제는 등록되지 않았습니다.",
-                        );
+                    if (paymentKey.startsWith("tlink") || paymentKey.startsWith("tviva")) {
+                        setResult({ success: true, data: confirmData.data });
+                        setError("⚠️ 카드 직접 결제만 구독이 가능합니다. 결제는 완료되었으나 자동결제는 등록되지 않았습니다.");
                         return;
                     }
 
-                    // 2. 빌링키 발급 (카드 결제만 가능)
-
-                    // 빌링키 발급 API 호출
-                    const billingRes = await fetch(
-                        "/api/billing/issue-from-payment",
-                        {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({
-                                paymentKey,
-                                customerKey: finalCustomerKey,
-                                userId: resolvedUserId,
-                                amount: Number(amount),
-                                orderName,
-                                billingCycle,
-                            }),
-                        },
-                    );
-
+                    const billingRes = await fetch("/api/billing/issue-from-payment", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ paymentKey, customerKey: finalCustomerKey, userId: resolvedUserId, amount: Number(amount), orderName, billingCycle }),
+                    });
                     const billingData = await billingRes.json();
 
                     if (!billingRes.ok) {
-                        // 빌링키 발급 실패해도 결제는 성공했으므로 성공 페이지 표시
-                        setResult({
-                            success: true,
-                            data: confirmData.data,
-                        });
+                        setResult({ success: true, data: confirmData.data });
                         return;
                     }
 
-                    setResult({
-                        success: true,
-                        data: confirmData.data,
-                        subscription: billingData.subscription,
-                        billingKey: billingData.billingKey,
-                    });
-
+                    setResult({ success: true, data: confirmData.data, subscription: billingData.subscription, billingKey: billingData.billingKey });
                     return;
                 }
 
-                // 구독 결제 - 빌링 인증 방식 (authKey 존재)
                 if (isRecurring && authKey && customerKey) {
-                    // 빌링키 발급 요청
                     const billingRes = await fetch("/api/billing/issue", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            authKey,
-                            customerKey,
-                            userId: resolvedUserId,
-                            amount: Number(amount),
-                            orderName,
-                            billingCycle,
-                        }),
+                        body: JSON.stringify({ authKey, customerKey, userId: resolvedUserId, amount: Number(amount), orderName, billingCycle }),
                     });
-
                     const billingData = await billingRes.json();
 
                     if (!billingRes.ok) {
@@ -277,27 +188,16 @@ function PaymentSuccessContent() {
                         return;
                     }
 
-                    // ⚠️ IMPORTANT: 빌링키 인증 직후에는 빌링키를 바로 사용할 수 없습니다
-                    // 테스트 환경에서는 인증이 완료되지 않아 INVALID_BILL_KEY_REQUEST 오류가 발생합니다
-                    // 해결책: 첫 결제를 제거하고, 구독만 등록합니다
-                    // 실제 결제는 다음 결제 주기(nextBillingDate)에 자동으로 진행됩니다
-
                     setResult({
                         success: true,
-                        data: {
-                            orderId: `sub_${Date.now()}`,
-                            totalAmount: amount,
-                            method: "카드 (자동결제 등록)",
-                        },
+                        data: { orderId: `sub_${Date.now()}`, totalAmount: amount, method: "카드 (자동결제 등록)" },
                         subscription: billingData.subscription,
                         billingKey: billingData.billingKey,
                     });
-
                     setLoading(false);
                     return;
                 }
 
-                // 일회성 결제
                 if (!paymentKey || !orderId || !amount) {
                     setError("결제 정보가 누락되었습니다");
                     return;
@@ -306,15 +206,8 @@ function PaymentSuccessContent() {
                 const res = await fetch("/api/payment/confirm", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        paymentKey,
-                        orderId,
-                        amount: Number(amount),
-                        userId: resolvedUserId,
-                        billingCycle,
-                    }),
+                    body: JSON.stringify({ paymentKey, orderId, amount: Number(amount), userId: resolvedUserId, billingCycle }),
                 });
-
                 const data = await res.json();
 
                 if (!res.ok) {
@@ -334,21 +227,14 @@ function PaymentSuccessContent() {
     }, [authLoading]);
 
     if (loading) return <Loading />;
-    if (error)
-        return <Fail error={error} onRetry={() => router.push("/")} />;
-
-    return (
-        <Success
-            result={result}
-        />
-    );
+    if (error) return <Fail error={error} onRetry={() => router.push("/")} />;
+    return <Success result={result} />;
 }
 
-/* -------------------- Styles -------------------- */
-const styles: Record<string, React.CSSProperties> = {
+const s: Record<string, React.CSSProperties> = {
     fullscreen: {
         minHeight: "100vh",
-        background: "#000",
+        background: "#171717",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -357,103 +243,95 @@ const styles: Record<string, React.CSSProperties> = {
     card: {
         width: "100%",
         maxWidth: 420,
-        background: "#fff",
-        borderRadius: 20,
-        padding: "36px 28px",
+        background: "#222",
+        borderRadius: 8,
+        border: "1px solid #2e2e2e",
+        padding: "32px 28px",
         textAlign: "center",
-        boxShadow: "0 20px 40px rgba(0,0,0,0.2)",
-    },
-    loadingCard: {
-        textAlign: "center",
-        color: "#fff",
     },
     spinner: {
-        width: 48,
-        height: 48,
-        border: "4px solid rgba(255,255,255,0.2)",
-        borderTop: "4px solid #fff",
+        width: 36,
+        height: 36,
+        border: "3px solid #333",
+        borderTop: "3px solid #ededed",
         borderRadius: "50%",
         animation: "spin 1s linear infinite",
         margin: "0 auto 16px",
     },
     loadingTitle: {
-        fontSize: 20,
-        fontWeight: 700,
+        fontSize: 16,
+        fontWeight: 500,
+        color: "#ededed",
         marginBottom: 4,
     },
     loadingDesc: {
-        fontSize: 14,
-        opacity: 0.7,
+        fontSize: 13,
+        color: "#888",
     },
     successIcon: {
-        width: 64,
-        height: 64,
+        width: 48,
+        height: 48,
         borderRadius: "50%",
-        background: "#0164ff",
+        background: "#3b82f6",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         margin: "0 auto 20px",
     },
     failIcon: {
-        fontSize: 48,
-        color: "#ff4d4f",
-        marginBottom: 16,
+        width: 48,
+        height: 48,
+        borderRadius: "50%",
+        background: "rgba(224,73,86,0.1)",
+        border: "1px solid rgba(224,73,86,0.2)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        margin: "0 auto 20px",
     },
     title: {
-        fontSize: 22,
-        fontWeight: 800,
+        fontSize: 18,
+        fontWeight: 500,
         marginBottom: 8,
-        color: "#0b1220",
+        color: "#ededed",
     },
     desc: {
-        fontSize: 14,
-        color: "#666",
+        fontSize: 13,
+        color: "#888",
         marginBottom: 20,
+        lineHeight: 1.5,
     },
     divider: {
         height: 1,
-        background: "#eee",
-        margin: "24px 0",
-    },
-    subscriptionBox: {
-        background: "#0b0c10",
-        borderRadius: 12,
-        padding: "18px 20px",
-        boxShadow: "0 12px 36px rgba(2,6,23,0.6)",
-    },
-    cancelButton: {
-        background: "transparent",
-        color: "#fff",
-        border: "1px solid rgba(255,255,255,0.06)",
-        padding: "8px 12px",
-        borderRadius: 10,
-        cursor: "pointer",
-        fontWeight: 700,
+        background: "#2e2e2e",
+        margin: "20px 0",
     },
     infoRow: {
         display: "flex",
         justifyContent: "space-between",
-        marginBottom: 12,
-        fontSize: 14,
+        marginBottom: 10,
+        fontSize: 13,
     },
     label: {
-        color: "#888",
+        color: "#666",
     },
     value: {
-        fontWeight: 600,
-        color: "#0b1220",
-        textAlign: "right",
+        fontWeight: 500,
+        color: "#ededed",
     },
-    primaryButton: {
+    valueHighlight: {
+        fontWeight: 600,
+        color: "#3b82f6",
+    },
+    primaryBtn: {
         width: "100%",
-        height: 48,
-        background: "#0164ff",
-        color: "#fff",
+        height: 38,
+        background: "#ededed",
+        color: "#171717",
         border: "none",
-        borderRadius: 12,
-        fontSize: 15,
-        fontWeight: 700,
+        borderRadius: 6,
+        fontSize: 13,
+        fontWeight: 500,
         cursor: "pointer",
     },
 };

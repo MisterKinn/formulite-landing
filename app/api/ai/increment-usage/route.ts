@@ -8,6 +8,7 @@ import {
     inferPaidPlanFromPayment,
     needsUsageResetFromLimitMigration,
     needsUsageResetFromPayment,
+    resolveBilledUsageAmount,
     resolveEffectiveUsageLimit,
     resolveEffectiveUsagePlan,
 } from "@/lib/aiUsage";
@@ -30,7 +31,16 @@ function shouldProxyUsageRequest(baseUrl: string): boolean {
  */
 export async function POST(request: NextRequest) {
     try {
-        const { userId, amount } = await request.json();
+        const {
+            userId,
+            amount,
+            feature,
+            promptTokens,
+            outputTokens,
+            totalTokens,
+            usageNormalized,
+            usageRecords,
+        } = await request.json();
 
         if (!userId) {
             return NextResponse.json(
@@ -64,11 +74,18 @@ export async function POST(request: NextRequest) {
         const admin = await getFirebaseAdmin();
         const db = admin.firestore();
         const userRef = db.collection("users").doc(userId);
-        const requestedAmount = Number(amount);
-        const usageAmount =
-            Number.isFinite(requestedAmount) && requestedAmount > 0
-                ? Math.floor(requestedAmount)
-                : 25000;
+        const usageAmount = Math.max(
+            1,
+            resolveBilledUsageAmount({
+                amount,
+                feature,
+                promptTokens,
+                outputTokens,
+                totalTokens,
+                usageNormalized,
+                usageRecords,
+            }) || 25000,
+        );
         const result = await db.runTransaction(async (tx) => {
             const userDoc = await tx.get(userRef);
             const nowIso = new Date().toISOString();

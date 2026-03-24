@@ -8,6 +8,113 @@ import {
 
 type PlainObject = Record<string, any>;
 
+export type UsageRecordLike = {
+    feature?: unknown;
+    promptTokens?: unknown;
+    outputTokens?: unknown;
+    totalTokens?: unknown;
+    usageNormalized?: unknown;
+};
+
+export function normalizeUsageTokens(
+    feature: unknown,
+    promptTokensInput: unknown,
+    outputTokensInput: unknown,
+    totalTokensInput: unknown,
+) {
+    const featureKey = String(feature || "").trim().toLowerCase();
+    const promptTokens = Math.max(0, Math.floor(Number(promptTokensInput || 0)));
+    const outputTokens = Math.max(0, Math.floor(Number(outputTokensInput || 0)));
+    const rawTotalTokens = Math.max(
+        0,
+        Math.floor(Number(totalTokensInput || promptTokens + outputTokens)),
+    );
+
+    let billedPromptTokens = promptTokens;
+    let billedOutputTokens = outputTokens;
+
+    if (featureKey === "typing_problem" || featureKey === "typing") {
+        billedOutputTokens *= 2;
+    } else if (featureKey === "image_generation") {
+        billedPromptTokens *= 2;
+        billedOutputTokens *= 2;
+    }
+
+    const billedTotalTokens =
+        promptTokens > 0 || outputTokens > 0
+            ? billedPromptTokens + billedOutputTokens
+            : rawTotalTokens;
+
+    return {
+        promptTokens: billedPromptTokens,
+        outputTokens: billedOutputTokens,
+        totalTokens: billedTotalTokens,
+    };
+}
+
+export function resolveBilledUsageAmount(input: {
+    amount?: unknown;
+    feature?: unknown;
+    promptTokens?: unknown;
+    outputTokens?: unknown;
+    totalTokens?: unknown;
+    usageNormalized?: unknown;
+    usageRecords?: UsageRecordLike[] | unknown;
+}): number {
+    const usageRecords = Array.isArray(input.usageRecords) ? input.usageRecords : [];
+    if (usageRecords.length > 0) {
+        const total = usageRecords.reduce((sum, record) => {
+            const usageAlreadyNormalized = Boolean(record?.usageNormalized);
+            const promptTokens = Math.max(
+                0,
+                Math.floor(Number(record?.promptTokens || 0)),
+            );
+            const outputTokens = Math.max(
+                0,
+                Math.floor(Number(record?.outputTokens || 0)),
+            );
+            const rawTotalTokens = Math.max(
+                0,
+                Math.floor(Number(record?.totalTokens || promptTokens + outputTokens)),
+            );
+            const billed = usageAlreadyNormalized
+                ? rawTotalTokens
+                : normalizeUsageTokens(
+                      record?.feature,
+                      record?.promptTokens,
+                      record?.outputTokens,
+                      record?.totalTokens,
+                  ).totalTokens;
+            return sum + billed;
+        }, 0);
+        return Math.max(0, Math.floor(total));
+    }
+
+    const usageAlreadyNormalized = Boolean(input.usageNormalized);
+    if (
+        input.feature !== undefined ||
+        input.promptTokens !== undefined ||
+        input.outputTokens !== undefined ||
+        input.totalTokens !== undefined
+    ) {
+        if (usageAlreadyNormalized) {
+            return Math.max(0, Math.floor(Number(input.totalTokens || 0)));
+        }
+        return normalizeUsageTokens(
+            input.feature,
+            input.promptTokens,
+            input.outputTokens,
+            input.totalTokens,
+        ).totalTokens;
+    }
+
+    const numericAmount = Number(input.amount);
+    if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+        return 0;
+    }
+    return Math.floor(numericAmount);
+}
+
 function normalizePlan(value: unknown): PlanTier {
     if (typeof value !== "string") return "free";
     const normalized = value.trim().toLowerCase();
