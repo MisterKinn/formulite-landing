@@ -3,6 +3,7 @@ import { getFirestore, doc, setDoc, getDoc } from "firebase/firestore";
 import { getFirebaseApp } from "../../../../firebaseConfig";
 import { getNextBillingDate } from "@/lib/subscription";
 import { buildUserRootPatch, inferPlanFromAmount } from "@/lib/userData";
+import { extractUserIdFromCustomerKey } from "@/lib/customerKeys";
 
 /**
  * 결제 완료 후 빌링키 발급
@@ -128,16 +129,4 @@ export async function POST(request: NextRequest) {
             { status: 500 },
         );
     }
-}
-
-function extractUserIdFromCustomerKey(customerKey?: string): string | null {
-    if (!customerKey) return null;
-    if (customerKey.startsWith("user_")) {
-        return customerKey.slice("user_".length) || null;
-    }
-    const customerMatch = customerKey.match(/^customer_(.+)_\d+$/);
-    if (customerMatch?.[1]) {
-        return customerMatch[1];
-    }
-    return null;
 }

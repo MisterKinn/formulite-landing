@@ -8,6 +8,7 @@ import {
     isValidOneTimeTossClientKey,
     resolveOneTimeTossClientKey,
 } from "@/lib/tossClientKeys";
+import { buildCustomerKey } from "@/lib/customerKeys";
 
 import Home from "../../components/Home";
 import ExamTyping from "../../components/ExamTyping";
@@ -118,9 +119,7 @@ function FormuLiteContent() {
 
                 const tossPayments = await loadTossPayments(clientKey);
                 const payment = tossPayments.payment({
-                    customerKey: `user_${user.uid
-                        .replace(/[^a-zA-Z0-9\-_=.@]/g, "")
-                        .substring(0, 40)}`,
+                    customerKey: buildCustomerKey(user.uid),
                 });
 
                 await payment.requestPayment({

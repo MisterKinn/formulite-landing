@@ -13,6 +13,7 @@ import {
     resolveBillingTossClientKey,
     resolveOneTimeTossClientKey,
 } from "@/lib/tossClientKeys";
+import { buildCustomerKey } from "@/lib/customerKeys";
 
 interface PricingTokenLine {
     prefix?: string;
@@ -183,7 +184,7 @@ export default function Pricing() {
 
         const tokenPack = tokenPackMetaByTier[plan.tier as TokenPackTier];
         return {
-            label: "충전 토큰",
+            label: "차감 토큰",
             lines: [
                 {
                     prefix: "총",
@@ -269,9 +270,7 @@ export default function Pricing() {
 
                 const tossPayments = await loadTossPayments(clientKey);
                 const payment = tossPayments.payment({
-                    customerKey: `user_${user.uid
-                        .replace(/[^a-zA-Z0-9\-_=.@]/g, "")
-                        .substring(0, 40)}`,
+                    customerKey: buildCustomerKey(user.uid),
                 });
 
                 await payment.requestPayment({
@@ -321,14 +320,12 @@ export default function Pricing() {
             const clientKey = resolveBillingTossClientKey();
 
             const tossPayments = await loadTossPayments(clientKey);
-            const customerKey = `user_${user.uid
-                .replace(/[^a-zA-Z0-9\-_=.@]/g, "")
-                .substring(0, 40)}`;
+            const customerKey = buildCustomerKey(user.uid);
             const payment = tossPayments.payment({ customerKey });
 
             await payment.requestBillingAuth({
                 method: "CARD",
-                successUrl: `${window.location.origin}/card-registration/success?amount=${paymentMeta.amount}&orderName=${encodeURIComponent(paymentMeta.orderName)}&billingCycle=${billingCycle}`,
+                successUrl: `${window.location.origin}/card-registration/success?uid=${encodeURIComponent(user.uid)}&amount=${paymentMeta.amount}&orderName=${encodeURIComponent(paymentMeta.orderName)}&billingCycle=${billingCycle}`,
                 failUrl: `${window.location.origin}/card-registration/fail?amount=${paymentMeta.amount}&orderName=${encodeURIComponent(paymentMeta.orderName)}`,
                 customerEmail: user.email || "customer@example.com",
                 customerName: user.displayName || "고객",
@@ -486,14 +483,14 @@ export default function Pricing() {
                                             className={`pricing-cta-v2 pricing-cta-v2--${plan.tier}`}
                                         >
                                             {billingCycle === "tokenPack"
-                                                ? "토큰 충전하기"
+                                                ? "토큰 결제하기"
                                                 : plan.cta}
                                         </button>
                                     </div>
 
                                     <p className="pricing-card-v2__desc">
                                         {billingCycle === "tokenPack"
-                                            ? "구독 토큰을 먼저 사용한 뒤 남은 작업은 추가 토큰으로 이어서 처리할 수 있습니다. 사용하지 않은 토큰은 다음 달로 이월됩니다."
+                                            ? "결제한 토큰만큼 현재 누적 사용량에서 즉시 차감됩니다."
                                             : plan.subDescription}
                                     </p>
 

@@ -18,6 +18,7 @@ function CardRegistrationSuccessContent() {
     const amount = Number(searchParams.get("amount")) || 0;
     const orderName = searchParams.get("orderName") || "";
     const billingCycle = searchParams.get("billingCycle") || "monthly";
+    const userId = searchParams.get("uid");
     const billingCycleLabel =
         billingCycle === "test"
             ? "1분마다 100원 (테스트)"
@@ -35,7 +36,14 @@ function CardRegistrationSuccessContent() {
                 const response = await fetch("/api/billing/issue", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ authKey, customerKey, amount, orderName, billingCycle }),
+                    body: JSON.stringify({
+                        authKey,
+                        customerKey,
+                        userId,
+                        amount,
+                        orderName,
+                        billingCycle,
+                    }),
                 });
                 const data = await response.json();
 
@@ -51,7 +59,7 @@ function CardRegistrationSuccessContent() {
             }
         };
         processBillingAuth();
-    }, [searchParams]);
+    }, [amount, billingCycle, orderName, searchParams, userId]);
 
     if (loading) {
         return (

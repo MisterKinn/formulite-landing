@@ -3,7 +3,6 @@ import getFirebaseAdmin from "@/lib/firebaseAdmin";
 import {
     buildUsageConsumptionResult,
     buildUsageResetFields,
-    getStoredExtraTokenBalance,
     getStoredUsageTokens,
     inferPaidPlanFromPayment,
     needsUsageResetFromLimitMigration,
@@ -182,9 +181,7 @@ export async function POST(request: NextRequest) {
                       migrationResetDecision.resetAt ||
                           resetDecision.resetAt ||
                           inferredResetAt,
-                      getStoredExtraTokenBalance(
-                          userData as Record<string, unknown>,
-                      ),
+                      0,
                   )
                 : {};
             const userDataForConsumption = {
@@ -197,9 +194,6 @@ export async function POST(request: NextRequest) {
                 plan,
                 now,
             );
-            const currentExtraTokenBalance =
-                getStoredExtraTokenBalance(userDataForConsumption);
-            const totalLimit = baseLimit + currentExtraTokenBalance;
             const consumption = buildUsageConsumptionResult(
                 userDataForConsumption,
                 plan,
@@ -212,7 +206,7 @@ export async function POST(request: NextRequest) {
                     exceeded: true as const,
                     plan,
                     currentUsage: getStoredUsageTokens(userDataForConsumption),
-                    limit: totalLimit,
+                    limit: baseLimit,
                 };
             }
 
@@ -228,7 +222,7 @@ export async function POST(request: NextRequest) {
                 exceeded: false as const,
                 plan,
                 currentUsage: consumption.nextUsage,
-                limit: baseLimit + consumption.nextExtraTokenBalance,
+                limit: baseLimit,
             };
         });
 

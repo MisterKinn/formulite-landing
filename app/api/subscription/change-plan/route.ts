@@ -2,7 +2,19 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import getFirebaseAdmin from "@/lib/firebaseAdmin";
-import { buildUserRootPatch, sanitizeForFirestore } from "@/lib/userData";
+import {
+    buildUserRootPatch,
+    normalizePlanLike,
+    sanitizeForFirestore,
+} from "@/lib/userData";
+
+const PLAN_ORDER: Record<"free" | "go" | "plus" | "pro" | "test", number> = {
+    free: 0,
+    go: 1,
+    plus: 2,
+    test: 2,
+    pro: 3,
+};
 
 export async function POST(request: NextRequest) {
     try {
@@ -51,9 +63,21 @@ export async function POST(request: NextRequest) {
 
         // Get current subscription
         const userDoc = await db.collection("users").doc(userId).get();
+        const existingUser = (userDoc.data() || {}) as Record<string, unknown>;
+        const currentSubscriptionData =
+            existingUser.subscription &&
+            typeof existingUser.subscription === "object"
+                ? (existingUser.subscription as Record<string, unknown>)
+                : null;
         const currentSubscription = userDoc.exists
-            ? userDoc.data()?.subscription
+            ? currentSubscriptionData
             : null;
+        const currentPlan = normalizePlanLike(
+            currentSubscription?.plan || existingUser.plan,
+            "free",
+        );
+        const nextPlan = normalizePlanLike(plan, "free");
+        const shouldResetUsage = PLAN_ORDER[nextPlan] > PLAN_ORDER[currentPlan];
 
         // Determine the correct amount for the new plan based on billing cycle
         const planAmounts: Record<
@@ -128,13 +152,15 @@ export async function POST(request: NextRequest) {
                 currentSubscription?.startDate || new Date().toISOString(),
             updatedAt: new Date().toISOString(),
             // Only clear billing info for free plan
-            ...(shouldDeleteBillingKey && {
-                billingKey: null,
-                customerKey: null,
-                isRecurring: false,
-                nextBillingDate: null,
-            }),
-        });
+            ...(shouldDeleteBillingKey
+                ? {
+                      billingKey: null,
+                      customerKey: null,
+                      isRecurring: false,
+                      nextBillingDate: null,
+                  }
+                : {}),
+        }) as Record<string, unknown>;
 
         // Remove undefined fields
         Object.keys(updatedSubscription).forEach(
@@ -145,9 +171,11 @@ export async function POST(request: NextRequest) {
 
         await db.collection("users").doc(userId).set(
             buildUserRootPatch({
-                existingUser: (userDoc.data() || {}) as Record<string, unknown>,
+                existingUser,
                 subscription: updatedSubscription as Record<string, unknown>,
-                plan: plan as "free" | "go" | "plus" | "pro" | "test",
+                plan: nextPlan,
+                aiCallUsage: shouldResetUsage ? 0 : undefined,
+                usageResetAt: shouldResetUsage ? new Date().toISOString() : undefined,
             }),
             { merge: true },
         );
@@ -155,7 +183,8 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({
             success: true,
             userId,
-            plan,
+            plan: nextPlan,
+            usageReset: shouldResetUsage,
             subscription: updatedSubscription,
         });
     } catch (err) {

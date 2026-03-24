@@ -2,11 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import getFirebaseAdmin from "@/lib/firebaseAdmin";
 import { savePaymentRecord } from "@/lib/paymentHistory";
 import { getNextBillingDate } from "@/lib/subscription";
-import {
-    sendPaymentReceipt,
-    sendPaymentFailureNotification,
-} from "@/lib/email";
+import { sendPaymentReceipt } from "@/lib/email";
 import { buildUserRootPatch, inferPlanFromAmount } from "@/lib/userData";
+import { extractUserIdFromCustomerKey } from "@/lib/customerKeys";
 
 /**
  * 빌링키 발급 API
@@ -231,30 +229,6 @@ export async function POST(request: NextRequest) {
             },
             { status: 500 },
         );
-    }
-}
-
-/**
- * customerKey에서 userId 추출
- * 형식: "customer_{userId}_{timestamp}" 또는 "user_{userId}"
- */
-function extractUserIdFromCustomerKey(customerKey: string): string | null {
-    try {
-        const parts = customerKey.split("_");
-
-        // "customer_{userId}_{timestamp}" 형식
-        if (parts.length >= 3 && parts[0] === "customer") {
-            return parts[1]; // userId 부분
-        }
-
-        // "user_{userId}" 형식
-        if (parts.length >= 2 && parts[0] === "user") {
-            return parts[1]; // userId 부분
-        }
-
-        return null;
-    } catch (error) {
-        return null;
     }
 }
 

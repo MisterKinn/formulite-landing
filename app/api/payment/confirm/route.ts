@@ -11,23 +11,12 @@ import {
 import { savePaymentRecord } from "@/lib/paymentHistory";
 import { saveRecentPurchaseFeedItem } from "@/lib/recentPurchaseFeed";
 import getFirebaseAdmin from "@/lib/firebaseAdmin";
-import { getStoredExtraTokenBalance } from "@/lib/aiUsage";
+import { getStoredUsageTokens } from "@/lib/aiUsage";
+import { extractUserIdFromCustomerKey } from "@/lib/customerKeys";
 import {
     canPurchaseTokenPack,
     resolvePaymentProduct,
 } from "@/lib/tokenPacks";
-
-function extractUserIdFromCustomerKey(customerKey?: string | null): string | null {
-    if (!customerKey) return null;
-    if (customerKey.startsWith("user_")) {
-        return customerKey.slice("user_".length) || null;
-    }
-    const customerMatch = customerKey.match(/^customer_(.+)_\d+$/);
-    if (customerMatch?.[1]) {
-        return customerMatch[1];
-    }
-    return null;
-}
 
 async function saveSubscriptionByAdmin(
     userId: string,
@@ -62,7 +51,7 @@ async function saveSubscriptionByAdmin(
         plan: normalizedPlan,
         aiCallUsage: options?.resetUsageAt ? 0 : undefined,
         usageResetAt: options?.resetUsageAt,
-        extraTokenBalance: getStoredExtraTokenBalance(currentData),
+        extraTokenBalance: 0,
     });
     await userRef.set(patch, { merge: true });
 }
@@ -101,12 +90,14 @@ async function applyTokenPackPurchase(params: {
         if (paymentDoc.exists && paymentDoc.data()?.entitlementAppliedAt) {
             return {
                 alreadyApplied: true,
-                extraTokenBalance: getStoredExtraTokenBalance(userData),
+                currentUsage: getStoredUsageTokens(userData),
             };
         }
 
-        const nextExtraTokenBalance =
-            getStoredExtraTokenBalance(userData) + params.tokensGranted;
+        const nextUsage = Math.max(
+            0,
+            getStoredUsageTokens(userData) - params.tokensGranted,
+        );
 
         tx.set(
             paymentRef,
@@ -131,7 +122,8 @@ async function applyTokenPackPurchase(params: {
         tx.set(
             userRef,
             {
-                extraTokenBalance: nextExtraTokenBalance,
+                aiCallUsage: nextUsage,
+                extraTokenBalance: 0,
                 updatedAt: nowIso,
             },
             { merge: true },
@@ -139,7 +131,7 @@ async function applyTokenPackPurchase(params: {
 
         return {
             alreadyApplied: false,
-            extraTokenBalance: nextExtraTokenBalance,
+            currentUsage: nextUsage,
         };
     });
 }

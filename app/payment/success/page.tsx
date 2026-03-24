@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import { buildCustomerKey } from "@/lib/customerKeys";
 import { Navbar } from "../../../components/Navbar";
 import "../../style.css";
 import "../../mobile.css";
@@ -53,11 +54,11 @@ function Success({ result }: { result: any }) {
                 </div>
 
                 <h1 style={s.title}>
-                    {productType === "token_pack" ? "토큰 충전이 완료되었습니다" : "결제가 완료되었습니다"}
+                    {productType === "token_pack" ? "토큰 결제가 완료되었습니다" : "결제가 완료되었습니다"}
                 </h1>
                 <p style={s.desc}>
                     {productType === "token_pack"
-                        ? "추가 토큰이 계정에 반영되었습니다."
+                        ? "결제한 토큰 수만큼 현재 누적 사용량에서 차감되었습니다."
                         : "결제가 정상적으로 처리되었습니다."}
                 </p>
 
@@ -78,7 +79,7 @@ function Success({ result }: { result: any }) {
 
                 {productType === "token_pack" && tokensGranted > 0 && (
                     <div style={s.infoRow}>
-                        <span style={s.label}>충전 토큰</span>
+                        <span style={s.label}>차감 토큰</span>
                         <span style={s.value}>{tokensGranted.toLocaleString()} 토큰</span>
                     </div>
                 )}
@@ -132,9 +133,7 @@ function PaymentSuccessContent() {
                     const urlCustomerKey = searchParams.get("customerKey");
                     const finalCustomerKey =
                         urlCustomerKey ||
-                        (resolvedUserId
-                            ? `user_${resolvedUserId.replace(/[^a-zA-Z0-9\-_=.@]/g, "").substring(0, 40)}`
-                            : null);
+                        (resolvedUserId ? buildCustomerKey(resolvedUserId) : null);
 
                     if (!finalCustomerKey) {
                         setError("고객 정보를 찾을 수 없습니다");

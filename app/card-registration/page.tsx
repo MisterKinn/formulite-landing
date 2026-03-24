@@ -3,6 +3,7 @@
 import React, { useState, useEffect, Suspense } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useSearchParams } from "next/navigation";
+import { buildCustomerKey } from "@/lib/customerKeys";
 
 declare global {
     interface Window {
@@ -60,7 +61,7 @@ function CardRegistrationContent() {
         setLoading(true);
         setError(null);
         try {
-            const customerKey = `user_${user.uid}_${Date.now()}`;
+            const customerKey = buildCustomerKey(user.uid);
             const orderId = `billing_auth_${Date.now()}`;
             await tossPayments.requestBillingAuth({
                 method: "CARD",
@@ -69,7 +70,7 @@ function CardRegistrationContent() {
                 customerKey,
                 customerEmail: user.email || "customer@example.com",
                 customerName: user.displayName || "고객",
-                successUrl: `${window.location.origin}/card-registration/success?amount=${amount}&orderName=${encodeURIComponent(orderName)}&billingCycle=${billingCycle}`,
+                successUrl: `${window.location.origin}/card-registration/success?uid=${encodeURIComponent(user.uid)}&amount=${amount}&orderName=${encodeURIComponent(orderName)}&billingCycle=${billingCycle}`,
                 failUrl: `${window.location.origin}/card-registration/fail?amount=${amount}&orderName=${encodeURIComponent(orderName)}`,
             });
         } catch (err: any) {

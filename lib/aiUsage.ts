@@ -362,7 +362,7 @@ export function buildInitialUsageFields(
         aiCallUsage: 0,
         aiUsageMode: "tokens",
         usageResetAt: iso,
-        extraTokenBalance: getStoredExtraTokenBalance(userData),
+        extraTokenBalance: 0,
     };
 }
 
@@ -377,13 +377,11 @@ export function buildUsageCycleResetFields(
     extraTokenBalance: number;
 } {
     const iso = resetAt || new Date().toISOString();
-    const carryOverTokens = getRemainingSubscriptionTokens(userData, plan);
     return {
         aiCallUsage: 0,
         aiUsageMode: "tokens",
         usageResetAt: iso,
-        extraTokenBalance:
-            getStoredExtraTokenBalance(userData) + carryOverTokens,
+        extraTokenBalance: 0,
     };
 }
 
@@ -409,16 +407,14 @@ export function buildUsageConsumptionResult(
         Number.isFinite(amount) && amount > 0 ? Math.floor(amount) : 0;
     const limit = resolveEffectiveUsageLimit(userData, plan, now);
     const currentUsage = getStoredUsageTokens(userData);
-    const extraTokenBalance = getStoredExtraTokenBalance(userData);
-    const subscriptionRemaining = Math.max(0, limit - currentUsage);
-    const totalRemaining = subscriptionRemaining + extraTokenBalance;
+    const totalRemaining = Math.max(0, limit - currentUsage);
 
     if (usageAmount <= 0) {
         return {
             canConsume: true,
             limit,
             nextUsage: currentUsage,
-            nextExtraTokenBalance: extraTokenBalance,
+            nextExtraTokenBalance: 0,
             totalRemainingAfter: totalRemaining,
         };
     }
@@ -431,14 +427,11 @@ export function buildUsageConsumptionResult(
         };
     }
 
-    const fromSubscription = Math.min(subscriptionRemaining, usageAmount);
-    const fromExtra = Math.max(0, usageAmount - fromSubscription);
-
     return {
         canConsume: true,
         limit,
-        nextUsage: currentUsage + fromSubscription,
-        nextExtraTokenBalance: Math.max(0, extraTokenBalance - fromExtra),
+        nextUsage: currentUsage + usageAmount,
+        nextExtraTokenBalance: 0,
         totalRemainingAfter: totalRemaining - usageAmount,
     };
 }
@@ -473,14 +466,14 @@ export function needsUsageResetFromLimitMigration(
 
 export function buildUsageResetFields(
     resetAt?: string,
-    extraTokenBalance = 0,
+    _extraTokenBalance = 0,
 ): Record<string, unknown> {
     const iso = resetAt || new Date().toISOString();
     return {
         aiCallUsage: 0,
         aiUsageMode: "tokens",
         usageResetAt: iso,
-        extraTokenBalance,
+        extraTokenBalance: 0,
     };
 }
 

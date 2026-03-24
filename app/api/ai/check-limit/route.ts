@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import getFirebaseAdmin from "@/lib/firebaseAdmin";
 import {
     buildUsageResetFields,
-    getStoredExtraTokenBalance,
     getStoredUsageTokens,
     inferPaidPlanFromPayment,
     needsUsageResetFromLimitMigration,
@@ -167,12 +166,7 @@ export async function GET(request: NextRequest) {
             resetDecision.shouldReset ||
             (!!resetAt && plan !== "free")
         ) {
-            const extraTokenBalance = getStoredExtraTokenBalance(
-                userData as Record<string, unknown>,
-            );
-            await userDoc.ref.update(
-                buildUsageResetFields(resetAt, extraTokenBalance),
-            );
+            await userDoc.ref.update(buildUsageResetFields(resetAt, 0));
             currentUsage = 0;
         }
 
@@ -181,14 +175,8 @@ export async function GET(request: NextRequest) {
             plan,
             now,
         );
-        const extraTokenBalance = getStoredExtraTokenBalance(
-            userData as Record<string, unknown>,
-        );
-        const limit = baseLimit + extraTokenBalance;
-        const remaining = Math.max(
-            0,
-            Math.max(0, baseLimit - currentUsage) + extraTokenBalance,
-        );
+        const limit = baseLimit;
+        const remaining = Math.max(0, baseLimit - currentUsage);
         const canUse = remaining > 0;
 
         return NextResponse.json({
@@ -200,7 +188,7 @@ export async function GET(request: NextRequest) {
             canUse,
             usageUnit: "tokens",
             subscriptionLimit: baseLimit,
-            extraTokenBalance,
+            extraTokenBalance: 0,
         }, {
             headers: {
                 "Cache-Control": "no-store, no-cache, must-revalidate",

@@ -107,11 +107,11 @@ export default function Home() {
         },
     ];
     const showcaseVideos = [
-        { key: "kor", label: "국어", fileName: "kor_test.mp4" },
-        { key: "eng", label: "영어", fileName: "eng_test.mp4" },
-        { key: "math", label: "수학", fileName: "math_test.mp4" },
-        { key: "science", label: "과학", fileName: "science_test.mp4" },
-        { key: "book", label: "책", fileName: "book_test.mp4" },
+        { key: "kor", label: "국어", youtubeId: "tv43PhkzPAQ" },
+        { key: "eng", label: "영어", youtubeId: "tN18tarVZmo" },
+        { key: "math", label: "수학", youtubeId: "at6qe2e5gxI" },
+        { key: "science", label: "과탐", youtubeId: "EO4N3kFhkGw" },
+        { key: "book", label: "책", youtubeId: "bAMM8oNgcP4" },
     ];
     const activeShowcaseVideo = showcaseVideos[activeShowcaseVideoIndex];
 
@@ -423,19 +423,16 @@ export default function Home() {
                             </div>
                         </div>
                         <article className="process-showcase-video-item">
-                            <video
-                                key={activeShowcaseVideo.fileName}
+                            <iframe
+                                key={activeShowcaseVideo.youtubeId}
                                 className="process-showcase-video-player"
-                                controls
-                                preload="metadata"
-                                playsInline
-                            >
-                                <source
-                                    src={`/api/test-movie/${activeShowcaseVideo.fileName}`}
-                                    type="video/mp4"
-                                />
-                                브라우저가 video 태그를 지원하지 않습니다.
-                            </video>
+                                src={`https://www.youtube-nocookie.com/embed/${activeShowcaseVideo.youtubeId}?rel=0`}
+                                title={`${activeShowcaseVideo.label} 소개 영상`}
+                                loading="lazy"
+                                referrerPolicy="strict-origin-when-cross-origin"
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                                allowFullScreen
+                            />
                         </article>
                     </div>
                     <h2 className="process-showcase-title">노바AI 기능 소개</h2>

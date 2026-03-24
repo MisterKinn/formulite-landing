@@ -17,6 +17,7 @@ import {
     TIER_LIMITS,
 } from "../../lib/tierLimits";
 import { isTokenPackOrderName } from "@/lib/tokenPacks";
+import { buildCustomerKey } from "@/lib/customerKeys";
 const Sidebar = dynamic(() => import("../../components/Sidebar"), {
     ssr: false,
 });
@@ -158,6 +159,24 @@ const plansData: PlanData[] = [
             { text: "코드 저장 & 관리", included: false },
         ],
         ctaText: "현재 플랜",
+    },
+    {
+        id: "go",
+        name: "Go 요금제",
+        description: "개인 작업량에 맞춘\n기본 유료 플랜",
+        monthlyPrice: 11900,
+        yearlyPrice: 99960,
+        icon: <ZapIcon />,
+        features: [
+            { text: formatTokenAllowance(60, 6), included: true },
+            { text: "기본 AI 모델", included: true },
+            { text: "광고 없는 경험", included: true },
+            { text: "기본 우선 처리", included: true },
+            { text: "복수 계정 작업 불가능", included: true },
+            { text: "팀 공유 기능", included: false },
+            { text: "API 액세스", included: false },
+        ],
+        ctaText: "Go 요금제로 업그레이드",
     },
     {
         id: "plus",
@@ -903,6 +922,11 @@ function ProfileContent() {
             return;
         }
 
+        const upgradeMessage = `${plan.name}로 업그레이드하시겠습니까?\n업그레이드가 완료되면 현재 사용량은 초기화되고 새 요금제 한도가 즉시 적용됩니다.`;
+        if (!confirm(upgradeMessage)) {
+            return;
+        }
+
         setLoadingPlan(plan.id);
 
         try {
@@ -923,14 +947,12 @@ function ProfileContent() {
                 "";
 
             const tossPayments = await loadTossPayments(clientKey);
-            const customerKey = `user_${authUser.uid
-                .replace(/[^a-zA-Z0-9\-_=.@]/g, "")
-                .substring(0, 40)}`;
+            const customerKey = buildCustomerKey(authUser.uid);
             const payment = tossPayments.payment({ customerKey });
 
             await payment.requestBillingAuth({
                 method: "CARD",
-                successUrl: `${window.location.origin}/card-registration/success?amount=${planAmount}&orderName=${encodeURIComponent(orderName)}&billingCycle=${nextBillingCycle}`,
+                successUrl: `${window.location.origin}/card-registration/success?uid=${encodeURIComponent(authUser.uid)}&amount=${planAmount}&orderName=${encodeURIComponent(orderName)}&billingCycle=${nextBillingCycle}`,
                 failUrl: `${window.location.origin}/card-registration/fail?amount=${planAmount}&orderName=${encodeURIComponent(orderName)}`,
                 customerEmail: authUser.email || "customer@example.com",
                 customerName: authUser.displayName || "고객",
@@ -1299,6 +1321,9 @@ function ProfileContent() {
                                                     사용 한도에 도달했습니다. 플랜을 업그레이드해 계속 이용할 수 있습니다.
                                                 </div>
                                             )}
+                                            <div className="sb-usage-warning">
+                                                상위 요금제로 업그레이드하면 현재 사용량이 초기화되며 새 한도가 즉시 적용됩니다. Go에서 Ultra로 바로 업그레이드하는 것도 가능합니다.
+                                            </div>
                                         </div>
                                     </div>
                                 </section>

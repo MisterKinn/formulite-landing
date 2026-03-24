@@ -7,10 +7,11 @@ import {
 } from "@/lib/recentPurchaseFeed";
 import {
     buildUsageCycleResetFields,
-    getStoredExtraTokenBalance,
+    getStoredUsageTokens,
     resolveEffectiveUsagePlan,
 } from "@/lib/aiUsage";
 import { canPurchaseTokenPack, resolvePaymentProduct } from "@/lib/tokenPacks";
+import { extractUserIdFromCustomerKey } from "@/lib/customerKeys";
 
 function getAdminDb() {
     return getFirebaseAdmin().firestore();
@@ -92,7 +93,9 @@ async function handlePaymentStatusChanged(data: Record<string, unknown>) {
 
     console.log("PAYMENT_STATUS_CHANGED:", status, { paymentKey, orderId });
 
-    const userId = extractUserId(customerKey);
+    const userId = extractUserIdFromCustomerKey(
+        typeof customerKey === "string" ? customerKey : null,
+    );
     if (!userId) {
         console.log("No userId found from customerKey:", customerKey);
         return;
@@ -213,11 +216,14 @@ async function handlePaymentDone(
             !entitlementAlreadyApplied &&
             canPurchaseTokenPack(userData as Record<string, unknown>)
         ) {
+            const nextUsage = Math.max(
+                0,
+                getStoredUsageTokens((userData || {}) as Record<string, unknown>) -
+                    paymentProduct.tokenPack.tokens,
+            );
             await adminDb.collection("users").doc(userId).update({
-                extraTokenBalance:
-                    getStoredExtraTokenBalance(
-                        (userData || {}) as Record<string, unknown>,
-                    ) + paymentProduct.tokenPack.tokens,
+                aiCallUsage: nextUsage,
+                extraTokenBalance: 0,
                 updatedAt: new Date().toISOString(),
             });
             await paymentRef.set(
@@ -336,7 +342,9 @@ async function handleBillingDeleted(data: Record<string, unknown>) {
 
     console.log("BILLING_DELETED:", { billingKey, customerKey });
 
-    const userId = extractUserId(customerKey);
+    const userId = extractUserIdFromCustomerKey(
+        typeof customerKey === "string" ? customerKey : null,
+    );
     if (!userId) return;
 
     try {
@@ -389,25 +397,6 @@ async function updateWebhookLog(paymentKey: string, processed: boolean) {
     } catch {
         // Ignore log update failures
     }
-}
-
-function extractUserId(customerKey: unknown): string | null {
-    if (typeof customerKey !== "string" || !customerKey) return null;
-
-    if (customerKey.startsWith("user_")) {
-        return customerKey.slice("user_".length) || null;
-    }
-
-    if (customerKey.startsWith("customer_")) {
-        const customerMatch = customerKey.match(/^customer_(.+)_\d+$/);
-        if (customerMatch?.[1]) return customerMatch[1];
-    }
-
-    if (customerKey.length >= 20 && !customerKey.includes("@")) {
-        return customerKey;
-    }
-
-    return null;
 }
 
 function getNextBillingDate(billingCycle: "monthly" | "yearly"): string {
